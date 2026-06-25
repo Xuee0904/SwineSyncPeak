@@ -4,7 +4,9 @@ import {
   Heart, Syringe, Tag, Weight, Calendar, Users, AlertTriangle, Baby,
 } from 'lucide-react';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Constants & Configuration ────────────────────────────────────────────────
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
 const STATUS_STYLES = {
   healthy:     'bg-emerald-50 text-emerald-800 border-emerald-100',
   sick:        'bg-amber-50  text-amber-800  border-amber-100',
@@ -25,15 +27,19 @@ async function fetchPigs({ search = '', status = 'all', gender = 'all' } = {}) {
   if (search)            params.set('search', search);
   if (status !== 'all')  params.set('status', status);
   if (gender !== 'all')  params.set('gender', gender);
-  const res = await fetch(`/api/pigs?${params}`);
-  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || `Server error ${res.status}`); }
+  
+  const res = await fetch(`${API_BASE_URL}/api/pigs?${params}`);
+  if (!res.ok) { 
+    const b = await res.json().catch(() => ({})); 
+    throw new Error(b.error || `Server error ${res.status}`); 
+  }
   return res.json(); // { data: Pig[], count: N }
 }
 
 async function fetchPigDetails(pigId) {
   const [healthRes, vaccRes] = await Promise.all([
-    fetch(`/api/health-logs?pig_id=${pigId}`),
-    fetch(`/api/vaccination-records?pig_id=${pigId}`),
+    fetch(`${API_BASE_URL}/api/health-logs?pig_id=${pigId}`),
+    fetch(`${API_BASE_URL}/api/vaccination-records?pig_id=${pigId}`),
   ]);
   const health = healthRes.ok ? await healthRes.json() : { data: [] };
   const vacc   = vaccRes.ok  ? await vaccRes.json()   : { data: [] };
@@ -44,8 +50,12 @@ async function fetchPigletBatches({ search = '', status = 'all' } = {}) {
   const params = new URLSearchParams();
   if (search)           params.set('search', search);
   if (status !== 'all') params.set('status', status);
-  const res = await fetch(`/api/piglet-batches?${params}`);
-  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error || `Server error ${res.status}`); }
+  
+  const res = await fetch(`${API_BASE_URL}/api/piglet-batches?${params}`);
+  if (!res.ok) { 
+    const b = await res.json().catch(() => ({})); 
+    throw new Error(b.error || `Server error ${res.status}`); 
+  }
   return res.json(); // { data: PigletBatch[], count: N }
 }
 
@@ -429,8 +439,8 @@ function BatchDetailModal({ batch, onClose }) {
 
   useEffect(() => {
     Promise.all([
-      fetch(`/api/health-logs?batch_id=${batch.batch_id}`).then(r => r.json()).catch(() => ({ data: [] })),
-      fetch(`/api/vaccination-records?batch_id=${batch.batch_id}`).then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(`${API_BASE_URL}/api/health-logs?batch_id=${batch.batch_id}`).then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(`${API_BASE_URL}/api/vaccination-records?batch_id=${batch.batch_id}`).then(r => r.json()).catch(() => ({ data: [] })),
     ]).then(([health, vacc]) => {
       setDetails({ healthLogs: health.data ?? [], vaccinations: vacc.data ?? [] });
     }).finally(() => setLoading(false));
