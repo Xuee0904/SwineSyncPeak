@@ -1,253 +1,168 @@
-import express from 'express';
-import cors from 'cors';
-import { createClient } from '@supabase/supabase-js';
-import 'dotenv/config';
+// 1. Load Environment Variables (used during local development)
+require('dotenv').config();
 
-// ─── Supabase Client ──────────────────────────────────────────────────────────
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-      detectSessionInUrl: false,
-    },
-  }
-);
+const express = require('express');
+const cors = require('cors');
+const { createClient } = require('@supabase/supabase-js');
 
-// ─── Express App ──────────────────────────────────────────────────────────────
 const app = express();
-const PORT = process.env.PORT || 3001;
 
-app.use(cors({ origin: 'http://localhost:5173' }));
+// 2. Initialize Supabase Client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.warn(
+    'Warning: SUPABASE_URL or SUPABASE_ANON_KEY environment variables are missing. ' +
+    'Please configure them in your .env file or your platform control panel.'
+  );
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// 3. Configure CORS (Cross-Origin Resource Sharing)
+const allowedOrigins = [
+  'http://localhost:5173',            // Local Vite Development
+  'https://your-app-name.netlify.app'  // Replace with your real Netlify URL once deployed
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true
+}));
+
+// 4. Global Middleware
 app.use(express.json());
 
-// ─── Health Check ─────────────────────────────────────────────────────────────
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// ─── API Routes ───────────────────────────────────────────────────────────────
 
-// ─── GET /api/pigs ────────────────────────────────────────────────────────────
-// Returns all pig records ordered by pig_tag.
-// Optional query params:
-//   ?status=healthy|sick|quarantine
-//   ?gender=m|f|castrated
-//   ?search=<text>  — matches pig_tag or gender (case-insensitive)
+// GET /api/pigs — Get individual pigs with optional filters
 app.get('/api/pigs', async (req, res) => {
   try {
-    const { status, gender, search } = req.query;
+    const { search, status, gender } = req.query;
+    
+    // Select data and query the total count
+    let dbQuery = supabase.from('pigs').select('*', { count: 'exact' });
 
-    let query = supabase
-      .from('pigs')
-      .select('*')
-      .eq('is_archived', false)         // never return archived pigs
-      .order('pig_tag', { ascending: true });
-
+    // Filter by status if specified
     if (status && status !== 'all') {
-      query = query.eq('status', status);
+      dbQuery = dbQuery.eq('status', status.toLowerCase());
     }
+
+    // Filter by gender prefix (matches 'm', 'f', 'c')
     if (gender && gender !== 'all') {
-      query = query.ilike('gender', `${gender}%`); // matches 'm','male','f','female','castrated'
+      dbQuery = dbQuery.ilike('gender', `${gender}%`);
     }
+
+    // Optional text search on tag
     if (search) {
-      query = query.or(`pig_tag.ilike.%${search}%,gender.ilike.%${search}%`);
+      dbQuery = dbQuery.ilike('pig_tag', `%${search}%`);
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await dbQuery;
 
-    if (error) {
-      console.error('[Supabase] GET /api/pigs error:', error.message);
-      return res.status(500).json({ error: error.message });
-    }
-
-    res.json({ data, count: data.length });
-  } catch (err) {
-    console.error('[Server] Unexpected error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    if (error) throw error;
+    res.json({ data: data ?? [], count: count ?? 0 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
-// ─── GET /api/pigs/:pig_id ────────────────────────────────────────────────────
-// Returns a single pig by UUID.
-app.get('/api/pigs/:pig_id', async (req, res) => {
-  try {
-    const { pig_id } = req.params;
-
-    const { data, error } = await supabase
-      .from('pigs')
-      .select('*')
-      .eq('pig_id', pig_id)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({ error: `Pig '${pig_id}' not found.` });
-      }
-      console.error('[Supabase] GET /api/pigs/:pig_id error:', error.message);
-      return res.status(500).json({ error: error.message });
-    }
-
-    res.json({ data });
-  } catch (err) {
-    console.error('[Server] Unexpected error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ─── GET /api/piglet-batches ──────────────────────────────────────────────────
-// Returns all piglet batch records.
-// Optional query params:
-//   ?status=suckling|weaned|transferred
-//   ?search=<text>  — matches batch_tag (case-insensitive)
+// GET /api/piglet-batches — Get piglet batches with optional filters
 app.get('/api/piglet-batches', async (req, res) => {
   try {
-    const { status, search } = req.query;
+    const { search, status } = req.query;
 
-    let query = supabase
-      .from('piglet_batches')
-      .select('*')
-      .eq('is_archived', false)
-      .order('batch_tag', { ascending: true });
+    let dbQuery = supabase.from('piglet_batches').select('*', { count: 'exact' });
 
+    // Filter by status if specified
     if (status && status !== 'all') {
-      query = query.eq('status', status);
+      dbQuery = dbQuery.eq('status', status.toLowerCase());
     }
+
+    // Optional text search on batch_tag
     if (search) {
-      query = query.ilike('batch_tag', `%${search}%`);
+      dbQuery = dbQuery.ilike('batch_tag', `%${search}%`);
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await dbQuery;
 
-    if (error) {
-      console.error('[Supabase] GET /api/piglet-batches error:', error.message);
-      return res.status(500).json({ error: error.message });
-    }
-
-    res.json({ data, count: data.length });
-  } catch (err) {
-    console.error('[Server] Unexpected error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    if (error) throw error;
+    res.json({ data: data ?? [], count: count ?? 0 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
-// ─── GET /api/piglet-batches/:batch_id ───────────────────────────────────────
-// Returns a single piglet batch by UUID.
-app.get('/api/piglet-batches/:batch_id', async (req, res) => {
-  try {
-    const { batch_id } = req.params;
-
-    const { data, error } = await supabase
-      .from('piglet_batches')
-      .select('*')
-      .eq('batch_id', batch_id)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({ error: `Batch '${batch_id}' not found.` });
-      }
-      console.error('[Supabase] GET /api/piglet-batches/:batch_id error:', error.message);
-      return res.status(500).json({ error: error.message });
-    }
-
-    res.json({ data });
-  } catch (err) {
-    console.error('[Server] Unexpected error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ─── GET /api/health-logs ─────────────────────────────────────────────────────
-// Returns health logs for a pig or batch.
-// Required (at least one): ?pig_id=<uuid>  or  ?batch_id=<uuid>
+// GET /api/health-logs — Fetch health logs by pig_id or batch_id
 app.get('/api/health-logs', async (req, res) => {
   try {
     const { pig_id, batch_id } = req.query;
-
+    
     if (!pig_id && !batch_id) {
-      return res.status(400).json({ error: 'Provide at least one of: pig_id, batch_id' });
+      return res.status(400).json({ error: 'You must provide either pig_id or batch_id.' });
     }
 
-    let query = supabase
-      .from('health_logs')
-      .select('*')
-      .order('log_date', { ascending: false });
+    let dbQuery = supabase.from('health_logs').select('*');
 
-    if (pig_id)   query = query.eq('pig_id', pig_id);
-    if (batch_id) query = query.eq('batch_id', batch_id);
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('[Supabase] GET /api/health-logs error:', error.message);
-      return res.status(500).json({ error: error.message });
+    if (pig_id) {
+      dbQuery = dbQuery.eq('pig_id', pig_id);
+    } else {
+      dbQuery = dbQuery.eq('batch_id', batch_id);
     }
 
-    res.json({ data, count: data.length });
-  } catch (err) {
-    console.error('[Server] Unexpected error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    // Sort logs descending by default to show newest logs first
+    dbQuery = dbQuery.order('log_date', { ascending: false });
+
+    const { data, error } = await dbQuery;
+
+    if (error) throw error;
+    res.json({ data: data ?? [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
-// ─── GET /api/vaccination-records ────────────────────────────────────────────
-// Returns vaccination records for a pig or batch.
-// Required (at least one): ?pig_id=<uuid>  or  ?batch_id=<uuid>
+// GET /api/vaccination-records — Fetch vaccinations by pig_id or batch_id
 app.get('/api/vaccination-records', async (req, res) => {
   try {
     const { pig_id, batch_id } = req.query;
 
     if (!pig_id && !batch_id) {
-      return res.status(400).json({ error: 'Provide at least one of: pig_id, batch_id' });
+      return res.status(400).json({ error: 'You must provide either pig_id or batch_id.' });
     }
 
-    let query = supabase
-      .from('vaccination_records')
-      .select('*')
-      .order('administered_date', { ascending: false });
+    let dbQuery = supabase.from('vaccination_records').select('*');
 
-    if (pig_id)   query = query.eq('pig_id', pig_id);
-    if (batch_id) query = query.eq('batch_id', batch_id);
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('[Supabase] GET /api/vaccination-records error:', error.message);
-      return res.status(500).json({ error: error.message });
+    if (pig_id) {
+      dbQuery = dbQuery.eq('pig_id', pig_id);
+    } else {
+      dbQuery = dbQuery.eq('batch_id', batch_id);
     }
 
-    res.json({ data, count: data.length });
-  } catch (err) {
-    console.error('[Server] Unexpected error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    // Sort descending to show newest first
+    dbQuery = dbQuery.order('administered_date', { ascending: false });
+
+    const { data, error } = await dbQuery;
+
+    if (error) throw error;
+    res.json({ data: data ?? [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
-// ─── GET /api/pigs/stats/summary ─────────────────────────────────────────────
-// Returns aggregate counts: total, healthy, sick, quarantine.
-app.get('/api/pigs/stats/summary', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('pigs')
-      .select('status')
-      .eq('is_archived', false);
+// 5. Start Server (Binding to dynamic cloud environment port, defaulting to 3001)
+const PORT = process.env.PORT || 3001;
 
-    if (error) return res.status(500).json({ error: error.message });
-
-    const total      = data.length;
-    const healthy    = data.filter(p => p.status === 'healthy').length;
-    const sick       = data.filter(p => p.status === 'sick').length;
-    const quarantine = data.filter(p => p.status === 'quarantine').length;
-
-    res.json({ total, healthy, sick, quarantine });
-  } catch (err) {
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ─── Start Server ─────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`✅ SwineSync API server running on http://localhost:${PORT}`);
-  console.log(`   Supabase URL: ${process.env.SUPABASE_URL}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running locally or in production on port ${PORT}`);
 });
