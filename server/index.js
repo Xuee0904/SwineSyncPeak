@@ -23,7 +23,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // 3. Configure CORS (Cross-Origin Resource Sharing)
 const allowedOrigins = [
   'http://localhost:5173',            // Local Vite Development
-  'https://your-app-name.netlify.app'  // Replace with your real Netlify URL once deployed
+  'https://swinesync.netlify.app'  // Replace with your real Netlify URL once deployed
 ];
 
 app.use(cors({
