@@ -19,7 +19,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const allowedOrigins = [
   'http://localhost:5173',
-  'https://your-app-name.netlify.app' // Change this to your actual Netlify URL
+  'https://swinesync.netlify.app' // Change this to your actual Netlify URL
 ];
 
 app.use(cors({
