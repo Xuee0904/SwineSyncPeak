@@ -1,9 +1,8 @@
-// 1. Load Environment Variables (used during local development)
-require('dotenv').config();
-
-const express = require('express');
-const cors = require('cors');
-const { createClient } = require('@supabase/supabase-js');
+// 1. Import dependencies (ES Module syntax)
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import { createClient } from '@supabase/supabase-js';
 
 const app = express();
 
@@ -23,7 +22,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // 3. Configure CORS (Cross-Origin Resource Sharing)
 const allowedOrigins = [
   'http://localhost:5173',            // Local Vite Development
-  'https://swinesync.netlify.app'  // Replace with your real Netlify URL once deployed
+  'https://your-app-name.netlify.app'  // Replace with your real Netlify URL once deployed
 ];
 
 app.use(cors({
@@ -164,5 +163,5 @@ app.get('/api/vaccination-records', async (req, res) => {
 const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running locally or in production on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
