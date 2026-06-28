@@ -79,6 +79,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Hide MS Edge / Internet Explorer native password reveal eye icon */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none !important;
+}
+
 /* Custom scroll animation utilities */
 .reveal-on-scroll {
   opacity: 0;

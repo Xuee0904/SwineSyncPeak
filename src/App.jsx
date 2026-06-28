@@ -18,8 +18,10 @@ export default function App() {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const observerRef = useRef(null);
 
-  // Scroll-spy: track which section is in view
+  // Scroll-spy: track which section is in view (only relevant when logged out)
   useEffect(() => {
+    if (loggedInUser) return;
+
     const sectionIds = ['home', 'protocols', 'news', 'catalog', 'faqs', 'contact'];
 
     observerRef.current = new IntersectionObserver(
@@ -43,6 +45,8 @@ export default function App() {
 
   // Scroll-reveal: animate sections entering viewport
   useEffect(() => {
+    if (loggedInUser) return;
+
     const revealEls = document.querySelectorAll('.reveal-on-scroll');
     const revealObserver = new IntersectionObserver(
       (entries) => {
@@ -69,7 +73,6 @@ export default function App() {
   const handleLoginSuccess = (name) => {
     setLoggedInUser(name);
     showToast(`Welcome back, ${name}! Staff session established successfully.`, 'success');
-    // Scroll to top (dashboard view)
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -101,7 +104,7 @@ export default function App() {
         onOpenLogin={() => setIsLoginOpen(true)}
         loggedInUser={loggedInUser}
         onLogout={handleLogout}
-        isLandingMode={!loggedInUser}
+        isLandingMode={!loggedInUser} // Hides navigation scroll links when logged in
       />
 
       {/* Toast Alert notification */}
@@ -123,29 +126,28 @@ export default function App() {
       )}
 
       {/* Back to Top button */}
-      {!loggedInUser && (
-        <button
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className={`back-to-top ${showBackToTop ? 'visible' : ''}`}
-          aria-label="Scroll back to top"
-          id="back-to-top-btn"
-        >
-          <ArrowUp className="w-4 h-4" />
-        </button>
-      )}
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        className={`back-to-top ${showBackToTop ? 'visible' : ''}`}
+        aria-label="Scroll back to top"
+        id="back-to-top-btn"
+      >
+        <ArrowUp className="w-4 h-4" />
+      </button>
 
-      {/* ── STAFF PORTAL (only when logged in) ── */}
+      {/* Conditional Main view splits public landing elements and authenticated workspace */}
       {loggedInUser ? (
+        /* ── STAFF PORTAL VIEW (Dashboard handles Sidenav + Active Views) ── */
         <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10" id="staff-portal-layout">
-          <Catalog loggedInUser={loggedInUser} />
+          <Dashboard scrollToSection={scrollToSection} loggedInUser={loggedInUser} />
         </main>
       ) : (
-        /* ── PUBLIC LANDING PAGE (scrollable) ── */
+        /* ── PUBLIC LANDING PAGE (Scrollable landing sections) ── */
         <main className="flex-grow" id="public-landing">
 
-          {/* HERO / HOME */}
+          {/* HERO / HOME (Without side nav/calendar) */}
           <section id="home" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-20">
-            <Dashboard scrollToSection={scrollToSection} />
+            <Dashboard scrollToSection={scrollToSection} loggedInUser={loggedInUser} />
           </section>
 
           {/* DIVIDER */}
@@ -167,12 +169,20 @@ export default function App() {
           {/* DIVIDER */}
           <div className="w-full border-t border-slate-100" />
 
+          {/* PUBLIC SWINE CATALOG */}
+          <section id="catalog" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
+            <Catalog loggedInUser={loggedInUser} />
+          </section>
+
+          {/* DIVIDER */}
+          <div className="w-full border-t border-slate-100" />
+
           {/* FAQs */}
           <section id="faqs" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
             <FAQs scrollToSection={scrollToSection} />
           </section>
 
-          {/* CONTACT — full-width dark background band */}
+          {/* CONTACT */}
           <div id="contact" className="bg-slate-950 py-20 reveal-on-scroll">
             <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
               <Contact />
@@ -182,7 +192,7 @@ export default function App() {
         </main>
       )}
 
-      {/* Staff Login Overlay Modal */}
+      {/* Staff Login Overlay Modal (Restored Here) */}
       <LoginModal
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
@@ -210,13 +220,14 @@ export default function App() {
             <div className="space-y-3.5">
               <h4 className="text-xs font-bold text-white uppercase tracking-widest">Platform</h4>
               <ul className="space-y-2 text-xs">
-                {['Home', 'Safety & Protocols', 'News', 'FAQs', 'Contact Us'].map((label, i) => {
-                  const ids = ['home', 'protocols', 'news', 'faqs', 'contact'];
+                {['Home', 'Safety & Protocols', 'News', 'Swine Catalog', 'FAQs', 'Contact Us'].map((label, i) => {
+                  const ids = ['home', 'protocols', 'news', 'catalog', 'faqs', 'contact'];
                   return (
                     <li key={ids[i]}>
                       <button
                         onClick={() => scrollToSection(ids[i])}
                         className="hover:text-white transition-colors cursor-pointer text-left"
+                        disabled={!!loggedInUser}
                       >
                         {label}
                       </button>
@@ -247,7 +258,7 @@ export default function App() {
             <p>&copy; {new Date().getFullYear()} SwineSync Livestock Ecosystem. All rights reserved.</p>
             <div className="flex items-center gap-1">
               <span>Designed for precision agriculture with</span>
-              <Heart className="w-3 h-3 text-swine-450 text-rose-500 fill-rose-500" />
+              <Heart className="w-3 h-3 text-rose-500 fill-rose-500" />
               <span>and React.js.</span>
             </div>
           </div>

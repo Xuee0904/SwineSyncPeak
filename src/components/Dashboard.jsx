@@ -1,7 +1,33 @@
-import React from 'react';
-import { ShieldCheck, Users, Activity, BarChart3, ChevronRight, Sparkles, Database, Globe, ArrowUpRight } from 'lucide-react';
+import React, { useState } from 'react';
+import Catalog from './Catalog';
+import {
+  ShieldCheck, Users, Activity, BarChart3, ChevronRight, Sparkles,
+  Database, Globe, ArrowUpRight, LayoutDashboard, TrendingUp,
+  ClipboardList, Receipt, Settings, Calendar as CalendarIcon, Baby
+} from 'lucide-react';
 
-export default function Dashboard({ scrollToSection }) {
+export default function Dashboard({ scrollToSection, loggedInUser }) {
+  const [activeSideTab, setActiveSideTab] = useState('dashboard');
+
+  const sideNavItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'swine_management', label: 'Swine Management', icon: Users },
+    { id: 'growth_program', label: 'Growth Program', icon: TrendingUp },
+    { id: 'health_management', label: 'Health Management', icon: Activity },
+    { id: 'breeding_logs', label: 'Breeding Logs', icon: Baby },
+    { id: 'inventory', label: 'Inventory Management', icon: ClipboardList },
+    { id: 'transactions', label: 'Transaction Records', icon: Receipt },
+    { id: 'admin', label: 'Admin Settings', icon: Settings },
+  ];
+
+  const calendarEvents = [
+    { date: 5, month: 'Jun', title: 'Fan timer adjustments', type: 'ops' },
+    { date: 10, month: 'Jun', title: 'Nursery B Vaccinations', type: 'health' },
+    { date: 12, month: 'Jun', title: 'Database Schema Sync', type: 'tech' },
+    { date: 15, month: 'Jun', title: 'Nursery Feed Transition', type: 'feed' },
+    { date: 18, month: 'Jun', title: 'Q3 Biosecurity Audit', type: 'safety' },
+  ];
+
   const stats = [
     {
       title: 'Active Swine Herd',
@@ -41,219 +67,237 @@ export default function Dashboard({ scrollToSection }) {
     }
   ];
 
+  // Configure modular display elements based on user context
+  const showSidebar = !!loggedInUser;
+  const showCalendar = !!loggedInUser && activeSideTab === 'dashboard';
+
+  // Calculate grid layout sizes
+  const mainColSpan = (showSidebar && showCalendar) 
+    ? 'lg:col-span-6' 
+    : (showSidebar && !showCalendar)
+      ? 'lg:col-span-9'
+      : 'lg:col-span-12';
+
   return (
-    <div className="space-y-12 pb-16 animate-fade-in" id="dashboard-section">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-primary-950 text-white rounded-3xl px-6 py-16 sm:px-12 sm:py-20 shadow-xl" id="hero-banner">
-        {/* Glow decoration */}
-        <div className="absolute top-0 right-0 -mt-20 -mr-20 w-80 h-80 rounded-full bg-primary-500/20 blur-3xl" />
-        <div className="absolute bottom-0 left-0 -mb-20 -ml-20 w-80 h-80 rounded-full bg-swine-500/10 blur-3xl" />
+    <div className="animate-fade-in text-left pb-16" id="dashboard-section">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
-        <div className="relative max-w-3xl space-y-6 text-left">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary-500/20 border border-primary-500/30 text-primary-300 text-xs font-semibold uppercase tracking-wider">
-            <Sparkles className="w-3.5 h-3.5" />
-            Empowering Modern Livestock Management
-          </div>
+        {/* ── LEFT COLUMN: SIDE NAVIGATION (Staff Only) ── */}
+        {showSidebar && (
+          <aside className="lg:col-span-3 space-y-6">
+            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-2">System Navigation</h3>
+              <nav className="space-y-1">
+                {sideNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeSideTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveSideTab(item.id)}
+                      className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-semibold tracking-wide transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-primary-50 text-primary-700 shadow-sm border-l-4 border-primary-600'
+                          : 'text-slate-650 hover:text-slate-900 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 ${isActive ? 'text-primary-600' : 'text-slate-450'}`} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+          </aside>
+        )}
+
+        {/* ── CENTER COLUMN: ACTIVE TAB INTERFACE ── */}
+        <main className={`${mainColSpan} space-y-10`}>
           
-          <h1 className="text-4xl sm:text-5xl font-black font-display tracking-tight leading-[1.1] text-white">
-            Precision AgTech Ecosystem <br />
-            for <span className="bg-gradient-to-r from-primary-400 to-swine-300 bg-clip-text text-transparent">Optimized Swine Operations</span>
-          </h1>
-          
-          <p className="text-lg text-slate-300 leading-relaxed font-light">
-            Welcome to SwineSync—the unified public interface and operations portal. Monitor real-time biosecurity parameters, browse genetic categories, enforce compliance guidelines, and empower staff with secure Supabase-backed management tools.
-          </p>
-
-          <div className="flex flex-wrap gap-4 pt-2">
-            <button
-              onClick={() => scrollToSection('protocols')}
-              className="px-6 py-3.5 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-primary-600/20 hover:shadow-xl transition-all flex items-center gap-2 cursor-pointer"
-              id="hero-protocols-btn"
-            >
-              Review Safety Protocols
-              <ChevronRight className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => scrollToSection('news')}
-              className="px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 font-bold text-sm rounded-xl hover:text-white transition-all flex items-center gap-2 cursor-pointer"
-              id="hero-news-btn"
-            >
-              Latest News
-              <ArrowUpRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* KPI Stats Section */}
-      <section className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div className="text-left">
-            <h2 className="text-2xl font-extrabold font-display text-slate-900 tracking-tight">Ecosystem Metrics</h2>
-            <p className="text-sm text-slate-500">Real-time telemetry and management indicators across the facility.</p>
-          </div>
-          <span className="text-xs text-slate-400 font-medium italic">Data refreshed 1 minute ago</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {stats.map((stat, i) => {
-            const Icon = stat.icon;
-            return (
-              <div
-                key={i}
-                className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group"
-                id={`stat-card-${i}`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="text-left space-y-1">
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{stat.title}</span>
-                    <div className="text-3xl font-black font-display text-slate-900 tracking-tight pt-1">{stat.value}</div>
+          {/* View Tab A: Dashboard Overview */}
+          {activeSideTab === 'dashboard' && (
+            <>
+              {/* Conditional Banner based on login status */}
+              {loggedInUser ? (
+                /* Secured Staff Welcome Greeting Banner */
+                <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-850 to-emerald-950 text-white rounded-3xl p-6 sm:p-8 shadow-md">
+                  <div className="absolute top-0 right-0 -mt-20 -mr-20 w-64 h-64 bg-emerald-500/10 blur-3xl pointer-events-none" />
+                  <div className="relative space-y-4">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      Secure Staff Session
+                    </div>
+                    <h1 className="text-2xl sm:text-3xl font-black font-display tracking-tight leading-snug text-white">
+                      Welcome back, {loggedInUser}
+                    </h1>
+                    <p className="text-xs text-slate-350 leading-relaxed font-light max-w-xl">
+                      System status is nominal. All RFID telemetry scanner nodes are online. Use the navigation panel on the left to manage animal profiles, growth indexes, and compliance checks.
+                    </p>
                   </div>
-                  <div className={`p-3 rounded-xl border ${stat.color} transition-transform group-hover:scale-105`}>
-                    <Icon className="w-5 h-5" />
+                </section>
+              ) : (
+                /* Public Facing Hero Banner for Guests */
+                <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-primary-950 text-white rounded-3xl p-6 sm:p-8 shadow-md">
+                  <div className="absolute top-0 right-0 -mt-20 -mr-20 w-64 h-64 bg-primary-500/20 blur-3xl pointer-events-none" />
+                  <div className="relative space-y-5">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-500/20 border border-primary-500/30 text-primary-300 text-[10px] font-bold uppercase tracking-wider">
+                      <Sparkles className="w-3 h-3" />
+                      Precision Agriculture Portal
+                    </div>
+                    <h1 className="text-2xl sm:text-3xl font-black font-display tracking-tight leading-snug">
+                      Optimized Swine Operations
+                    </h1>
+                    <p className="text-xs text-slate-300 leading-relaxed font-light">
+                      Monitor real-time telemetry, check biosecurity guidelines, and browse catalog categories across sectors A, B, and C.
+                    </p>
+                    <div className="flex flex-wrap gap-3 pt-1">
+                      <button
+                        onClick={() => scrollToSection('protocols')}
+                        className="px-4 py-2.5 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white font-bold text-xs rounded-lg shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        Protocols
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => scrollToSection('catalog')}
+                        className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+                      >
+                        View Catalog
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
+                </section>
+              )}
+
+              {/* Ecosystem Telemetry Stats Grid */}
+              <section className="space-y-4">
+                <h2 className="text-base font-extrabold font-display text-slate-900 uppercase tracking-wider pl-1">Ecosystem Telemetry</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {stats.map((stat, i) => {
+                    const Icon = stat.icon;
+                    return (
+                      <div
+                        key={i}
+                        className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{stat.title}</span>
+                            <div className="text-2xl font-black font-display text-slate-900 tracking-tight">{stat.value}</div>
+                          </div>
+                          <div className={`p-2.5 rounded-xl border ${stat.color} transition-transform group-hover:scale-105`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                        </div>
+
+                        <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between text-[10px]">
+                          <span className="text-slate-400 font-semibold uppercase">Trend</span>
+                          <span className={`font-bold px-2 py-0.5 rounded-full ${
+                            stat.changeType === 'positive' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-600 bg-slate-100'
+                          }`}>
+                            {stat.change}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
+              </section>
+            </>
+          )}
 
-                {/* Micro SVG Sparkline Chart */}
-                <div className="mt-5 h-8 flex items-end">
-                  <svg className="w-full h-full overflow-visible" viewBox="0 0 100 20" preserveAspectRatio="none">
-                    <polyline
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      className={
-                        stat.title.includes('Wellness') ? 'text-rose-500' :
-                        stat.title.includes('Efficiency') ? 'text-amber-500' :
-                        stat.title.includes('Biosecurity') ? 'text-indigo-500' : 'text-primary-600'
-                      }
-                      points={stat.sparkline.map((val, idx) => {
-                        const x = (idx / (stat.sparkline.length - 1)) * 100;
-                        const min = Math.min(...stat.sparkline);
-                        const max = Math.max(...stat.sparkline);
-                        const spread = max - min === 0 ? 1 : max - min;
-                        const y = 18 - ((val - min) / spread) * 16;
-                        return `${x},${y}`;
-                      }).join(' ')}
-                    />
-                  </svg>
+          {/* View Tab B: Swine Management Catalog View */}
+          {activeSideTab === 'swine_management' && (
+            <Catalog loggedInUser={loggedInUser} />
+          )}
+
+          {/* Fallback View Tabs: System Integration Placeholders */}
+          {activeSideTab !== 'dashboard' && activeSideTab !== 'swine_management' && (
+            <div className="bg-white border border-slate-100 rounded-3xl p-12 text-center space-y-4 shadow-sm">
+              <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto text-slate-400">
+                <Database className="w-5 h-5 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-bold text-slate-850 text-base">Module Under Integration</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                  Database synchronization is completing parameters setup for this administrative panel.
+                </p>
+              </div>
+            </div>
+          )}
+
+        </main>
+
+        {/* ── RIGHT COLUMN: FARM CALENDAR PANEL (Staff Dashboard Only) ── */}
+        {showCalendar && (
+          <section className="lg:col-span-3 space-y-6">
+            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                <div className="flex items-center gap-2">
+                  <CalendarIcon className="w-4 h-4 text-primary-655 text-primary-600" />
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Farm Calendar</h3>
                 </div>
+                <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-md">June 2026</span>
+              </div>
 
-                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between text-xs">
-                  <span className="text-slate-400 font-medium">Status Trend</span>
-                  <span className={`font-bold px-2 py-0.5 rounded-full ${
-                    stat.changeType === 'positive' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-600 bg-slate-100'
-                  }`}>
-                    {stat.change}
-                  </span>
+              {/* Simulated Calendar Grid */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400">
+                  {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
+                    <div key={i}>{day}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-slate-700">
+                  {Array.from({ length: 30 }).map((_, i) => {
+                    const dayNum = i + 1;
+                    const hasEvent = calendarEvents.some(e => e.date === dayNum);
+                    return (
+                      <div
+                        key={i}
+                        className={`py-1.5 rounded-lg flex items-center justify-center relative ${
+                          hasEvent 
+                            ? 'bg-primary-50 text-primary-700 font-bold' 
+                            : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        {dayNum}
+                        {hasEvent && (
+                          <span className="absolute bottom-0.5 w-1 h-1 rounded-full bg-primary-600" />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </section>
 
-      {/* Integration readiness / Features Grid */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Core Capabilities */}
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 p-8 text-left space-y-6 shadow-sm">
-          <h3 className="text-xl font-bold font-display text-slate-900">Platform Core Pillars</h3>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-xl bg-primary-50 text-primary-600">
-                <ShieldCheck className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="font-bold text-slate-800 text-sm">Biosecurity & Traceability</h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Strict check-in procedures, isolation guidelines, and automated logging rules prevent cross-contamination.
-                </p>
+              {/* Event Items List */}
+              <div className="space-y-3 pt-3 border-t border-slate-50">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Upcoming Items</h4>
+                <div className="space-y-2.5">
+                  {calendarEvents.map((event, idx) => (
+                    <div key={idx} className="flex gap-3 text-xs items-start">
+                      <div className="flex flex-col items-center justify-center bg-slate-50 border border-slate-100 rounded-lg p-1.5 w-10 shrink-0">
+                        <span className="font-bold text-slate-850 leading-none">{event.date}</span>
+                        <span className="text-[8px] uppercase text-slate-400 font-bold mt-0.5">{event.month}</span>
+                      </div>
+                      <div className="text-left">
+                        <span className="font-semibold text-slate-800 line-clamp-1">{event.title}</span>
+                        <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block mt-0.5">
+                          {event.type === 'ops' ? 'Operations' :
+                           event.type === 'health' ? 'Veterinary' :
+                           event.type === 'tech' ? 'System Tech' : 'Feeding Nutrition'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
+          </section>
+        )}
 
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-xl bg-swine-50 text-swine-500">
-                <Users className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="font-bold text-slate-800 text-sm">Genetic Pedigree Records</h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Explore lineages, weights, health tags, and litter rates within the detailed catalog grid.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-xl bg-amber-50 text-amber-600">
-                <Database className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="font-bold text-slate-800 text-sm">Supabase Ready Database</h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Fully normalized entity structure prepared for real-time tracking, RFID scanner streams, and webhooks.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600">
-                <Globe className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="font-bold text-slate-800 text-sm">Centralized Portal</h4>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Enabling seamless data flow between administrative staff, farm hands, veterinarians, and external audits.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick action controls panel */}
-        <div className="bg-gradient-to-br from-primary-900 to-primary-950 text-white rounded-3xl p-8 text-left flex flex-col justify-between shadow-md">
-          <div className="space-y-4">
-            <h3 className="text-xl font-bold font-display text-white">Quick Actions</h3>
-            <p className="text-xs text-primary-200 leading-relaxed font-light">
-              Accelerate your workflow by directly accessing key areas of the SwineSync interface.
-            </p>
-          </div>
-
-          <div className="mt-8 space-y-3">
-            <button
-              onClick={() => scrollToSection('protocols')}
-              className="w-full flex items-center justify-between p-3.5 bg-white/10 hover:bg-white/15 text-white font-semibold text-xs rounded-xl transition-all cursor-pointer group"
-              id="qa-protocols-btn"
-            >
-              <span>Emergency Biosecurity Rules</span>
-              <ChevronRight className="w-4 h-4 text-primary-300 group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button
-              onClick={() => scrollToSection('news')}
-              className="w-full flex items-center justify-between p-3.5 bg-white/10 hover:bg-white/15 text-white font-semibold text-xs rounded-xl transition-all cursor-pointer group"
-              id="qa-news-btn"
-            >
-              <span>Read Operations Board</span>
-              <ChevronRight className="w-4 h-4 text-primary-300 group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button
-              onClick={() => scrollToSection('faqs')}
-              className="w-full flex items-center justify-between p-3.5 bg-white/10 hover:bg-white/15 text-white font-semibold text-xs rounded-xl transition-all cursor-pointer group"
-              id="qa-faqs-btn"
-            >
-              <span>Browse FAQs</span>
-              <ChevronRight className="w-4 h-4 text-primary-300 group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button
-              onClick={() => scrollToSection('contact')}
-              className="w-full flex items-center justify-between p-3.5 bg-white/10 hover:bg-white/15 text-white font-semibold text-xs rounded-xl transition-all cursor-pointer group"
-              id="qa-contact-btn"
-            >
-              <span>Submit Veterinarian Audit Request</span>
-              <ChevronRight className="w-4 h-4 text-primary-300 group-hover:translate-x-1 transition-transform" />
-            </button>
-          </div>
-        </div>
-      </section>
+      </div>
     </div>
   );
 }

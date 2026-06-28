@@ -11,11 +11,12 @@ export default function Navbar({ activeSection, scrollToSection, onOpenLogin, lo
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Public landing nav items (scroll anchors)
+  // Public landing nav items including the Catalog section
   const publicNavItems = [
     { id: 'home', label: 'Home' },
     { id: 'protocols', label: 'Safety & Protocols' },
     { id: 'news', label: 'News' },
+    { id: 'catalog', label: 'Swine Catalog' },
     { id: 'faqs', label: 'FAQs' },
     { id: 'contact', label: 'Contact Us' }
   ];
@@ -48,9 +49,8 @@ export default function Navbar({ activeSection, scrollToSection, onOpenLogin, lo
               className="flex items-center gap-3 cursor-pointer group"
               id="brand-logo-btn"
             >
-              {/* Premium SwineSync SVG Logo */}
-              <div className="relative flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 shadow-md shadow-primary-700/20 text-white group-hover:scale-105 transition-transform">
-                <Shield className="w-6 h-6" />
+              <div className="relative flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-br from-primary-50 to-primary-700 shadow-md shadow-primary-700/20 text-white group-hover:scale-105 transition-transform">
+                <Shield className="w-6 h-6 text-white" />
                 <span className="absolute -bottom-1 -right-1 flex h-4 w-4">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-swine-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-4 w-4 bg-swine-500 border-2 border-white"></span>
