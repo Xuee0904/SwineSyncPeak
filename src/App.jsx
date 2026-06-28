@@ -236,31 +236,11 @@ export default function App() {
                 })}
               </ul>
             </div>
-
-            {/* Infrastructure info */}
-            <div className="space-y-3.5">
-              <h4 className="text-xs font-bold text-white uppercase tracking-widest">Security Status</h4>
-              <div className="space-y-2.5">
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>All Systems Operational</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <ShieldCheck className="w-4 h-4 text-primary-500" />
-                  <span>SSL SECURED • AES-256</span>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Copyright line */}
           <div className="pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-            <p>&copy; {new Date().getFullYear()} SwineSync Livestock Ecosystem. All rights reserved.</p>
-            <div className="flex items-center gap-1">
-              <span>Designed for precision agriculture with</span>
-              <Heart className="w-3 h-3 text-rose-500 fill-rose-500" />
-              <span>and React.js.</span>
-            </div>
+            <p>&copy; {new Date().getFullYear()} SwineSync. All rights reserved.</p>
           </div>
         </div>
       </footer>

@@ -653,16 +653,11 @@ export default function Catalog() {
         <div>
           <h1 className="text-3xl font-extrabold font-display text-slate-900 tracking-tight">Swine Catalog</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Live herd records — <code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded">pigs</code> and{' '}
-            <code className="text-xs bg-slate-100 px-1.5 py-0.5 rounded">piglet_batches</code> via Supabase.
+            Live herd records
           </p>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary-50 border border-primary-100 text-xs font-semibold text-primary-800">
-            <Database className="w-4 h-4 text-primary-600 animate-pulse" />
-            <span>Supabase Live</span>
-          </div>
           {(isPigs ? lastFetchedPigs : lastFetchedBatches) && !(isPigs ? pigsLoading : batchesLoading) && (
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <span>Updated {formatRelativeTime(isPigs ? lastFetchedPigs : lastFetchedBatches)}</span>
@@ -698,31 +693,6 @@ export default function Catalog() {
           </button>
         ))}
       </div>
-
-      {/* ── Schema Info ────────────────────────────────────────────────────── */}
-      <section className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-600 flex flex-col md:flex-row md:items-center gap-4">
-        <Database className="w-5 h-5 text-slate-400 shrink-0" />
-        <div className="flex-1 space-y-1">
-          <p className="font-semibold text-slate-800">
-            Supabase Table:{' '}
-            <code className="bg-slate-200 text-slate-800 py-0.5 px-1 rounded">
-              {isPigs ? 'pigs' : 'piglet_batches'}
-            </code>
-            {' '}+{' '}
-            <code className="bg-slate-200 text-slate-800 py-0.5 px-1 rounded">health_logs</code>
-            {' '}+{' '}
-            <code className="bg-slate-200 text-slate-800 py-0.5 px-1 rounded">vaccination_records</code>
-          </p>
-          <p className="leading-relaxed">
-            API:{' '}
-            <code className="text-[11px] bg-slate-200 text-slate-800 py-0.5 px-1 rounded">
-              GET /api/{isPigs ? 'pigs' : 'piglet-batches'}
-            </code>{' '}→{' '}
-            <code className="text-[11px] bg-slate-200 text-slate-800 py-0.5 px-1 rounded">Node.js :3001</code>{' '}→{' '}
-            <code className="text-[11px] bg-slate-200 text-slate-800 py-0.5 px-1 rounded">Supabase</code>
-          </p>
-        </div>
-      </section>
 
       {/* ── Filter Toolbar ─────────────────────────────────────────────────── */}
       <section className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4" id="catalog-controls">
