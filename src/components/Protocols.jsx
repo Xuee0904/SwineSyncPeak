@@ -1,30 +1,30 @@
 import React from 'react';
-import { ShieldAlert, CheckCircle2, ShieldCheck, Users, Info } from 'lucide-react';
+import { ShieldAlert, CheckCircle2, ShieldCheck, Users } from 'lucide-react';
 
 export default function Protocols() {
   const visitorRequirements = [
     {
       title: '72-Hour Swine Isolation',
-      desc: 'Have had absolutely no contact with external swine herds, livestock markets, or processing facilities for at least 72 hours (3 days) prior to your visit.'
+      desc: 'Have absolutely no contact with external swine herds, or livestock markets for at least 72 hours (3 days) prior to your visit.'
     },
     {
       title: 'Outer Gate Sanitation',
-      desc: 'Pass through the chemical sanitation foot-bath and vehicle tire-wash stations upon crossing the outer facility boundary.'
+      desc: 'Pass through the sanitation foot-bath and vehicle tire-wash stations upon crossing the outer facility boundary.'
     },
     {
       title: 'Lobby Hand Disinfection',
-      desc: 'Sanitize hands thoroughly using the automatic medical-grade alcohol dispensers at the lobby reception entrance.'
+      desc: 'Sanitize hands thoroughly using the alcohol dispensers at the lobby reception entrance.'
     }
   ];
 
   const farmSanitizationStandards = [
     {
       title: 'Caretaker Pre-Entry Disinfection',
-      desc: 'All farm caretakers undergo complete shower-in, shower-out disinfection procedures and wear freshly sterilized uniforms before entering animal housing units.'
+      desc: 'All farm caretakers undergo complete shower-in, shower-out disinfection procedures before entering animal housing units.'
     },
     {
       title: 'Rigorous Facility & Pen Sanitization',
-      desc: 'Pens undergo high-pressure washing and sanitization with veterinary-grade solutions between batches, while walkways, loading docks, and paths are immediately sanitized after any buyer visit or delivery.'
+      desc: 'Pens undergo high-pressure washing and sanitization, while walkways, loading docks, and paths are immediately sanitized after any buyer visit.'
     },
     {
       title: 'Authorized Supply Sourcing',
@@ -32,20 +32,25 @@ export default function Protocols() {
     },
     {
       title: 'Certified Veterinary Audits',
-      desc: 'Certified swine veterinarians conduct weekly health diagnostics and diagnostics reviews to maintain a strictly pathogen-free breeding environment.'
+      desc: 'Only certified swine veterinarians conduct health diagnostics and diagnostics reviews to maintain health record credibility.'
     }
   ];
 
   return (
     <div className="space-y-8 pb-16 text-left animate-fade-in" id="protocols-section">
-      {/* Header Title */}
-      <section className="border-b border-slate-100 pb-5 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold font-display text-slate-900 tracking-tight">Safety Protocols</h1>
+      {/* Header Title with Icon */}
+      <section className="border-b border-slate-100 pb-5">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-2xl bg-primary-50 text-primary-600 shrink-0">
+            <ShieldCheck className="w-6 h-6" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-extrabold font-display text-slate-900 tracking-tight">Safety Protocols</h1>
+          </div>
         </div>
       </section>
 
-      {/* Emergency Notice banner */}
+      {/* Notice banner */}
       <section className="bg-gradient-to-r from-rose-50 to-swine-50 border border-rose-100 rounded-2xl p-5 flex gap-4 items-start" id="emergency-banner">
         <div className="p-2.5 rounded-xl bg-rose-100 text-rose-700 shrink-0">
           <ShieldAlert className="w-5 h-5" />
@@ -70,7 +75,7 @@ export default function Protocols() {
               </div>
               <div>
                 <h3 className="text-lg font-bold font-display text-slate-900">Visitor Pre-Arrival Requirements</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Safety measures you must meet before entering our facility.</p>
+                <p className="text-xs text-slate-400 mt-0.5">Measures you must meet before entering our facility boundary.</p>
               </div>
             </div>
 
@@ -89,10 +94,10 @@ export default function Protocols() {
             </div>
           </div>
 
-          <div className="p-4 bg-emerald-50/30 rounded-2xl border border-emerald-100/50 text-xs text-emerald-800 flex gap-3 mt-6">
-            <Info className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+          <div className="p-4 bg-emerald-50/40 rounded-2xl border border-emerald-100/50 text-xs text-emerald-800 flex gap-3 mt-6">
+            <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
             <p className="leading-relaxed font-medium">
-              Compliance with these pre-arrival requirements is mandatory to protect our nursery herds.
+              Following these simple rules helps keep our farm safe, clean, and free from diseases.
             </p>
           </div>
         </div>
@@ -106,7 +111,7 @@ export default function Protocols() {
               </div>
               <div>
                 <h3 className="text-lg font-bold font-display text-slate-900">Swine Sanitization Standards</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Strict daily practices we follow to ensure buying safety.</p>
+                <p className="text-xs text-slate-400 mt-0.5">Strict daily practices we follow to ensure optimal animal safety.</p>
               </div>
             </div>
 
@@ -125,10 +130,10 @@ export default function Protocols() {
             </div>
           </div>
 
-          <div className="p-4 bg-indigo-50/30 rounded-2xl border border-indigo-100/50 text-xs text-indigo-800 flex gap-3 mt-6">
-            <Info className="w-4 h-4 shrink-0 mt-0.5 text-indigo-600" />
+          <div className="p-4 bg-indigo-50/40 rounded-2xl border border-indigo-100/50 text-xs text-indigo-850 flex gap-3 mt-6">
+            <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5 text-indigo-600" />
             <p className="leading-relaxed font-medium">
-              Every pen is actively certified against key pathogens between breeding rotations.
+              Every pen is deeply cleaned and disinfected to keep our pigs healthy and free from germs.
             </p>
           </div>
         </div>

@@ -36,6 +36,79 @@ app.use(cors({
 
 app.use(express.json());
 
+// Cache configuration variables stored in server memory
+let cachedNews = null;
+let lastFetchTime = 0;
+const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+// GET /api/philippines-swine-news
+app.get('/api/philippines-swine-news', async (req, res) => {
+  try {
+    const currentTime = Date.now();
+
+    // 1. Check if we have valid cached data and if it is still "fresh" (under 24 hours old)
+    if (cachedNews && (currentTime - lastFetchTime < CACHE_DURATION)) {
+      console.log('Serving swine news from server cache. API credit saved.');
+      return res.json({ articles: cachedNews });
+    }
+
+    // 2. If the cache is expired or empty, verify the API key
+    const apiKey = process.env.NEWS_API_KEY;
+    if (!apiKey) {
+      return res.json({ articles: [], warning: 'NEWS_API_KEY is not configured on the server.' });
+    }
+
+    console.log('Cache expired or empty. Querying NewsAPI.org for fresh data...');
+    const query = encodeURIComponent('("African Swine Fever" OR swine OR hog OR "pig farming" OR "hog raising" OR "pig disease") AND Philippines');
+    const url = `https://newsapi.org/v2/everything?q=${query}&sortBy=publishedAt&language=en&pageSize=4&apiKey=${apiKey}`;
+
+    const newsResponse = await fetch(url, {
+      headers: {
+        'User-Agent': 'SwineSync-App/1.0'
+      }
+    });
+    const data = await newsResponse.json();
+
+    if (data.status !== 'ok') {
+      throw new Error(data.message || 'Failed to fetch news from NewsAPI.org');
+    }
+
+    // Format the incoming articles
+    const articles = (data.articles ?? []).map((art, idx) => ({
+      id: `live-disease-${idx}`,
+      title: art.title,
+      summary: art.description || 'No description provided. Click read full briefing to learn more.',
+      content: art.content || 'Read the full coverage on the original publisher site.',
+      category: 'disease',
+      date: new Date(art.publishedAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      }),
+      author: art.source?.name || 'Veterinary Monitor',
+      important: false,
+      url: art.url, // Restored the mapping of the original URL link
+      color: 'border-l-4 border-l-rose-500'
+    }));
+
+    // 3. Update cache values with the fresh data
+    cachedNews = articles;
+    lastFetchTime = currentTime;
+
+    res.json({ articles });
+  } catch (error) {
+    console.error('Error fetching live news:', error.message);
+    
+    // 4. Defensive Fallback: If NewsAPI is down or your limit is reached, return expired cache if we have it
+    if (cachedNews) {
+      console.log('Serving expired cache as a fallback due to API error.');
+      return res.json({ articles: cachedNews });
+    }
+    
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/pigs
 app.get('/api/pigs', async (req, res) => {
   try {
