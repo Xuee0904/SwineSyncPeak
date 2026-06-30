@@ -220,7 +220,7 @@ export default function App() {
             <div className="space-y-3.5">
               <h4 className="text-xs font-bold text-white uppercase tracking-widest">Platform</h4>
               <ul className="space-y-2 text-xs">
-                {['Home', 'Safety & Protocols', 'News', 'Swine Catalog', 'FAQs', 'Contact Us'].map((label, i) => {
+                {['Home', 'Safety & Protocols', 'News & Announcements', 'Swine Catalog', 'FAQs', 'Contact Us'].map((label, i) => {
                   const ids = ['home', 'protocols', 'news', 'catalog', 'faqs', 'contact'];
                   return (
                     <li key={ids[i]}>
