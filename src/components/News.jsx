@@ -143,9 +143,26 @@ export default function News() {
         if (!response.ok) throw new Error('API unreachable');
         
         const data = await response.json();
-        if (data.articles && data.articles.length > 0) {
-          setLiveDiseaseNews(data.articles);
+
+        // Client-side safety net: discard any article that slipped through
+        // the server filter and doesn't mention swine/pig/hog in its title or summary.
+        const SWINE_KEYWORDS = [
+          'swine', 'pig', 'hog', 'pork', 'piglet', 'sow', 'boar',
+          'asf', 'african swine fever', 'foot-and-mouth', 'fmd',
+          'livestock', 'veterinary', 'porcine', 'piggery',
+        ];
+        const isSwineRelated = (art) => {
+          const text = `${art.title ?? ''} ${art.summary ?? ''}`.toLowerCase();
+          return SWINE_KEYWORDS.some(kw => text.includes(kw));
+        };
+
+        const swineArticles = (data.articles ?? []).filter(isSwineRelated);
+
+        if (swineArticles.length > 0) {
+          setLiveDiseaseNews(swineArticles);
         } else {
+          // No relevant live news — fall back to curated local content
+          console.warn('No swine-related articles passed client filter. Using offline fallback.');
           setLiveDiseaseNews(defaultOfflineDiseaseNews);
         }
       } catch (err) {
@@ -315,8 +332,13 @@ export default function News() {
       )}
 
       {filteredNews.length === 0 && !loading && (
-        <div className="text-center py-12 bg-white rounded-3xl border border-slate-100 text-slate-400 text-xs">
-          No articles found in this category.
+        <div className="text-center py-16 bg-white rounded-3xl border border-slate-100 space-y-3">
+          <div className="text-3xl">🐷</div>
+          <p className="text-sm font-semibold text-slate-600">No swine-related articles found</p>
+          <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+            The news feed only displays content related to swine health, disease alerts, and farm operations.
+            Check back later for fresh updates.
+          </p>
         </div>
       )}
 
