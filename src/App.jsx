@@ -167,6 +167,11 @@ export default function App() {
           {/* DIVIDER */}
           <div className="w-full border-t border-slate-100" />
 
+          {/* CATALOG */}
+          <section id="catalog" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
+            <Catalog />
+          </section>
+
           {/* FAQs */}
           <section id="faqs" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
             <FAQs scrollToSection={scrollToSection} />
