@@ -18,10 +18,8 @@ export default function App() {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const observerRef = useRef(null);
 
-  // Scroll-spy: track which section is in view (only relevant when logged out)
+  // Scroll-spy: track which section is in view
   useEffect(() => {
-    if (loggedInUser) return;
-
     const sectionIds = ['home', 'protocols', 'news', 'catalog', 'faqs', 'contact'];
 
     observerRef.current = new IntersectionObserver(
@@ -45,8 +43,6 @@ export default function App() {
 
   // Scroll-reveal: animate sections entering viewport
   useEffect(() => {
-    if (loggedInUser) return;
-
     const revealEls = document.querySelectorAll('.reveal-on-scroll');
     const revealObserver = new IntersectionObserver(
       (entries) => {
@@ -73,6 +69,7 @@ export default function App() {
   const handleLoginSuccess = (name) => {
     setLoggedInUser(name);
     showToast(`Welcome back, ${name}! Staff session established successfully.`, 'success');
+    // Scroll to top (dashboard view)
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -97,15 +94,17 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800 antialiased" id="swinesync-app-root">
 
-      {/* Navigation Header */}
-      <Navbar
-        activeSection={activeSection}
-        scrollToSection={scrollToSection}
-        onOpenLogin={() => setIsLoginOpen(true)}
-        loggedInUser={loggedInUser}
-        onLogout={handleLogout}
-        isLandingMode={!loggedInUser} // Hides navigation scroll links when logged in
-      />
+      {/* Navigation Header — hidden when staff is logged in */}
+      {!loggedInUser && (
+        <Navbar
+          activeSection={activeSection}
+          scrollToSection={scrollToSection}
+          onOpenLogin={() => setIsLoginOpen(true)}
+          loggedInUser={loggedInUser}
+          onLogout={handleLogout}
+          isLandingMode={!loggedInUser}
+        />
+      )}
 
       {/* Toast Alert notification */}
       {toast && (
@@ -126,28 +125,27 @@ export default function App() {
       )}
 
       {/* Back to Top button */}
-      <button
-        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className={`back-to-top ${showBackToTop ? 'visible' : ''}`}
-        aria-label="Scroll back to top"
-        id="back-to-top-btn"
-      >
-        <ArrowUp className="w-4 h-4" />
-      </button>
+      {!loggedInUser && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className={`back-to-top ${showBackToTop ? 'visible' : ''}`}
+          aria-label="Scroll back to top"
+          id="back-to-top-btn"
+        >
+          <ArrowUp className="w-4 h-4" />
+        </button>
+      )}
 
-      {/* Conditional Main view splits public landing elements and authenticated workspace */}
+      {/* ── STAFF PORTAL (only when logged in) ── */}
       {loggedInUser ? (
-        /* ── STAFF PORTAL VIEW (Dashboard handles Sidenav + Active Views) ── */
-        <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10" id="staff-portal-layout">
-          <Dashboard scrollToSection={scrollToSection} loggedInUser={loggedInUser} />
-        </main>
+        <Dashboard loggedInUser={loggedInUser} scrollToSection={scrollToSection} onLogout={handleLogout} />
       ) : (
-        /* ── PUBLIC LANDING PAGE (Scrollable landing sections) ── */
+        /* ── PUBLIC LANDING PAGE (scrollable) ── */
         <main className="flex-grow" id="public-landing">
 
-          {/* HERO / HOME (Without side nav/calendar) */}
+          {/* HERO / HOME */}
           <section id="home" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-20">
-            <Dashboard scrollToSection={scrollToSection} loggedInUser={loggedInUser} />
+            <Dashboard scrollToSection={scrollToSection} />
           </section>
 
           {/* DIVIDER */}
@@ -169,20 +167,12 @@ export default function App() {
           {/* DIVIDER */}
           <div className="w-full border-t border-slate-100" />
 
-          {/* PUBLIC SWINE CATALOG */}
-          <section id="catalog" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
-            <Catalog loggedInUser={loggedInUser} />
-          </section>
-
-          {/* DIVIDER */}
-          <div className="w-full border-t border-slate-100" />
-
           {/* FAQs */}
           <section id="faqs" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
             <FAQs scrollToSection={scrollToSection} />
           </section>
 
-          {/* CONTACT */}
+          {/* CONTACT — full-width dark background band */}
           <div id="contact" className="bg-slate-950 py-20 reveal-on-scroll">
             <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
               <Contact />
@@ -192,15 +182,15 @@ export default function App() {
         </main>
       )}
 
-      {/* Staff Login Overlay Modal (Restored Here) */}
+      {/* Staff Login Overlay Modal */}
       <LoginModal
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
         onLoginSuccess={handleLoginSuccess}
       />
 
-      {/* Public Footer */}
-      <footer className="bg-slate-900 text-slate-400 border-t border-slate-800" id="swinesync-footer">
+      {/* Public Footer — hidden when staff is logged in */}
+      {!loggedInUser && <footer className="bg-slate-900 text-slate-400 border-t border-slate-800" id="swinesync-footer">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8 text-left">
             {/* Brand column */}
@@ -220,14 +210,13 @@ export default function App() {
             <div className="space-y-3.5">
               <h4 className="text-xs font-bold text-white uppercase tracking-widest">Platform</h4>
               <ul className="space-y-2 text-xs">
-                {['Home', 'Safety & Protocols', 'News & Announcements', 'Swine Catalog', 'FAQs', 'Contact Us'].map((label, i) => {
-                  const ids = ['home', 'protocols', 'news', 'catalog', 'faqs', 'contact'];
+                {['Home', 'Safety & Protocols', 'News', 'FAQs', 'Contact Us'].map((label, i) => {
+                  const ids = ['home', 'protocols', 'news', 'faqs', 'contact'];
                   return (
                     <li key={ids[i]}>
                       <button
                         onClick={() => scrollToSection(ids[i])}
                         className="hover:text-white transition-colors cursor-pointer text-left"
-                        disabled={!!loggedInUser}
                       >
                         {label}
                       </button>
@@ -236,14 +225,34 @@ export default function App() {
                 })}
               </ul>
             </div>
+
+            {/* Infrastructure info */}
+            <div className="space-y-3.5">
+              <h4 className="text-xs font-bold text-white uppercase tracking-widest">Security Status</h4>
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>All Systems Operational</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <ShieldCheck className="w-4 h-4 text-primary-500" />
+                  <span>SSL SECURED • AES-256</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Copyright line */}
           <div className="pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-            <p>&copy; {new Date().getFullYear()} SwineSync. All rights reserved.</p>
+            <p>&copy; {new Date().getFullYear()} SwineSync Livestock Ecosystem. All rights reserved.</p>
+            <div className="flex items-center gap-1">
+              <span>Designed for precision agriculture with</span>
+              <Heart className="w-3 h-3 text-swine-450 text-rose-500 fill-rose-500" />
+              <span>and React.js.</span>
+            </div>
           </div>
         </div>
-      </footer>
+      </footer>}
 
     </div>
   );

@@ -1,303 +1,430 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Catalog from './Catalog';
+import SideNav, { NAV_ITEMS } from './SideNav';
 import {
-  ShieldCheck, Users, Activity, BarChart3, ChevronRight, Sparkles,
-  Database, Globe, ArrowUpRight, LayoutDashboard, TrendingUp,
-  ClipboardList, Receipt, Settings, Calendar as CalendarIcon, Baby
+  Sparkles, Database, ArrowUpRight, ChevronRight,
+  AlertTriangle, CheckSquare, Square,
+  Bell, ChevronLeft, Settings, Menu,
 } from 'lucide-react';
 
-export default function Dashboard({ scrollToSection, loggedInUser }) {
-  const [activeSideTab, setActiveSideTab] = useState('dashboard');
+// ─── Temporary inventory data (no DB table yet) ───────────────────────────────
+// dailyUsage = % points consumed per day — used to forecast when stock hits LOW_THRESHOLD
+const LOW_THRESHOLD = 15;
+const INVENTORY = [
+  { name: 'Supplements',      percent: 8,  dailyUsage: 0.8, color: '#ef4444' },
+  { name: 'High Protein Mix', percent: 42, dailyUsage: 3.5, color: '#f59e0b' },
+  { name: 'Grower Feed',      percent: 85, dailyUsage: 4.2, color: '#16a34a' },
+  { name: 'Amoxicillin',      percent: 30, dailyUsage: 2.8, color: '#f59e0b' },
+  { name: 'Iron Injection',   percent: 60, dailyUsage: 1.5, color: '#16a34a' },
+];
 
-  const sideNavItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'swine_management', label: 'Swine Management', icon: Users },
-    { id: 'growth_program', label: 'Growth Program', icon: TrendingUp },
-    { id: 'health_management', label: 'Health Management', icon: Activity },
-    { id: 'breeding_logs', label: 'Breeding Logs', icon: Baby },
-    { id: 'inventory', label: 'Inventory Management', icon: ClipboardList },
-    { id: 'transactions', label: 'Transaction Records', icon: Receipt },
-    { id: 'admin', label: 'Admin Settings', icon: Settings },
-  ];
+function daysUntilLow(percent, dailyUsage) {
+  if (percent <= LOW_THRESHOLD) return null;
+  const days = Math.floor((percent - LOW_THRESHOLD) / dailyUsage);
+  return days <= 7 ? days : null;
+}
 
-  const calendarEvents = [
-    { date: 5, month: 'Jun', title: 'Fan timer adjustments', type: 'ops' },
-    { date: 10, month: 'Jun', title: 'Nursery B Vaccinations', type: 'health' },
-    { date: 12, month: 'Jun', title: 'Database Schema Sync', type: 'tech' },
-    { date: 15, month: 'Jun', title: 'Nursery Feed Transition', type: 'feed' },
-    { date: 18, month: 'Jun', title: 'Q3 Biosecurity Audit', type: 'safety' },
-  ];
+// ─── Static data (will be replaced with DB queries later) ────────────────────
+const HEALTH_ALERTS = [
+  { tag: 'Sow #402',   pen: 'Pen A2', status: 'High Fever',        severity: 'high'   },
+  { tag: 'Batch #12',  pen: 'Pen 4',  status: 'Atypical Coughing', severity: 'medium' },
+];
 
-  const stats = [
-    {
-      title: 'Active Swine Herd',
-      value: '1,482',
-      change: '+4.2%',
-      changeType: 'positive',
-      icon: Users,
-      color: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-      sparkline: [20, 25, 23, 28, 30, 35, 34, 38, 42]
-    },
-    {
-      title: 'Biosecurity Index',
-      value: '98.4%',
-      change: 'Optimal',
-      changeType: 'positive',
-      icon: ShieldCheck,
-      color: 'bg-indigo-50 text-indigo-600 border-indigo-100',
-      sparkline: [95, 96, 95.8, 97.2, 97.5, 98, 98.1, 98.4, 98.4]
-    },
-    {
-      title: 'Feed Efficiency (FCR)',
-      value: '2.68',
-      change: '-0.12 FCR',
-      changeType: 'positive',
-      icon: BarChart3,
-      color: 'bg-amber-50 text-amber-600 border-amber-100',
-      sparkline: [2.9, 2.85, 2.8, 2.76, 2.72, 2.7, 2.68, 2.68, 2.68]
-    },
-    {
-      title: 'Livestock Wellness',
-      value: 'Excellent',
-      change: '0 Alerts',
-      changeType: 'neutral',
-      icon: Activity,
-      color: 'bg-rose-50 text-rose-600 border-rose-100',
-      sparkline: [10, 8, 5, 4, 2, 1, 0, 0, 0]
-    }
-  ];
+const TODO_ITEMS = [
+  { id: 't1', text: 'Vaccinate Batch #12',          sub: 'Scheduled for Pen 4 & 5 • High Priority',          urgency: 'TODAY',  done: false },
+  { id: 't2', text: 'Check Sow ID 402 Gestation',   sub: 'Day 110 monitoring • Biosecurity Alert pending',    urgency: 'URGENT', done: false },
+  { id: 't3', text: 'Bio-Security Perimeter Check',  sub: 'Routine weekly inspection of fence lines',          urgency: 'WED',    done: false },
+];
 
-  // Configure modular display elements based on user context
-  const showSidebar = !!loggedInUser;
-  const showCalendar = !!loggedInUser && activeSideTab === 'dashboard';
+const EVENTS = [
+  { date: 5,  title: 'Fan Timer Adjustments',   type: 'ops'    },
+  { date: 10, title: 'Nursery B Vaccinations',  type: 'health' },
+  { date: 12, title: 'Database Schema Sync',    type: 'tech'   },
+  { date: 15, title: 'Nursery Feed Transition', type: 'feed'   },
+  { date: 18, title: 'Q3 Biosecurity Audit',    type: 'safety' },
+  { date: 27, title: 'Active Day',              type: 'active' },
+];
 
-  // Calculate grid layout sizes
-  const mainColSpan = (showSidebar && showCalendar) 
-    ? 'lg:col-span-6' 
-    : (showSidebar && !showCalendar)
-      ? 'lg:col-span-9'
-      : 'lg:col-span-12';
+const EVENT_COLORS = {
+  ops: 'bg-amber-400', health: 'bg-rose-500', tech: 'bg-indigo-500',
+  feed: 'bg-emerald-500', safety: 'bg-rose-700', active: 'bg-emerald-600',
+};
+const EVENT_LABELS = {
+  ops: 'Operations', health: 'Veterinary', tech: 'System Tech',
+  feed: 'Feeding', safety: 'Safety', active: 'Active Day',
+};
 
+const MONTH_NAMES = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+];
+const DAY_LABELS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+
+// ─── Shared sub-components ────────────────────────────────────────────────────
+function Pill({ children, color = 'slate' }) {
+  const map = {
+    red:   'bg-red-100    text-red-700    border-red-200',
+    yellow:'bg-amber-100  text-amber-700  border-amber-200',
+    green: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    slate: 'bg-slate-100  text-slate-600  border-slate-200',
+  };
   return (
-    <div className="animate-fade-in text-left pb-16" id="dashboard-section">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
-        {/* ── LEFT COLUMN: SIDE NAVIGATION (Staff Only) ── */}
-        {showSidebar && (
-          <aside className="lg:col-span-3 space-y-6">
-            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-4">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-2">System Navigation</h3>
-              <nav className="space-y-1">
-                {sideNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeSideTab === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => setActiveSideTab(item.id)}
-                      className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-semibold tracking-wide transition-all cursor-pointer ${
-                        isActive
-                          ? 'bg-primary-50 text-primary-700 shadow-sm border-l-4 border-primary-600'
-                          : 'text-slate-650 hover:text-slate-900 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Icon className={`w-4 h-4 ${isActive ? 'text-primary-600' : 'text-slate-450'}`} />
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-          </aside>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wide ${map[color]}`}>
+      {children}
+    </span>
+  );
+}
+
+function SectionCard({ title, action, actionLabel, children, id }) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden" id={id}>
+      <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-50">
+        <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+        {action && (
+          <button onClick={action} className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 transition-colors cursor-pointer">
+            {actionLabel}
+          </button>
         )}
+      </div>
+      <div className="p-5">{children}</div>
+    </div>
+  );
+}
 
-        {/* ── CENTER COLUMN: ACTIVE TAB INTERFACE ── */}
-        <main className={`${mainColSpan} space-y-10`}>
-          
-          {/* View Tab A: Dashboard Overview */}
-          {activeSideTab === 'dashboard' && (
-            <>
-              {/* Conditional Banner based on login status */}
-              {loggedInUser ? (
-                /* Secured Staff Welcome Greeting Banner */
-                <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-850 to-emerald-950 text-white rounded-3xl p-6 sm:p-8 shadow-md">
-                  <div className="absolute top-0 right-0 -mt-20 -mr-20 w-64 h-64 bg-emerald-500/10 blur-3xl pointer-events-none" />
-                  <div className="relative space-y-4">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
-                      <ShieldCheck className="w-3.5 h-3.5" />
-                      Secure Staff Session
-                    </div>
-                    <h1 className="text-2xl sm:text-3xl font-black font-display tracking-tight leading-snug text-white">
-                      Welcome back, {loggedInUser}
-                    </h1>
-                    <p className="text-xs text-slate-350 leading-relaxed font-light max-w-xl">
-                      System status is nominal. All RFID telemetry scanner nodes are online. Use the navigation panel on the left to manage animal profiles, growth indexes, and compliance checks.
-                    </p>
-                  </div>
-                </section>
-              ) : (
-                /* Public Facing Hero Banner for Guests */
-                <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-primary-950 text-white rounded-3xl p-6 sm:p-8 shadow-md">
-                  <div className="absolute top-0 right-0 -mt-20 -mr-20 w-64 h-64 bg-primary-500/20 blur-3xl pointer-events-none" />
-                  <div className="relative space-y-5">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-500/20 border border-primary-500/30 text-primary-300 text-[10px] font-bold uppercase tracking-wider">
-                      <Sparkles className="w-3 h-3" />
-                      Precision Agriculture Portal
-                    </div>
-                    <h1 className="text-2xl sm:text-3xl font-black font-display tracking-tight leading-snug">
-                      Optimized Swine Operations
-                    </h1>
-                    <p className="text-xs text-slate-300 leading-relaxed font-light">
-                      Monitor real-time telemetry, check biosecurity guidelines, and browse catalog categories across sectors A, B, and C.
-                    </p>
-                    <div className="flex flex-wrap gap-3 pt-1">
-                      <button
-                        onClick={() => scrollToSection('protocols')}
-                        className="px-4 py-2.5 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white font-bold text-xs rounded-lg shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        Protocols
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => scrollToSection('catalog')}
-                        className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        View Catalog
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </section>
-              )}
+// ─── Main Component ───────────────────────────────────────────────────────────
+export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
+  const [activeTab,   setActiveTab]  = useState('dashboard');
+  const [todos,       setTodos]      = useState(TODO_ITEMS);
+  const [calMonth,    setCalMonth]   = useState({ year: 2026, month: 9 });
+  const [mobileNav,   setMobileNav]  = useState(false);
+  const [pigStats,    setPigStats]   = useState({ total: 0, healthy: 0, sick: 0, quarantine: 0 });
 
-              {/* Ecosystem Telemetry Stats Grid */}
-              <section className="space-y-4">
-                <h2 className="text-base font-extrabold font-display text-slate-900 uppercase tracking-wider pl-1">Ecosystem Telemetry</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {stats.map((stat, i) => {
-                    const Icon = stat.icon;
-                    return (
-                      <div
-                        key={i}
-                        className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-0.5">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{stat.title}</span>
-                            <div className="text-2xl font-black font-display text-slate-900 tracking-tight">{stat.value}</div>
-                          </div>
-                          <div className={`p-2.5 rounded-xl border ${stat.color} transition-transform group-hover:scale-105`}>
-                            <Icon className="w-4 h-4" />
-                          </div>
-                        </div>
+  useEffect(() => {
+    fetch('/api/pigs')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d?.data) return;
+        setPigStats({
+          total:      d.data.length,
+          healthy:    d.data.filter(p => p.status === 'healthy').length,
+          sick:       d.data.filter(p => p.status === 'sick').length,
+          quarantine: d.data.filter(p => p.status === 'quarantine').length,
+        });
+      })
+      .catch(() => {});
+  }, []);
 
-                        <div className="mt-4 pt-3 border-t border-slate-50 flex items-center justify-between text-[10px]">
-                          <span className="text-slate-400 font-semibold uppercase">Trend</span>
-                          <span className={`font-bold px-2 py-0.5 rounded-full ${
-                            stat.changeType === 'positive' ? 'text-emerald-700 bg-emerald-50' : 'text-slate-600 bg-slate-100'
-                          }`}>
-                            {stat.change}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            </>
-          )}
+  const firstDay    = new Date(calMonth.year, calMonth.month, 1).getDay();
+  const daysInMonth = new Date(calMonth.year, calMonth.month + 1, 0).getDate();
+  const prevMonth   = () => setCalMonth(p => p.month === 0 ? { year: p.year - 1, month: 11 } : { ...p, month: p.month - 1 });
+  const nextMonth   = () => setCalMonth(p => p.month === 11 ? { year: p.year + 1, month: 0 } : { ...p, month: p.month + 1 });
 
-          {/* View Tab B: Swine Management Catalog View */}
-          {activeSideTab === 'swine_management' && (
-            <Catalog loggedInUser={loggedInUser} />
-          )}
+  const toggleTodo     = id => setTodos(ts => ts.map(t => t.id === id ? { ...t, done: !t.done } : t));
+  const completedTodos = todos.filter(t => t.done).length;
 
-          {/* Fallback View Tabs: System Integration Placeholders */}
-          {activeSideTab !== 'dashboard' && activeSideTab !== 'swine_management' && (
-            <div className="bg-white border border-slate-100 rounded-3xl p-12 text-center space-y-4 shadow-sm">
-              <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto text-slate-400">
-                <Database className="w-5 h-5 animate-pulse" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="font-bold text-slate-850 text-base">Module Under Integration</h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-                  Database synchronization is completing parameters setup for this administrative panel.
-                </p>
-              </div>
+  // ── Public hero (not logged in) ──────────────────────────────────────────
+  if (!loggedInUser) {
+    return (
+      <div className="animate-fade-in text-left pb-16" id="dashboard-section">
+        <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-8 sm:p-12 shadow-xl">
+          <div className="absolute inset-0 opacity-10 pointer-events-none"
+            style={{ backgroundImage: 'radial-gradient(circle at 70% 30%, #16a34a 0%, transparent 60%)' }} />
+          <div className="relative space-y-5 max-w-2xl">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
+              <Sparkles className="w-3 h-3" /> Precision Agriculture Portal
             </div>
-          )}
+            <h1 className="text-3xl sm:text-4xl font-black font-display tracking-tight leading-snug">
+              Optimized Swine Operations
+            </h1>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              Monitor real-time herd telemetry, review biosecurity guidelines, and browse our swine catalog across all facility sectors.
+            </p>
+            <div className="flex flex-wrap gap-3 pt-1">
+              <button onClick={() => scrollToSection?.('protocols')}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer">
+                View Protocols <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => scrollToSection?.('catalog')}
+                className="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer">
+                Swine Catalog <ArrowUpRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
-        </main>
+  // ── Staff portal ─────────────────────────────────────────────────────────
+  return (
+    /*
+      Outer wrapper: full viewport height, flex row.
+      The sidebar is `fixed` (handled in SideNav.jsx), so the main area
+      needs `ml-60` to avoid being hidden behind it on desktop.
+    */
+    <div className="flex h-screen bg-slate-50 overflow-hidden" id="staff-portal">
 
-        {/* ── RIGHT COLUMN: FARM CALENDAR PANEL (Staff Dashboard Only) ── */}
-        {showCalendar && (
-          <section className="lg:col-span-3 space-y-6">
-            <div className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-50 pb-3">
-                <div className="flex items-center gap-2">
-                  <CalendarIcon className="w-4 h-4 text-primary-655 text-primary-600" />
-                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Farm Calendar</h3>
-                </div>
-                <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-md">June 2026</span>
-              </div>
+      {/* ── SideNav (fixed, never scrolls) ── */}
+      <SideNav
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onClose={() => setMobileNav(false)}
+        onLogout={onLogout}
+        loggedInUser={loggedInUser}
+        mobileOpen={mobileNav}
+      />
 
-              {/* Simulated Calendar Grid */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-400">
-                  {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => (
-                    <div key={i}>{day}</div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-slate-700">
-                  {Array.from({ length: 30 }).map((_, i) => {
-                    const dayNum = i + 1;
-                    const hasEvent = calendarEvents.some(e => e.date === dayNum);
-                    return (
-                      <div
-                        key={i}
-                        className={`py-1.5 rounded-lg flex items-center justify-center relative ${
-                          hasEvent 
-                            ? 'bg-primary-50 text-primary-700 font-bold' 
-                            : 'hover:bg-slate-50'
+      {/*
+        Main content column:
+        - ml-60 on desktop to clear the fixed sidebar
+        - flex-col so the top bar stays pinned and only the content below it scrolls
+        - overflow-y-auto here ensures ONLY this column scrolls, not the whole page
+      */}
+      <div className="flex-1 flex flex-col ml-0 lg:ml-60 min-w-0 overflow-hidden">
+
+        {/* ── Sticky top bar ── */}
+        <header className="sticky top-0 z-10 bg-white border-b border-slate-100 px-5 py-3.5 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            {/* Hamburger — mobile only */}
+            <button
+              className="lg:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-50 cursor-pointer"
+              onClick={() => setMobileNav(true)}
+              aria-label="Open navigation"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <h1 className="text-sm font-extrabold text-slate-900 tracking-tight">
+              {NAV_ITEMS.find(n => n.id === activeTab)?.label ?? 'Dashboard'}
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="relative p-2 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors cursor-pointer">
+              <Bell className="w-5 h-5" />
+              {HEALTH_ALERTS.length > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 border border-white" />
+              )}
+            </button>
+            <button className="p-2 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors cursor-pointer">
+              <Settings className="w-5 h-5" />
+            </button>
+            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm flex items-center justify-center select-none cursor-pointer">
+              {loggedInUser?.charAt(0)?.toUpperCase()}
+            </div>
+          </div>
+        </header>
+
+        {/* ── Scrollable content area ── */}
+        <div className="flex-1 overflow-y-auto">
+
+          {/* Dashboard tab */}
+          {activeTab === 'dashboard' && (
+            <main className="p-5 lg:p-6 grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+
+              {/* LEFT column (spans 2) */}
+              <div className="lg:col-span-2 space-y-5">
+
+                {/* Health Alerts */}
+                <SectionCard title="⚠️ Active Health Alerts" id="health-alerts-card">
+                  {HEALTH_ALERTS.length === 0 ? (
+                    <p className="text-xs text-slate-400 py-2">No active health alerts — herd is healthy.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {HEALTH_ALERTS.map((alert, i) => (
+                        <div key={i} className={`flex items-center gap-4 p-3.5 rounded-xl border ${
+                          alert.severity === 'high' ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-100'
+                        }`}>
+                          <div className={`w-11 h-11 rounded-xl shrink-0 flex items-center justify-center text-xl
+                            ${alert.severity === 'high' ? 'bg-rose-100' : 'bg-amber-100'}`}>
+                            🐷
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-800 truncate">{alert.tag}</p>
+                            <p className="text-[11px] text-slate-500">{alert.pen}</p>
+                          </div>
+                          <Pill color={alert.severity === 'high' ? 'red' : 'yellow'}>{alert.status}</Pill>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </SectionCard>
+
+                {/* To-Do */}
+                <SectionCard
+                  title="To-Do"
+                  id="todo-card"
+                  action={() => {}}
+                  actionLabel={`${completedTodos}/${todos.length} done`}
+                >
+                  <div className="space-y-2.5">
+                    {todos.map(todo => (
+                      <button
+                        key={todo.id}
+                        onClick={() => toggleTodo(todo.id)}
+                        className={`w-full flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          todo.done
+                            ? 'bg-slate-50 border-slate-100 opacity-60'
+                            : 'bg-white border-slate-100 hover:border-slate-200 hover:shadow-sm'
                         }`}
                       >
-                        {dayNum}
-                        {hasEvent && (
-                          <span className="absolute bottom-0.5 w-1 h-1 rounded-full bg-primary-600" />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                        {todo.done
+                          ? <CheckSquare className="w-5 h-5 text-emerald-500 fill-emerald-100 shrink-0 mt-0.5" />
+                          : <Square className="w-5 h-5 text-slate-300 shrink-0 mt-0.5" />
+                        }
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold ${todo.done ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                            {todo.text}
+                          </p>
+                          <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">{todo.sub}</p>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                          todo.urgency === 'TODAY'  ? 'bg-emerald-100 text-emerald-700' :
+                          todo.urgency === 'URGENT' ? 'bg-rose-100    text-rose-700'    :
+                                                      'bg-slate-100   text-slate-500'
+                        }`}>{todo.urgency}</span>
+                      </button>
+                    ))}
+                  </div>
+                </SectionCard>
+
+                {/* Inventory */}
+                <SectionCard title="Inventory" actionLabel="Manage Inventory" action={() => setActiveTab('inventory')} id="inventory-card">
+                  <div className="space-y-4">
+                    {INVENTORY.map((item, i) => {
+                      const isLow = item.percent <= LOW_THRESHOLD;
+                      const days  = daysUntilLow(item.percent, item.dailyUsage);
+                      return (
+                        <div key={i} className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-slate-700">{item.name}</span>
+                            <div className="flex items-center gap-2">
+                              {isLow && <Pill color="red">Low Stock</Pill>}
+                              <span className="text-xs font-bold text-slate-500">{item.percent}%</span>
+                            </div>
+                          </div>
+                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${item.percent}%`, backgroundColor: item.color }} />
+                          </div>
+                          {!isLow && days !== null && (
+                            <p className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-600">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span>
+                                <strong>{item.name}</strong> will hit low stock in{' '}
+                                <strong>{days} {days === 1 ? 'day' : 'days'}</strong> — consider restocking soon.
+                              </span>
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </SectionCard>
               </div>
 
-              {/* Event Items List */}
-              <div className="space-y-3 pt-3 border-t border-slate-50">
-                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Upcoming Items</h4>
-                <div className="space-y-2.5">
-                  {calendarEvents.map((event, idx) => (
-                    <div key={idx} className="flex gap-3 text-xs items-start">
-                      <div className="flex flex-col items-center justify-center bg-slate-50 border border-slate-100 rounded-lg p-1.5 w-10 shrink-0">
-                        <span className="font-bold text-slate-850 leading-none">{event.date}</span>
-                        <span className="text-[8px] uppercase text-slate-400 font-bold mt-0.5">{event.month}</span>
-                      </div>
-                      <div className="text-left">
-                        <span className="font-semibold text-slate-800 line-clamp-1">{event.title}</span>
-                        <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block mt-0.5">
-                          {event.type === 'ops' ? 'Operations' :
-                           event.type === 'health' ? 'Veterinary' :
-                           event.type === 'tech' ? 'System Tech' : 'Feeding Nutrition'}
-                        </span>
-                      </div>
+              {/* RIGHT column */}
+              <div className="space-y-5">
+
+                {/* Herd stats */}
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: 'Total Herd',  value: pigStats.total,      color: 'text-slate-900',   bg: 'bg-white'       },
+                    { label: 'Healthy',     value: pigStats.healthy,    color: 'text-emerald-600', bg: 'bg-emerald-50'  },
+                    { label: 'Sick',        value: pigStats.sick,       color: 'text-amber-600',   bg: 'bg-amber-50'    },
+                    { label: 'Quarantine',  value: pigStats.quarantine, color: 'text-rose-600',    bg: 'bg-rose-50'     },
+                  ].map((s, i) => (
+                    <div key={i} className={`${s.bg} border border-slate-100 rounded-2xl p-4 shadow-sm text-center`}>
+                      <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-0.5">{s.label}</p>
                     </div>
                   ))}
                 </div>
-              </div>
-            </div>
-          </section>
-        )}
 
-      </div>
+                {/* Farm Schedule */}
+                <SectionCard title="Farm Schedule" id="farm-calendar">
+                  <div className="flex items-center justify-between mb-4">
+                    <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-slate-50 text-slate-400 cursor-pointer">
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-xs font-bold text-slate-700">
+                      {MONTH_NAMES[calMonth.month]} {calMonth.year}
+                    </span>
+                    <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-slate-50 text-slate-400 cursor-pointer">
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-7 mb-1">
+                    {DAY_LABELS.map(d => (
+                      <div key={d} className="text-center text-[9px] font-bold text-slate-400 py-1">{d}</div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-y-1">
+                    {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
+                    {Array.from({ length: daysInMonth }).map((_, i) => {
+                      const day = i + 1;
+                      const evt = EVENTS.find(e => e.date === day);
+                      const isToday = day === 27 && calMonth.month === 9 && calMonth.year === 2026;
+                      return (
+                        <div key={day} className="flex flex-col items-center py-0.5">
+                          <span className={`text-[11px] font-semibold w-6 h-6 flex items-center justify-center rounded-full transition-colors
+                            ${isToday ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                            {day}
+                          </span>
+                          {evt && <span className={`w-1.5 h-1.5 rounded-full mt-0.5 ${EVENT_COLORS[evt.type]}`} />}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 pt-4 border-t border-slate-50 space-y-2.5">
+                    {EVENTS.slice(0, 4).map((evt, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${EVENT_COLORS[evt.type]}`} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-semibold text-slate-700 truncate">{evt.title}</p>
+                          <p className="text-[9px] text-slate-400 font-semibold uppercase">{EVENT_LABELS[evt.type]}</p>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 shrink-0">Jun {evt.date}</span>
+                      </div>
+                    ))}
+                  </div>
+                </SectionCard>
+              </div>
+            </main>
+          )}
+
+          {/* Swine Management tab */}
+          {activeTab === 'swine_management' && (
+            <main className="p-5 lg:p-6">
+              <Catalog loggedInUser={loggedInUser} />
+            </main>
+          )}
+
+          {/* Placeholder tabs */}
+          {activeTab !== 'dashboard' && activeTab !== 'swine_management' && (
+            <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
+              <div className="text-center space-y-4 max-w-xs mx-auto">
+                <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">
+                  <Database className="w-6 h-6 text-slate-300 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-sm">Module Under Integration</h3>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    This section is being connected to the database. Check back soon.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActiveTab('dashboard')}
+                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                >
+                  ← Back to Dashboard
+                </button>
+              </div>
+            </main>
+          )}
+
+        </div>{/* end scrollable area */}
+      </div>{/* end main column */}
     </div>
   );
 }
