@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import LoginModal from './components/LoginModal';
-import Dashboard from './components/Dashboard';
-import Protocols from './components/Protocols';
-import News from './components/News';
-import Catalog from './components/Catalog';
-import FAQs from './components/FAQs';
-import Contact from './components/Contact';
+import Dashboard from './pages/Dashboard';
+import Protocols from './landingpage/Protocols';
+import News from './landingpage/News';
+import Catalog from './landingpage/Catalog';
+import FAQs from './landingpage/FAQs';
+import Contact from './landingpage/Contact';
 import { ShieldCheck, Heart, CheckCircle2, X, ArrowUp } from 'lucide-react';
 import './App.css';
 

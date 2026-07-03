@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import Catalog from './Catalog';
-import SideNav, { NAV_ITEMS } from './SideNav';
+import Catalog from '../landing-page/Catalog';
+import SideNav, { NAV_ITEMS } from '../components/SideNav';
 import {
   Sparkles, Database, ArrowUpRight, ChevronRight,
   AlertTriangle, CheckSquare, Square,
