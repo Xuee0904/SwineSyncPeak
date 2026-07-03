@@ -2,11 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import LoginModal from './components/LoginModal';
 import Dashboard from './pages/Dashboard';
-import Protocols from './landingpage/Protocols';
-import News from './landingpage/News';
-import Catalog from './landingpage/Catalog';
-import FAQs from './landingpage/FAQs';
-import Contact from './landingpage/Contact';
+import Protocols from './landing-page/Protocols';
+import News from './landing-page/News';
+import Catalog from './landing-page/Catalog';
+import FAQs from './landing-page/FAQs';
+import Contact from './landing-page/Contact';
 import { ShieldCheck, Heart, CheckCircle2, X, ArrowUp } from 'lucide-react';
 import './App.css';
 
