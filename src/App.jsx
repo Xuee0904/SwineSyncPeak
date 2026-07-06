@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import LoginModal from './components/LoginModal';
+import UpdatePasswordModal from './components/UpdatePasswordModal';
 import Dashboard from './pages/Dashboard';
 import Protocols from './landing-page/Protocols';
 import News from './landing-page/News';
@@ -8,17 +9,53 @@ import Catalog from './landing-page/Catalog';
 import FAQs from './landing-page/FAQs';
 import Contact from './landing-page/Contact';
 import { ShieldCheck, Heart, CheckCircle2, X, ArrowUp } from 'lucide-react';
+import { supabase } from './supabaseClient';
 import './App.css';
 
 export default function App() {
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState(null);
-  const [toast, setToast] = useState(null);
-  const [activeSection, setActiveSection] = useState('home');
-  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [isLoginOpen, setIsLoginOpen]                   = useState(false);
+  const [isUpdatePasswordOpen, setIsUpdatePasswordOpen] = useState(false);
+  const [updatePasswordView, setUpdatePasswordView]     = useState('send-email');
+  const [loggedInUser, setLoggedInUser]                 = useState(null);
+  const [toast, setToast]                               = useState(null);
+  const [activeSection, setActiveSection]               = useState('home');
+  const [showBackToTop, setShowBackToTop]               = useState(false);
   const observerRef = useRef(null);
 
-  // Scroll-spy: track which section is in view
+  // ── Supabase PASSWORD_RECOVERY handler ─────────────────────────────────────
+  // ─── Supabase PASSWORD_RECOVERY handler ─────────────────────────────────────
+  useEffect(() => {
+    const openRecoveryModal = () => {
+      setIsLoginOpen(false);
+      setUpdatePasswordView('update-password');
+      setIsUpdatePasswordOpen(true);
+    };
+
+  // 1️⃣ Robust raw string check — catches implicit redirects, query redirects,
+  // and links sanitized/encoded by different email clients
+    const href = window.location.href.toLowerCase();
+    const hasRecoveryToken = 
+      href.includes('type=recovery') || 
+      href.includes('recovery') || 
+      href.includes('access_token');
+
+    if (hasRecoveryToken) {
+      openRecoveryModal();
+      // Clean the token/hash out of the address bar to keep the URL clean
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+
+  // 2️⃣ Ongoing listener — catches PKCE code-exchange events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        openRecoveryModal();
+      }
+    });
+
+    return () => subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
   useEffect(() => {
     const sectionIds = ['home', 'protocols', 'news', 'catalog', 'faqs', 'contact'];
 
@@ -192,6 +229,19 @@ export default function App() {
         isOpen={isLoginOpen}
         onClose={() => setIsLoginOpen(false)}
         onLoginSuccess={handleLoginSuccess}
+        onForgotPassword={() => {
+          setUpdatePasswordView('send-email');
+          setIsLoginOpen(false);
+          setIsUpdatePasswordOpen(true);
+        }}
+      />
+
+      {/* Update Password Modal */}
+      <UpdatePasswordModal
+        isOpen={isUpdatePasswordOpen}
+        initialView={updatePasswordView}
+        onClose={() => setIsUpdatePasswordOpen(false)}
+        onBackToLogin={() => { setIsUpdatePasswordOpen(false); setIsLoginOpen(true); }}
       />
 
       {/* Public Footer — hidden when staff is logged in */}

@@ -393,15 +393,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {/* Swine Management tab */}
-          {activeTab === 'swine_management' && (
-            <main className="p-5 lg:p-6">
-              <Catalog loggedInUser={loggedInUser} />
-            </main>
-          )}
-
           {/* Placeholder tabs */}
-          {activeTab !== 'dashboard' && activeTab !== 'swine_management' && (
+          {activeTab !== 'dashboard' && (
             <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
               <div className="text-center space-y-4 max-w-xs mx-auto">
                 <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">

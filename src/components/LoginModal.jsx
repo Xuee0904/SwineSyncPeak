@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2, X } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
 // ─── Minimalist Pig Nose Logo ─────────────────────────────────────────────────
@@ -58,13 +58,12 @@ function Field({ label, htmlFor, error, touched, children }) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
+export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPassword }) {
   const [email, setEmail]               = useState('');
   const [password, setPassword]         = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading]       = useState(false);
   const [serverError, setServerError]   = useState('');
-  const [resetSent, setResetSent]       = useState(false);
   const [touched, setTouched]           = useState({ email: false, password: false });
 
   if (!isOpen) return null;
@@ -77,7 +76,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
 
   const handleClose = () => {
     setEmail(''); setPassword(''); setServerError('');
-    setResetSent(false); setTouched({ email: false, password: false });
+    setTouched({ email: false, password: false });
     onClose();
   };
 
@@ -85,7 +84,6 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     e.preventDefault();
     touchAll();
     setServerError('');
-    setResetSent(false);
     if (!isFormValid) return;
 
     setIsLoading(true);
@@ -122,17 +120,10 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
     }
   };
 
-  const handleForgotPassword = async (e) => {
+  const handleForgotPassword = (e) => {
     e.preventDefault();
-    setServerError(''); setResetSent(false);
-    if (!email.trim() || !EMAIL_RE.test(email)) {
-      setTouched((t) => ({ ...t, email: true }));
-      setServerError('Enter a valid email address above first.');
-      return;
-    }
-    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim());
-    if (resetErr) setServerError(resetErr.message);
-    else setResetSent(true);
+    handleClose();
+    if (onForgotPassword) onForgotPassword();
   };
 
   const inputBase = [
@@ -214,13 +205,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }) {
             </div>
           )}
 
-          {/* Reset sent */}
-          {resetSent && (
-            <div className="flex items-start gap-2 sm:gap-2.5 p-3 sm:p-3.5 bg-emerald-50 border border-emerald-100 rounded-xl text-[11px] sm:text-xs text-emerald-700 font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 mt-0.5 text-emerald-500" />
-              Reset email sent to <strong>{email}</strong>. Check your inbox.
-            </div>
-          )}
+
 
           {/* Email */}
           <Field

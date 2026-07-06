@@ -1,88 +1,45 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { supabase } from '../supabaseClient';
 import {
   Search, Eye, RefreshCw, Database, Loader2, WifiOff,
-  Heart, Syringe, Tag, Weight, Calendar, Users, AlertTriangle, Baby,
+  Heart, Syringe, Tag, Weight, Calendar, HelpCircle,
+  ChevronLeft, ChevronRight, Baby, ShieldCheck, CheckCircle2,
+  AlertCircle, ShieldAlert, Award
 } from 'lucide-react';
 
-// ─── Constants & Configuration ────────────────────────────────────────────────
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+// ─── Constants & Program Feeds ────────────────────────────────────────────────
+const ITEMS_PER_PAGE = 6;
 
-const STATUS_STYLES = {
-  healthy:     'bg-emerald-50 text-emerald-800 border-emerald-100',
-  sick:        'bg-amber-50  text-amber-800  border-amber-100',
-  quarantine:  'bg-rose-50   text-rose-800   border-rose-100',
-  default:     'bg-slate-50  text-slate-700  border-slate-100',
+const GROUP_TABS = [
+  { id: 'all', label: 'All Groups' },
+  { id: 'weaner', label: 'Weaners' },
+  { id: 'grower', label: 'Growers' },
+  { id: 'finisher', label: 'Finishers' },
+  { id: 'boar', label: 'Boars' },
+  { id: 'sow', label: 'Sows' }
+];
+
+const FEED_PROGRAMS = {
+  Weaner: 'Pre-Starter Pellets (0.5 kg/day)',
+  Grower: 'Grower Mash (2.2 kg/day)',
+  Finisher: 'Finisher Pellets (3.0 kg/day)',
+  Boar: 'Breeder Developer (2.5 kg/day)',
+  Sow: 'Gestation Crumbles (2.0 kg/day)'
 };
 
-const BATCH_STATUS_STYLES = {
-  suckling:    'bg-sky-50    text-sky-800    border-sky-100',
-  weaned:      'bg-violet-50 text-violet-800 border-violet-100',
-  transferred: 'bg-slate-50  text-slate-700  border-slate-100',
-  default:     'bg-slate-50  text-slate-700  border-slate-100',
+// Fallback breeds based on swine groups for visual completeness
+const FALLBACK_BREEDS = {
+  Weaner: 'Large White',
+  Grower: 'Landrace',
+  Finisher: 'Duroc',
+  Boar: 'Pietrain',
+  Sow: 'Landrace'
 };
-
-// ─── API Helpers ──────────────────────────────────────────────────────────────
-async function fetchPigs({ search = '', status = 'all', gender = 'all' } = {}) {
-  const params = new URLSearchParams();
-  if (search)            params.set('search', search);
-  if (status !== 'all')  params.set('status', status);
-  if (gender !== 'all')  params.set('gender', gender);
-  
-  const res = await fetch(`${API_BASE_URL}/api/pigs?${params}`);
-  if (!res.ok) { 
-    const b = await res.json().catch(() => ({})); 
-    throw new Error(b.error || `Server error ${res.status}`); 
-  }
-  return res.json(); // { data: Pig[], count: N }
-}
-
-async function fetchPigDetails(pigId) {
-  const [healthRes, vaccRes] = await Promise.all([
-    fetch(`${API_BASE_URL}/api/health-logs?pig_id=${pigId}`),
-    fetch(`${API_BASE_URL}/api/vaccination-records?pig_id=${pigId}`),
-  ]);
-  const health = healthRes.ok ? await healthRes.json() : { data: [] };
-  const vacc   = vaccRes.ok  ? await vaccRes.json()   : { data: [] };
-  return { healthLogs: health.data ?? [], vaccinations: vacc.data ?? [] };
-}
-
-async function fetchPigletBatches({ search = '', status = 'all' } = {}) {
-  const params = new URLSearchParams();
-  if (search)           params.set('search', search);
-  if (status !== 'all') params.set('status', status);
-  
-  const res = await fetch(`${API_BASE_URL}/api/piglet-batches?${params}`);
-  if (!res.ok) { 
-    const b = await res.json().catch(() => ({})); 
-    throw new Error(b.error || `Server error ${res.status}`); 
-  }
-  return res.json(); // { data: PigletBatch[], count: N }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatRelativeTime(date) {
-  if (!date) return '';
-  const diff = Math.floor((new Date() - date) / 1000);
-  if (diff < 60)  return 'just now';
-  if (diff < 120) return '1 minute ago';
-  return `${Math.floor(diff / 60)} minutes ago`;
-}
 
 function formatDate(val) {
   if (!val) return '—';
   return new Date(val).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-function statusStyle(status, map = STATUS_STYLES) {
-  return map[status?.toLowerCase()] ?? map.default;
-}
-
-function calcAge(dob) {
-  if (!dob) return '—';
-  const months = Math.floor((new Date() - new Date(dob)) / (1000 * 60 * 60 * 24 * 30.44));
-  if (months < 1)  return '< 1 mo';
-  if (months < 24) return `${months} mo`;
-  return `${Math.floor(months / 12)} yr ${months % 12} mo`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -90,21 +47,15 @@ function LoadingSkeleton({ count = 6 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" aria-busy="true">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm animate-pulse">
-          <div className="flex justify-between mb-4">
-            <div className="h-6 w-24 bg-slate-100 rounded-lg" />
-            <div className="h-6 w-16 bg-slate-100 rounded-full" />
+        <div key={i} className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm animate-pulse space-y-4">
+          <div className="flex justify-between items-center">
+            <div className="h-6 w-20 bg-slate-100 rounded-lg" />
+            <div className="h-6 w-24 bg-slate-100 rounded-full" />
           </div>
-          <div className="h-5 w-3/5 bg-slate-100 rounded mb-2" />
-          <div className="h-4 w-2/5 bg-slate-100 rounded mb-6" />
-          <div className="grid grid-cols-2 gap-3 py-3 border-t border-b border-slate-50">
-            <div className="h-8 bg-slate-100 rounded" />
-            <div className="h-8 bg-slate-100 rounded" />
-          </div>
-          <div className="flex justify-between mt-5">
-            <div className="h-4 w-28 bg-slate-100 rounded" />
-            <div className="h-8 w-24 bg-slate-100 rounded-xl" />
-          </div>
+          <div className="h-7 w-3/5 bg-slate-100 rounded-lg" />
+          <div className="h-5 w-2/5 bg-slate-100 rounded-lg" />
+          <div className="h-16 bg-slate-50 rounded-2xl" />
+          <div className="h-10 bg-slate-100 rounded-xl" />
         </div>
       ))}
     </div>
@@ -118,15 +69,12 @@ function ErrorBanner({ message, onRetry }) {
         <WifiOff className="w-10 h-10" />
       </div>
       <div className="space-y-1">
-        <h3 className="font-bold text-slate-800 text-base">Failed to load records</h3>
+        <h3 className="font-bold text-slate-800 text-base">Connection Interrupted</h3>
         <p className="text-sm text-slate-500 max-w-sm leading-relaxed">{message}</p>
-        <p className="text-xs text-slate-400 mt-2">
-          Make sure the API is running: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">cd server && node index.js</code>
-        </p>
       </div>
       <button
         onClick={onRetry}
-        className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-xl shadow-md transition-colors cursor-pointer"
+        className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
       >
         <RefreshCw className="w-4 h-4" />
         Retry Connection
@@ -135,296 +83,160 @@ function ErrorBanner({ message, onRetry }) {
   );
 }
 
-// ─── Pig Card ─────────────────────────────────────────────────────────────────
-function PigCard({ pig, onViewDetails }) {
-  return (
-    <div
-      key={pig.pig_id}
-      className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group relative overflow-hidden"
-      id={`pig-card-${pig.pig_tag}`}
-    >
-      {pig.status === 'quarantine' && (
-        <div className="absolute top-0 left-0 right-0 h-1.5 bg-rose-500" />
-      )}
-      {pig.status === 'sick' && (
-        <div className="absolute top-0 left-0 right-0 h-1.5 bg-amber-400" />
-      )}
-
-      <div>
-        {/* Header row */}
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-xs font-bold text-slate-400 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg flex items-center gap-1">
-            <Tag className="w-3 h-3" />
-            {pig.pig_tag}
-          </span>
-          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${statusStyle(pig.status)}`}>
-            {pig.status ?? 'Unknown'}
-          </span>
-        </div>
-
-        {/* Gender + parity */}
-        <div className="mt-4 space-y-1">
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="font-semibold text-slate-700 capitalize">{pig.gender ?? '—'}</span>
-            {pig.parity_count > 0 && (
-              <>
-                <span className="text-slate-300">·</span>
-                <span>{pig.parity_count} {pig.parity_count === 1 ? 'litter' : 'litters'}</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Stats grid */}
-        <div className="grid grid-cols-2 gap-3 mt-4 py-3 border-t border-b border-slate-50 text-xs">
-          <div>
-            <span className="text-slate-400 block font-semibold flex items-center gap-1"><Weight className="w-3 h-3" /> Weight</span>
-            <span className="font-bold text-slate-800">{pig.weight != null ? `${pig.weight} kg` : '—'}</span>
-          </div>
-          <div>
-            <span className="text-slate-400 block font-semibold flex items-center gap-1"><Calendar className="w-3 h-3" /> Age</span>
-            <span className="font-bold text-slate-800">{calcAge(pig.date_of_birth)}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-5 flex items-center justify-between gap-2">
-        <span className="text-[10px] text-slate-400 italic">
-          DOB: {formatDate(pig.date_of_birth)}
-        </span>
-        <button
-          onClick={() => onViewDetails(pig)}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-50 hover:bg-primary-50 hover:text-primary-700 border border-slate-100 text-slate-600 font-bold text-xs rounded-xl transition-all cursor-pointer"
-          id={`view-pig-btn-${pig.pig_tag}`}
-        >
-          <Eye className="w-3.5 h-3.5" />
-          View Details
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Piglet Batch Card ────────────────────────────────────────────────────────
-function BatchCard({ batch, onViewDetails }) {
-  const survivability = batch.total_born_alive > 0
-    ? Math.round((batch.current_count / batch.total_born_alive) * 100)
-    : null;
-
-  return (
-    <div
-      className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between relative overflow-hidden"
-      id={`batch-card-${batch.batch_id}`}
-    >
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-sky-300 to-violet-300" />
-
-      <div>
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-xs font-bold text-slate-400 bg-slate-50 border border-slate-100 px-2 py-1 rounded-lg flex items-center gap-1">
-            <Baby className="w-3 h-3" />
-            {batch.batch_tag ?? batch.batch_id.slice(0, 8)}
-          </span>
-          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${statusStyle(batch.status, BATCH_STATUS_STYLES)}`}>
-            {batch.status ?? 'Unknown'}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mt-4 py-3 border-t border-b border-slate-50 text-xs">
-          <div>
-            <span className="text-slate-400 block font-semibold">Born Alive</span>
-            <span className="font-bold text-slate-800">{batch.total_born_alive}</span>
-          </div>
-          <div>
-            <span className="text-slate-400 block font-semibold">Current Count</span>
-            <span className="font-bold text-slate-800">{batch.current_count}</span>
-          </div>
-          <div>
-            <span className="text-slate-400 block font-semibold">Stillborn</span>
-            <span className="font-bold text-slate-800">{batch.stillborn_count}</span>
-          </div>
-          <div>
-            <span className="text-slate-400 block font-semibold">Avg Weight</span>
-            <span className="font-bold text-slate-800">{batch.average_weight != null ? `${batch.average_weight} kg` : '—'}</span>
-          </div>
-        </div>
-
-        {survivability != null && (
-          <div className="mt-3">
-            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
-              <span>Survivability</span>
-              <span className="font-bold text-slate-700">{survivability}%</span>
-            </div>
-            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full ${survivability >= 80 ? 'bg-emerald-400' : survivability >= 60 ? 'bg-amber-400' : 'bg-rose-400'}`}
-                style={{ width: `${survivability}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-5 flex items-center justify-between gap-2">
-        <span className="text-[10px] text-slate-400 italic">
-          Mummies: {batch.mummy_count}
-        </span>
-        <button
-          onClick={() => onViewDetails(batch)}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-50 hover:bg-sky-50 hover:text-sky-700 border border-slate-100 text-slate-600 font-bold text-xs rounded-xl transition-all cursor-pointer"
-        >
-          <Eye className="w-3.5 h-3.5" />
-          View Details
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Pig Detail Modal ─────────────────────────────────────────────────────────
-function PigDetailModal({ pig, onClose }) {
-  const [details, setDetails]   = useState(null);
-  const [loading, setLoading]   = useState(true);
-  const [detailErr, setDetailErr] = useState(null);
+// ─── Health Passport Modal ────────────────────────────────────────────────────
+function HealthPassportModal({ item, onClose }) {
+  const isPig = item.type === 'pig';
+  const vaccs = item.vaccinations || [];
 
   useEffect(() => {
-    fetchPigDetails(pig.pig_id)
-      .then(setDetails)
-      .catch((e) => setDetailErr(e.message))
-      .finally(() => setLoading(false));
-  }, [pig.pig_id]);
-
+    // Disable background scroll and prevent white scrollbar track leaking
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+  
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in"
       role="dialog"
       aria-modal="true"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left max-h-[90vh] flex flex-col">
-        <div className="h-2 bg-gradient-to-r from-primary-600 to-emerald-400 w-full shrink-0" />
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left max-h-[85vh] flex flex-col animate-slide-up">
 
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
-          aria-label="Close"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-
-        <div className="p-8 space-y-5 overflow-y-auto">
-          {/* Identity */}
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="font-mono text-xs font-bold text-slate-400 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-lg">
-                {pig.pig_tag}
+        {/* Modal Header */}
+        <div className="p-6 border-b border-slate-100 flex justify-between items-start shrink-0">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">
+                Health Passport
               </span>
-              <h2 className="text-2xl font-extrabold text-slate-900 mt-2 capitalize">
-                {pig.gender ?? 'Pig'} — {pig.status ?? ''}
-              </h2>
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200">
+                {item.group}
+              </span>
             </div>
-            <span className={`text-xs font-bold uppercase px-3 py-1 rounded-full border ${statusStyle(pig.status)}`}>
-              {pig.status ?? '—'}
-            </span>
+            <h2 className="text-2xl font-extrabold text-slate-900 mt-2 flex items-center gap-2">
+              <Syringe className="w-6 h-6 text-emerald-500" />
+              {item.tag}
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {item.breed} • {isPig ? 'Individual Swine Record' : 'Piglet Batch Record'}
+            </p>
           </div>
-
-          {/* Core stats */}
-          <div className="grid grid-cols-2 gap-4 bg-slate-50 p-5 rounded-2xl border border-slate-100 text-xs">
-            {[
-              ['Date of Birth',  formatDate(pig.date_of_birth)],
-              ['Age',            calcAge(pig.date_of_birth)],
-              ['Weight',         pig.weight != null ? `${pig.weight} kg` : '—'],
-              ['Gender',         pig.gender ?? '—'],
-              ['Parity Count',   pig.parity_count ?? 0],
-              ['Pen ID',         pig.pen_id ?? '—'],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <span className="text-slate-400 font-semibold block uppercase tracking-wide">{label}</span>
-                <span className="font-bold text-slate-800 text-sm mt-0.5 block">{value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Health logs */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-              <Heart className="w-3.5 h-3.5 text-rose-400" /> Health Logs
-            </h4>
-            {loading ? (
-              <div className="text-xs text-slate-400 animate-pulse">Loading records…</div>
-            ) : detailErr ? (
-              <div className="text-xs text-rose-500">{detailErr}</div>
-            ) : details?.healthLogs?.length ? (
-              <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                {details.healthLogs.map((log) => (
-                  <div key={log.health_id} className="p-3 bg-white border border-slate-100 rounded-xl text-xs space-y-1">
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-slate-700">{log.diagnosis ?? 'No diagnosis'}</span>
-                      <span className="text-slate-400">{formatDate(log.log_date)}</span>
-                    </div>
-                    {log.symptoms && <p className="text-slate-500">Symptoms: {log.symptoms}</p>}
-                    {log.treatment && <p className="text-slate-500">Treatment: {log.treatment}</p>}
-                    {log.medication_name && (
-                      <p className="text-slate-500">
-                        Medication: {log.medication_name} {log.dosage ? `— ${log.dosage}` : ''}
-                      </p>
-                    )}
-                    <span className={`inline-block text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${statusStyle(log.status)}`}>
-                      {log.status ?? 'Unknown'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400 italic">No health logs on record.</p>
-            )}
-          </div>
-
-          {/* Vaccination records */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-              <Syringe className="w-3.5 h-3.5 text-sky-400" /> Vaccinations
-            </h4>
-            {loading ? (
-              <div className="text-xs text-slate-400 animate-pulse">Loading records…</div>
-            ) : details?.vaccinations?.length ? (
-              <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                {details.vaccinations.map((v) => (
-                  <div key={v.vaccination_id} className="p-3 bg-white border border-slate-100 rounded-xl text-xs space-y-0.5">
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-slate-700">{v.vaccine_name}</span>
-                      <span className="text-slate-400">{formatDate(v.administered_date)}</span>
-                    </div>
-                    {v.dosage && <p className="text-slate-500">Dosage: {v.dosage}</p>}
-                    {v.booster_due_date && (
-                      <p className="text-slate-500">Booster due: {formatDate(v.booster_due_date)}</p>
-                    )}
-                    {v.administered_by && <p className="text-slate-500">By: {v.administered_by}</p>}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400 italic">No vaccination records on file.</p>
-            )}
-          </div>
-
-          {/* Supabase reference */}
-          <div className="p-4 bg-primary-50 rounded-2xl border border-primary-100 text-[11px] text-primary-900 flex gap-3">
-            <Database className="w-5 h-5 text-primary-600 shrink-0 mt-0.5" />
-            <div>
-              <strong>Live Supabase Record</strong>
-              <p className="mt-1 font-mono break-all">
-                {`supabase.from('pigs').select('*').eq('pig_id', '${pig.pig_id}')`}
-              </p>
-            </div>
-          </div>
-
+          
           <button
             onClick={onClose}
-            className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
+            className="p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
+            aria-label="Close"
           >
-            Dismiss Profile
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Scrollable Timeline Content */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-grow bg-slate-50/50">
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-3 gap-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-xs">
+            <div>
+              <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[9px]">Status</span>
+              <span className="font-bold text-emerald-600 flex items-center gap-1 mt-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Healthy
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[9px]">
+                {isPig ? 'Weight' : 'Avg Weight'}
+              </span>
+              <span className="font-bold text-slate-800 block mt-1">
+                {isPig ? `${item.weight} kg` : `${item.average_weight} kg`}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[9px]">Age</span>
+              <span className="font-bold text-slate-800 block mt-1">
+                Week {item.ageWeeks}
+              </span>
+            </div>
+          </div>
+
+          {/* Vaccination timeline */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider pl-1">
+              Vaccination History ({vaccs.length})
+            </h3>
+
+            {vaccs.length > 0 ? (
+              <div className="relative border-l-2 border-slate-200 ml-3.5 pl-5 space-y-6 py-2">
+                {vaccs.map((v, idx) => {
+                  const isBoosterOverdue = v.booster_due_date && new Date(v.booster_due_date) < new Date();
+                  return (
+                    <div key={v.vaccination_id || idx} className="relative">
+                      {/* Timeline Dot */}
+                      <span className="absolute -left-[27px] top-1.5 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-white border-2 border-emerald-500 ring-4 ring-white">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      </span>
+
+                      {/* Record Details Card */}
+                      <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-2">
+                        <div className="flex justify-between items-start">
+                          <h4 className="font-bold text-slate-800 text-sm capitalize">{v.vaccine_name}</h4>
+                          <span className="text-[10px] text-slate-400 font-semibold">
+                            {formatDate(v.administered_date)}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500">
+                          {v.dosage && (
+                            <p>
+                              <span className="font-semibold text-slate-400">Dosage:</span> {v.dosage}
+                            </p>
+                          )}
+                          {v.lot_number && (
+                            <p>
+                              <span className="font-semibold text-slate-400">Lot:</span> {v.lot_number}
+                            </p>
+                          )}
+                          {v.administered_by && (
+                            <p className="col-span-2">
+                              <span className="font-semibold text-slate-400">Administered By:</span> {v.administered_by}
+                            </p>
+                          )}
+                        </div>
+
+                        {v.booster_due_date && (
+                          <div className={`mt-2 p-2 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 ${
+                            isBoosterOverdue ? 'bg-amber-50 text-amber-800 border border-amber-100' : 'bg-slate-50 text-slate-600'
+                          }`}>
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>
+                              Booster Due: {formatDate(v.booster_due_date)} {isBoosterOverdue && '(Overdue)'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-10 bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center space-y-2">
+                <ShieldCheck className="w-10 h-10 text-slate-300" />
+                <p className="text-xs text-slate-400 italic">No vaccination records found for this profile.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Modal Footer */}
+        <div className="p-5 border-t border-slate-100 bg-white flex justify-end shrink-0">
+          <button
+            onClick={onClose}
+            className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
+          >
+            Close Passport
           </button>
         </div>
       </div>
@@ -432,454 +244,425 @@ function PigDetailModal({ pig, onClose }) {
   );
 }
 
-// ─── Batch Detail Modal ───────────────────────────────────────────────────────
-function BatchDetailModal({ batch, onClose }) {
-  const [details, setDetails] = useState(null);
-  const [loading, setLoading] = useState(true);
+// ─── Swine Card ───────────────────────────────────────────────────────────────
+function SwineCard({ item, index, onInspectPassport }) {
+  const isPig = item.type === 'pig';
+  const vaccCount = item.vaccinations?.length || 0;
 
-  useEffect(() => {
-    Promise.all([
-      fetch(`${API_BASE_URL}/api/health-logs?batch_id=${batch.batch_id}`).then(r => r.json()).catch(() => ({ data: [] })),
-      fetch(`${API_BASE_URL}/api/vaccination-records?batch_id=${batch.batch_id}`).then(r => r.json()).catch(() => ({ data: [] })),
-    ]).then(([health, vacc]) => {
-      setDetails({ healthLogs: health.data ?? [], vaccinations: vacc.data ?? [] });
-    }).finally(() => setLoading(false));
-  }, [batch.batch_id]);
+  // Determine availability status mapping
+  let availability = 'Available';
+  let availabilityStyle = 'bg-emerald-50 text-emerald-800 border-emerald-100';
+
+  if (item.type === 'batch') {
+    if ((item.rawItem?.current_count || 0) < 10) {
+      availability = 'Low Stock';
+      availabilityStyle = 'bg-amber-50 text-amber-800 border-amber-100';
+    }
+  } else {
+    if (item.parity_count === 1) {
+      availability = 'Reserved';
+      availabilityStyle = 'bg-slate-100 text-slate-600 border-slate-200';
+    }
+  }
+
+  // Stagger animation based on index
+  const animationDelay = `${(index % ITEMS_PER_PAGE) * 75}ms`;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 hover:border-emerald-100 transition-all duration-300 flex flex-col justify-between relative overflow-hidden group animate-slide-up"
+      style={{ animationDelay, animationFillMode: 'both' }}
+      id={`swine-card-${item.id}`}
     >
-      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left max-h-[90vh] flex flex-col">
-        <div className="h-2 bg-gradient-to-r from-sky-400 to-violet-400 w-full shrink-0" />
+      <div>
+        {/* Top Pills */}
+        <div className="flex justify-between items-center mb-4">
+          <span className="px-3 py-1 bg-slate-50 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold uppercase tracking-wide">
+            {item.group}
+          </span>
+          <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wider ${availabilityStyle}`}>
+            {availability}
+          </span>
+        </div>
 
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
-          aria-label="Close"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        {/* Breed Title */}
+        <h3 className="text-xl font-bold font-display text-slate-900 group-hover:text-emerald-700 transition-colors">
+          {item.breed}
+        </h3>
 
-        <div className="p-8 space-y-5 overflow-y-auto">
-          <div className="flex items-start justify-between">
-            <div>
-              <span className="font-mono text-xs font-bold text-slate-400 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-lg">
-                {batch.batch_tag ?? batch.batch_id.slice(0, 8)}
-              </span>
-              <h2 className="text-2xl font-extrabold text-slate-900 mt-2">Piglet Batch</h2>
-            </div>
-            <span className={`text-xs font-bold uppercase px-3 py-1 rounded-full border ${statusStyle(batch.status, BATCH_STATUS_STYLES)}`}>
-              {batch.status ?? '—'}
-            </span>
-          </div>
+        {/* Quick Info (Weight & Weeks) */}
+        <div className="flex items-center gap-3 mt-3 text-slate-500 font-medium text-xs">
+          <span className="flex items-center gap-1.5">
+            <Weight className="w-3.5 h-3.5 text-slate-400" />
+            {isPig ? `${item.weight} kg` : `${item.average_weight} kg (avg)`}
+          </span>
+          <span className="text-slate-300">|</span>
+          <span className="flex items-center gap-1.5">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+            Week {item.ageWeeks}
+          </span>
+        </div>
 
-          <div className="grid grid-cols-2 gap-4 bg-slate-50 p-5 rounded-2xl border border-slate-100 text-xs">
-            {[
-              ['Born Alive',    batch.total_born_alive],
-              ['Current Count', batch.current_count],
-              ['Stillborn',     batch.stillborn_count],
-              ['Mummies',       batch.mummy_count],
-              ['Avg Weight',    batch.average_weight != null ? `${batch.average_weight} kg` : '—'],
-              ['Pen ID',        batch.pen_id ?? '—'],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <span className="text-slate-400 font-semibold block uppercase tracking-wide">{label}</span>
-                <span className="font-bold text-slate-800 text-sm mt-0.5 block">{value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Health logs */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-              <Heart className="w-3.5 h-3.5 text-rose-400" /> Health Logs
-            </h4>
-            {loading ? (
-              <div className="text-xs text-slate-400 animate-pulse">Loading…</div>
-            ) : details?.healthLogs?.length ? (
-              <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
-                {details.healthLogs.map((log) => (
-                  <div key={log.health_id} className="p-3 bg-white border border-slate-100 rounded-xl text-xs space-y-0.5">
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-slate-700">{log.diagnosis ?? '—'}</span>
-                      <span className="text-slate-400">{formatDate(log.log_date)}</span>
-                    </div>
-                    {log.treatment && <p className="text-slate-500">Treatment: {log.treatment}</p>}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400 italic">No health logs on record.</p>
-            )}
-          </div>
-
-          {/* Vaccinations */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-              <Syringe className="w-3.5 h-3.5 text-sky-400" /> Vaccinations
-            </h4>
-            {loading ? (
-              <div className="text-xs text-slate-400 animate-pulse">Loading…</div>
-            ) : details?.vaccinations?.length ? (
-              <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
-                {details.vaccinations.map((v) => (
-                  <div key={v.vaccination_id} className="p-3 bg-white border border-slate-100 rounded-xl text-xs">
-                    <div className="flex justify-between">
-                      <span className="font-semibold text-slate-700">{v.vaccine_name}</span>
-                      <span className="text-slate-400">{formatDate(v.administered_date)}</span>
-                    </div>
-                    {v.booster_due_date && <p className="text-slate-500 mt-0.5">Booster: {formatDate(v.booster_due_date)}</p>}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400 italic">No vaccination records on file.</p>
-            )}
-          </div>
-
-          <div className="p-4 bg-sky-50 rounded-2xl border border-sky-100 text-[11px] text-sky-900 flex gap-3">
-            <Database className="w-5 h-5 text-sky-500 shrink-0 mt-0.5" />
-            <div>
-              <strong>Live Supabase Record</strong>
-              <p className="mt-1 font-mono break-all">
-                {`supabase.from('piglet_batches').select('*').eq('batch_id', '${batch.batch_id}')`}
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
-          >
-            Dismiss
-          </button>
+        {/* Program Feed Box */}
+        <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-4 mt-5">
+          <span className="text-slate-400 font-bold text-[9px] uppercase tracking-wider block">
+            Program Feed
+          </span>
+          <span className="text-slate-700 font-bold text-xs mt-1 block">
+            {FEED_PROGRAMS[item.group] || 'Standard Feed'}
+          </span>
         </div>
       </div>
+
+      {/* Action Button: Inspect Health Passport */}
+      <button
+        onClick={() => onInspectPassport(item)}
+        className="w-full mt-6 py-3 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100/70 text-emerald-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-sm"
+        id={`inspect-passport-${item.tag}`}
+      >
+        <Syringe className="w-3.5 h-3.5 text-emerald-600" />
+        Inspect Health Passport ({vaccCount})
+      </button>
     </div>
   );
 }
 
 // ─── Main Catalog Component ───────────────────────────────────────────────────
 export default function Catalog() {
-  const [activeTab, setActiveTab]   = useState('pigs'); // 'pigs' | 'batches'
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Pigs state
-  const [pigs, setPigs]             = useState([]);
-  const [pigsLoading, setPigsLoading] = useState(true);
-  const [pigsError, setPigsError]   = useState(null);
-  const [lastFetchedPigs, setLastFetchedPigs] = useState(null);
+  // Filters
+  const [search, setSearch] = useState('');
+  const [activeGroup, setActiveGroup] = useState('all');
 
-  // Batch state
-  const [batches, setBatches]       = useState([]);
-  const [batchesLoading, setBatchesLoading] = useState(false);
-  const [batchesError, setBatchesError] = useState(null);
-  const [lastFetchedBatches, setLastFetchedBatches] = useState(null);
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
 
-  // Shared filter state
-  const [search, setSearch]         = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [genderFilter, setGenderFilter] = useState('all');
-  const [sortBy, setSortBy]         = useState('tag');
+  // Selected Health Passport
+  const [passportItem, setPassportItem] = useState(null);
 
-  // Modal state
-  const [selectedPig, setSelectedPig]     = useState(null);
-  const [selectedBatch, setSelectedBatch] = useState(null);
-
-  // ── Loaders ────────────────────────────────────────────────────────────────
-  const loadPigs = useCallback(async () => {
-    setPigsLoading(true); setPigsError(null);
+  // Fetch from Supabase
+  const loadCatalogData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const result = await fetchPigs();
-      setPigs(result.data ?? []);
-      setLastFetchedPigs(new Date());
-    } catch (e) { setPigsError(e.message); }
-    finally { setPigsLoading(false); }
+      const [pigsRes, batchesRes, vaccRes, healthRes] = await Promise.all([
+        supabase.from('pigs').select('*'),
+        supabase.from('piglet_batches').select('*'),
+        supabase.from('vaccination_records').select('*'),
+        supabase.from('health_logs').select('*')
+      ]);
+
+      if (pigsRes.error) throw pigsRes.error;
+      if (batchesRes.error) throw batchesRes.error;
+      if (vaccRes.error) throw vaccRes.error;
+      if (healthRes.error) throw healthRes.error;
+
+      const allVaccinations = vaccRes.data ?? [];
+      const allHealthLogs = healthRes.data ?? [];
+
+      // ─── Process Individual Pigs ───
+      const healthyPigs = (pigsRes.data ?? []).filter(p => {
+        if (p.is_archived) return false;
+        // Keep only healthy swine
+        if (p.status !== 'healthy') return false;
+
+        // Check health logs for active treatment/illness
+        const pigLogs = allHealthLogs.filter(h => h.pig_id === p.pig_id);
+        if (pigLogs.length > 0) {
+          const latestLog = pigLogs.sort((a, b) => new Date(b.log_date) - new Date(a.log_date))[0];
+          if (latestLog && ['sick', 'quarantine', 'under treatment'].includes(latestLog.status?.toLowerCase())) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      // ─── Process Piglet Batches ───
+      const healthyBatches = (batchesRes.data ?? []).filter(b => {
+        if (b.is_archived) return false;
+
+        // Check health logs for active treatment/illness
+        const batchLogs = allHealthLogs.filter(h => h.batch_id === b.batch_id);
+        if (batchLogs.length > 0) {
+          const latestLog = batchLogs.sort((a, b) => new Date(b.log_date) - new Date(a.log_date))[0];
+          if (latestLog && ['sick', 'quarantine', 'under treatment', 'sick batch'].includes(latestLog.status?.toLowerCase())) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      // Map pigs into unified card model
+      const mappedPigs = healthyPigs.map(p => {
+        const pVaccs = allVaccinations.filter(v => v.pig_id === p.pig_id);
+        const pLogs = allHealthLogs.filter(h => h.pig_id === p.pig_id);
+
+        const ageWeeks = Math.max(1, Math.floor((new Date() - new Date(p.date_of_birth)) / (1000 * 60 * 60 * 24 * 7)));
+
+        // Classification
+        let group = 'Grower';
+        if (p.gender?.toLowerCase() === 'male') group = 'Boar';
+        else if (p.gender?.toLowerCase() === 'female' && p.parity_count > 0) group = 'Sow';
+        else if (p.weight < 25) group = 'Weaner';
+        else if (p.weight >= 80) group = 'Finisher';
+
+        return {
+          id: p.pig_id,
+          tag: p.pig_tag,
+          type: 'pig',
+          group,
+          breed: p.breed || FALLBACK_BREEDS[group],
+          gender: p.gender,
+          weight: p.weight,
+          average_weight: null,
+          ageWeeks,
+          date_of_birth: p.date_of_birth,
+          parity_count: p.parity_count,
+          pen_id: p.pen_id,
+          vaccinations: pVaccs,
+          healthLogs: pLogs
+        };
+      });
+
+      // Map batches into unified card model
+      const mappedBatches = healthyBatches.map(b => {
+        const bVaccs = allVaccinations.filter(v => v.batch_id === b.batch_id);
+        const bLogs = allHealthLogs.filter(h => h.batch_id === b.batch_id);
+
+        let group = 'Weaner';
+        if (b.status === 'transferred') group = 'Grower';
+        else if (b.average_weight >= 80) group = 'Finisher';
+
+        let ageWeeks = 2;
+        if (b.status === 'weaned') ageWeeks = 6;
+        else if (b.status === 'transferred') ageWeeks = 12;
+
+        return {
+          id: b.batch_id,
+          tag: b.batch_tag || `BATCH-${b.batch_id.slice(0, 5).toUpperCase()}`,
+          type: 'batch',
+          group,
+          breed: FALLBACK_BREEDS[group],
+          gender: null,
+          weight: null,
+          average_weight: b.average_weight,
+          ageWeeks,
+          date_of_birth: null,
+          parity_count: null,
+          pen_id: b.pen_id,
+          vaccinations: bVaccs,
+          healthLogs: bLogs
+        };
+      });
+
+      setItems([...mappedPigs, ...mappedBatches]);
+    } catch (e) {
+      console.error('Error fetching inventory catalog:', e);
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const loadBatches = useCallback(async () => {
-    setBatchesLoading(true); setBatchesError(null);
-    try {
-      const result = await fetchPigletBatches();
-      setBatches(result.data ?? []);
-      setLastFetchedBatches(new Date());
-    } catch (e) { setBatchesError(e.message); }
-    finally { setBatchesLoading(false); }
-  }, []);
+  useEffect(() => {
+    loadCatalogData();
+  }, [loadCatalogData]);
 
-  useEffect(() => { loadPigs(); }, [loadPigs]);
-  useEffect(() => { if (activeTab === 'batches' && batches.length === 0 && !batchesLoading) loadBatches(); }, [activeTab]);
-
-  // ── Client filtering ───────────────────────────────────────────────────────
-  const filteredPigs = pigs.filter((p) => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || p.pig_tag?.toLowerCase().includes(q) || p.gender?.toLowerCase().includes(q);
-    const matchStatus = statusFilter === 'all' || p.status === statusFilter;
-    const matchGender = genderFilter === 'all' || p.gender?.toLowerCase().startsWith(genderFilter);
-    return matchSearch && matchStatus && matchGender;
+  // Client filtering & pagination
+  const filteredItems = items.filter(item => {
+    // 1. Group filtering
+    if (activeGroup !== 'all' && item.group.toLowerCase() !== activeGroup) {
+      return false;
+    }
+    // 2. Search query matching
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (
+        item.tag?.toLowerCase().includes(q) ||
+        item.breed?.toLowerCase().includes(q) ||
+        item.group?.toLowerCase().includes(q)
+      );
+    }
+    return true;
   });
 
-  const sortedPigs = [...filteredPigs].sort((a, b) => {
-    if (sortBy === 'tag')         return (a.pig_tag ?? '').localeCompare(b.pig_tag ?? '');
-    if (sortBy === 'weight-desc') return (b.weight ?? 0) - (a.weight ?? 0);
-    if (sortBy === 'weight-asc')  return (a.weight ?? 0) - (b.weight ?? 0);
-    if (sortBy === 'age-asc')     return new Date(b.date_of_birth) - new Date(a.date_of_birth);
-    if (sortBy === 'age-desc')    return new Date(a.date_of_birth) - new Date(b.date_of_birth);
-    if (sortBy === 'parity')      return (b.parity_count ?? 0) - (a.parity_count ?? 0);
-    return 0;
+  // Sort logically: Sows/Boars first, then by age/week desc
+  const sortedItems = [...filteredItems].sort((a, b) => {
+    const priority = { Sow: 1, Boar: 2, Finisher: 3, Grower: 4, Weaner: 5 };
+    const aPriority = priority[a.group] || 99;
+    const bPriority = priority[b.group] || 99;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return b.ageWeeks - a.ageWeeks;
   });
 
-  const filteredBatches = batches.filter((b) => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || b.batch_tag?.toLowerCase().includes(q);
-    const matchStatus = statusFilter === 'all' || b.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  // Pagination bounds
+  const totalItems = sortedItems.length;
+  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1;
+  
+  // Safe page index correction
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalItems);
+  const paginatedItems = sortedItems.slice(startIndex, endIndex);
 
-  const clearFilters = () => { setSearch(''); setStatusFilter('all'); setGenderFilter('all'); };
-  const hasFilters = search || statusFilter !== 'all' || genderFilter !== 'all';
-  const isPigs = activeTab === 'pigs';
+  const handleGroupChange = (groupId) => {
+    setActiveGroup(groupId);
+    setCurrentPage(1); // Reset page on tab shift
+  };
 
   return (
-    <div className="space-y-8 pb-16 text-left animate-fade-in" id="catalog-section">
-
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <section className="border-b border-slate-100 pb-5 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+    <div className="space-y-8 pb-20 text-left" id="catalog-section">
+      {/* Catalog Header */}
+      <section className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 border-b border-slate-100 pb-6">
         <div>
-          <h1 className="text-3xl font-extrabold font-display text-slate-900 tracking-tight">Swine Catalog</h1>
+          <h1 className="text-3xl font-extrabold font-display text-slate-900 tracking-tight flex items-center gap-2">
+            Active Inventory Listing
+          </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Live herd records
+            {loading ? (
+              <span>Updating active profiles…</span>
+            ) : (
+              <span>
+                Showing <strong>{totalItems > 0 ? `${startIndex + 1}–${endIndex}` : '0'}</strong> of{' '}
+                <strong>{totalItems}</strong> {totalItems === 1 ? 'profile' : 'profiles'}.
+              </span>
+            )}
           </p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          {(isPigs ? lastFetchedPigs : lastFetchedBatches) && !(isPigs ? pigsLoading : batchesLoading) && (
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span>Updated {formatRelativeTime(isPigs ? lastFetchedPigs : lastFetchedBatches)}</span>
-              <button
-                onClick={isPigs ? loadPigs : loadBatches}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                title="Refresh"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ── Tab switcher ───────────────────────────────────────────────────── */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-        {[
-          { id: 'pigs',    label: 'Individual Pigs',   icon: Tag },
-          { id: 'batches', label: 'Piglet Batches',    icon: Baby },
-        ].map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => { setActiveTab(id); clearFilters(); }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
-              activeTab === id
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Filter Toolbar ─────────────────────────────────────────────────── */}
-      <section className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4" id="catalog-controls">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Search */}
-          <div className="relative md:col-span-2">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+        {/* Inline Search Bar & Refresh */}
+        <div className="flex items-center gap-3 w-full lg:w-auto">
+          <div className="relative flex-grow lg:flex-grow-0 lg:w-72">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
               <Search className="w-4 h-4" />
             </span>
             <input
               type="text"
               id="catalog-search"
-              placeholder={isPigs ? 'Search by tag or gender…' : 'Search by batch tag…'}
-              className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:bg-white transition-all"
+              placeholder="Search by breed or tag..."
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-sm transition-all placeholder-slate-400"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setCurrentPage(1);
+              }}
             />
           </div>
-
-          {/* Status filter */}
-          <div>
-            <select
-              className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:bg-white transition-all"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="all">All Statuses</option>
-              {isPigs ? (
-                <>
-                  <option value="healthy">Healthy</option>
-                  <option value="sick">Sick</option>
-                  <option value="quarantine">Quarantine</option>
-                </>
-              ) : (
-                <>
-                  <option value="suckling">Suckling</option>
-                  <option value="weaned">Weaned</option>
-                  <option value="transferred">Transferred</option>
-                </>
-              )}
-            </select>
-          </div>
-
-          {/* Sort / Gender */}
-          <div>
-            {isPigs ? (
-              <select
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:bg-white transition-all"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-              >
-                <option value="tag">Sort: Tag</option>
-                <option value="weight-desc">Weight: High → Low</option>
-                <option value="weight-asc">Weight: Low → High</option>
-                <option value="age-asc">Age: Youngest first</option>
-                <option value="age-desc">Age: Oldest first</option>
-                <option value="parity">Parity: High → Low</option>
-              </select>
-            ) : (
-              <select
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 focus:bg-white transition-all"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-              >
-                <option value="tag">Sort: Tag</option>
-                <option value="count-desc">Count: High → Low</option>
-              </select>
-            )}
-          </div>
-        </div>
-
-        {/* Quick status pills */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-50 text-xs">
-          <span className="text-slate-400 font-semibold uppercase">Quick Status:</span>
-          {(isPigs
-            ? ['all', 'healthy', 'sick', 'quarantine']
-            : ['all', 'suckling', 'weaned', 'transferred']
-          ).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`px-3 py-1 rounded-lg border font-semibold transition-colors cursor-pointer capitalize ${
-                statusFilter === s
-                  ? s === 'all'
-                    ? 'bg-slate-100 border-slate-300 text-slate-800'
-                    : `${statusStyle(s, isPigs ? STATUS_STYLES : BATCH_STATUS_STYLES)} shadow-sm`
-                  : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-              }`}
-            >
-              {s === 'all' ? 'All' : s}
-            </button>
-          ))}
-
-          {isPigs && (
-            <>
-              <span className="text-slate-300 mx-1">|</span>
-              <span className="text-slate-400 font-semibold uppercase">Gender:</span>
-              {[['all', 'All'], ['m', 'Male'], ['f', 'Female'], ['c', 'Castrated']].map(([val, label]) => (
-                <button
-                  key={val}
-                  onClick={() => setGenderFilter(val)}
-                  className={`px-3 py-1 rounded-lg border font-semibold transition-colors cursor-pointer ${
-                    genderFilter === val
-                      ? 'bg-slate-100 border-slate-300 text-slate-800'
-                      : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </>
-          )}
+          <button
+            onClick={loadCatalogData}
+            disabled={loading}
+            className="p-3 bg-white border border-slate-200 rounded-2xl text-slate-500 hover:text-slate-700 hover:border-slate-300 disabled:opacity-50 transition-all cursor-pointer shadow-sm active:scale-95 flex items-center justify-center"
+            title="Refresh Catalog"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-500' : ''}`} />
+          </button>
         </div>
       </section>
 
-      {/* ── Content ────────────────────────────────────────────────────────── */}
-      {isPigs ? (
-        pigsLoading ? (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm text-slate-400 pl-1">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Connecting to Supabase…</span>
+      {/* Swine Group Tabs */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none shrink-0" role="tablist">
+        {GROUP_TABS.map(tab => {
+          const isActive = activeGroup === tab.id;
+          return (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => handleGroupChange(tab.id)}
+              className={`px-5 py-2.5 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-all duration-200 active:scale-95 ${
+                isActive
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10'
+                  : 'bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-800 border border-slate-200'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Grid of Swine Cards */}
+      {loading ? (
+        <LoadingSkeleton />
+      ) : error ? (
+        <ErrorBanner message={error} onRetry={loadCatalogData} />
+      ) : paginatedItems.length > 0 ? (
+        <div className="space-y-10">
+          <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {paginatedItems.map((item, index) => (
+              <SwineCard
+                key={item.id}
+                item={item}
+                index={index}
+                onInspectPassport={setPassportItem}
+              />
+            ))}
+          </section>
+
+          {/* Simple Clean Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-slate-100 pt-6">
+              <button
+                disabled={safeCurrentPage === 1}
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                className="inline-flex items-center gap-1 px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 rounded-xl transition-all cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Prev
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                {Array.from({ length: totalPages }).map((_, i) => {
+                  const pageNum = i + 1;
+                  const isCurrent = pageNum === safeCurrentPage;
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`w-8.5 h-8.5 flex items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        isCurrent
+                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                disabled={safeCurrentPage === totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                className="inline-flex items-center gap-1 px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 rounded-xl transition-all cursor-pointer"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
-            <LoadingSkeleton />
-          </div>
-        ) : pigsError ? (
-          <ErrorBanner message={pigsError} onRetry={loadPigs} />
-        ) : (
-          <>
-            <div className="text-xs text-slate-500 font-medium pl-1">
-              Showing <strong>{sortedPigs.length}</strong> of {pigs.length} pigs
-              {hasFilters && (
-                <button onClick={clearFilters} className="ml-3 text-primary-600 hover:text-primary-700 font-semibold cursor-pointer">
-                  Clear filters
-                </button>
-              )}
-            </div>
-            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {sortedPigs.map((pig) => (
-                <PigCard key={pig.pig_id} pig={pig} onViewDetails={setSelectedPig} />
-              ))}
-              {sortedPigs.length === 0 && (
-                <div className="col-span-full text-center py-16 bg-white rounded-3xl border border-slate-100 text-slate-400 text-sm">
-                  No pigs match the current filters.
-                </div>
-              )}
-            </section>
-          </>
-        )
+          )}
+        </div>
       ) : (
-        batchesLoading ? (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-sm text-slate-400 pl-1">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Loading piglet batches…</span>
-            </div>
-            <LoadingSkeleton count={3} />
-          </div>
-        ) : batchesError ? (
-          <ErrorBanner message={batchesError} onRetry={loadBatches} />
-        ) : (
-          <>
-            <div className="text-xs text-slate-500 font-medium pl-1">
-              Showing <strong>{filteredBatches.length}</strong> of {batches.length} batches
-              {hasFilters && (
-                <button onClick={clearFilters} className="ml-3 text-primary-600 hover:text-primary-700 font-semibold cursor-pointer">
-                  Clear filters
-                </button>
-              )}
-            </div>
-            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredBatches.map((batch) => (
-                <BatchCard key={batch.batch_id} batch={batch} onViewDetails={setSelectedBatch} />
-              ))}
-              {filteredBatches.length === 0 && (
-                <div className="col-span-full text-center py-16 bg-white rounded-3xl border border-slate-100 text-slate-400 text-sm">
-                  No piglet batches match the current filters.
-                </div>
-              )}
-            </section>
-          </>
-        )
+        <div className="text-center py-20 bg-white rounded-3xl border border-slate-100 text-slate-400 text-sm shadow-sm flex flex-col items-center justify-center space-y-3">
+          <Award className="w-12 h-12 text-slate-300 animate-pulse" />
+          <p className="font-semibold text-slate-600">No Healthy Profiles Found</p>
+          <p className="text-xs text-slate-400 max-w-xs">
+            There are currently no healthy swine profiles or batches matching your selected filters.
+          </p>
+        </div>
       )}
 
-      {/* ── Modals ─────────────────────────────────────────────────────────── */}
-      {selectedPig   && <PigDetailModal   pig={selectedPig}     onClose={() => setSelectedPig(null)}   />}
-      {selectedBatch && <BatchDetailModal batch={selectedBatch} onClose={() => setSelectedBatch(null)} />}
+      {/* ── Modal ── */}
+      {passportItem && createPortal(
+        <HealthPassportModal
+          item={passportItem}
+          onClose={() => setPassportItem(null)}
+        />,
+        document.body
+      )}
     </div>
   );
 }

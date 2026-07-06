@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    host: true,       // exposes on 0.0.0.0 so mobile on same WiFi can reach it
     proxy: {
       // Forward all /api/* requests to the Node.js backend during development
       '/api': {
