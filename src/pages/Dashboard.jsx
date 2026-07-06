@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Catalog from '../landing-page/Catalog';
 import SideNav, { NAV_ITEMS } from '../components/SideNav';
+import Admin from './Admin'; // Imported our new high-fidelity Admin panel
 import {
   Sparkles, Database, ArrowUpRight, ChevronRight,
   AlertTriangle, CheckSquare, Square,
@@ -8,7 +9,6 @@ import {
 } from 'lucide-react';
 
 // ─── Temporary inventory data (no DB table yet) ───────────────────────────────
-// dailyUsage = % points consumed per day — used to forecast when stock hits LOW_THRESHOLD
 const LOW_THRESHOLD = 15;
 const INVENTORY = [
   { name: 'Supplements',      percent: 8,  dailyUsage: 0.8, color: '#ef4444' },
@@ -24,7 +24,6 @@ function daysUntilLow(percent, dailyUsage) {
   return days <= 7 ? days : null;
 }
 
-// ─── Static data (will be replaced with DB queries later) ────────────────────
 const HEALTH_ALERTS = [
   { tag: 'Sow #402',   pen: 'Pen A2', status: 'High Fever',        severity: 'high'   },
   { tag: 'Batch #12',  pen: 'Pen 4',  status: 'Atypical Coughing', severity: 'medium' },
@@ -60,7 +59,6 @@ const MONTH_NAMES = [
 ];
 const DAY_LABELS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 
-// ─── Shared sub-components ────────────────────────────────────────────────────
 function Pill({ children, color = 'slate' }) {
   const map = {
     red:   'bg-red-100    text-red-700    border-red-200',
@@ -91,7 +89,6 @@ function SectionCard({ title, action, actionLabel, children, id }) {
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
 export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   const [activeTab,   setActiveTab]  = useState('dashboard');
   const [todos,       setTodos]      = useState(TODO_ITEMS);
@@ -122,7 +119,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   const toggleTodo     = id => setTodos(ts => ts.map(t => t.id === id ? { ...t, done: !t.done } : t));
   const completedTodos = todos.filter(t => t.done).length;
 
-  // ── Public hero (not logged in) ──────────────────────────────────────────
   if (!loggedInUser) {
     return (
       <div className="animate-fade-in text-left pb-16" id="dashboard-section">
@@ -155,16 +151,10 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
     );
   }
 
-  // ── Staff portal ─────────────────────────────────────────────────────────
   return (
-    /*
-      Outer wrapper: full viewport height, flex row.
-      The sidebar is `fixed` (handled in SideNav.jsx), so the main area
-      needs `ml-60` to avoid being hidden behind it on desktop.
-    */
     <div className="flex h-screen bg-slate-50 overflow-hidden" id="staff-portal">
 
-      {/* ── SideNav (fixed, never scrolls) ── */}
+      {/* SideNav */}
       <SideNav
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -174,15 +164,10 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         mobileOpen={mobileNav}
       />
 
-      {/*
-        Main content column:
-        - ml-60 on desktop to clear the fixed sidebar
-        - flex-col so the top bar stays pinned and only the content below it scrolls
-        - overflow-y-auto here ensures ONLY this column scrolls, not the whole page
-      */}
+      {/* Main Content Workspace Container */}
       <div className="flex-1 flex flex-col ml-0 lg:ml-60 min-w-0 overflow-hidden">
 
-        {/* ── Sticky top bar ── */}
+        {/* Sticky top bar */}
         <header className="sticky top-0 z-10 bg-white border-b border-slate-100 px-5 py-3.5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             {/* Hamburger — mobile only */}
@@ -213,16 +198,14 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
           </div>
         </header>
 
-        {/* ── Scrollable content area ── */}
+        {/* Scrollable content area */}
         <div className="flex-1 overflow-y-auto">
 
-          {/* Dashboard tab */}
+          {/* ── Tab 1: Dashboard overview grid ── */}
           {activeTab === 'dashboard' && (
             <main className="p-5 lg:p-6 grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-
               {/* LEFT column (spans 2) */}
               <div className="lg:col-span-2 space-y-5">
-
                 {/* Health Alerts */}
                 <SectionCard title="⚠️ Active Health Alerts" id="health-alerts-card">
                   {HEALTH_ALERTS.length === 0 ? (
@@ -322,7 +305,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
 
               {/* RIGHT column */}
               <div className="space-y-5">
-
                 {/* Herd stats */}
                 <div className="grid grid-cols-2 gap-3">
                   {[
@@ -384,7 +366,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                           <p className="text-[11px] font-semibold text-slate-700 truncate">{evt.title}</p>
                           <p className="text-[9px] text-slate-400 font-semibold uppercase">{EVENT_LABELS[evt.type]}</p>
                         </div>
-                        <span className="text-[10px] font-bold text-slate-400 shrink-0">Jun {evt.date}</span>
+                        <span className="text-[10px] font-bold text-slate-400 shrink-0">{calMonth.monthName} {evt.date}</span>
                       </div>
                     ))}
                   </div>
@@ -393,8 +375,15 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {/* Placeholder tabs */}
-          {activeTab !== 'dashboard' && (
+          {/* ── Tab 2: Admin settings module ── */}
+          {activeTab === 'admin' && (
+            <main className="p-5 lg:p-6">
+              <Admin loggedInUser={loggedInUser} />
+            </main>
+          )}
+
+          {/* ── Fallback Module Integration (Other views) ── */}
+          {activeTab !== 'dashboard' && activeTab !== 'admin' && (
             <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
               <div className="text-center space-y-4 max-w-xs mx-auto">
                 <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">
