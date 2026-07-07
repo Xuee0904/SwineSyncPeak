@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
@@ -60,6 +60,25 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
   const [serverError, setServerError]   = useState('');
   const [touched, setTouched]           = useState({ email: false, password: false });
 
+  // Prevent scrollbar leakage and visual layout shifting on mount
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const originalOverflow = document.body.style.overflow;
+    const originalPaddingRight = document.body.style.paddingRight;
+
+    document.body.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.paddingRight = originalPaddingRight;
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const fieldErrors = validate(email, password);
@@ -100,10 +119,8 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
 
       const user = data.user;
 
-      // Check if user is logging in for the first time
       if (user?.user_metadata?.must_change_password) {
         if (onForcePasswordChange) {
-          // Hand off control to the forced-reset workflow inside App.jsx
           onForcePasswordChange(user, password);
           handleClose();
           return;
@@ -147,11 +164,21 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
       id="login-modal-overlay"
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
+      <style>{`
+        .modal-scroll-container::-webkit-scrollbar {
+          display: none;
+        }
+        .modal-scroll-container {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
+
       <div
         className={[
           'relative w-full bg-white shadow-2xl border border-slate-100',
           'rounded-t-3xl sm:rounded-3xl',
-          'h-[85vh] sm:h-[490px]',
+          'h-[85vh] sm:h-[490px]', 
           'max-h-[92dvh] sm:max-h-[90vh]',
           'sm:max-w-sm sm:my-auto',
           'flex flex-col overflow-hidden',
@@ -175,7 +202,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
         </div>
 
         {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto px-5 sm:px-8 pt-7 sm:pt-9 pb-4 sm:pb-5 space-y-3.5 sm:space-y-4">
+        <div className="flex-1 overflow-y-auto modal-scroll-container px-5 sm:px-8 pt-7 sm:pt-9 pb-4 sm:pb-5 space-y-3.5 sm:space-y-4">
 
           {/* Logo + Title */}
           <div className="flex flex-col items-center gap-1.5 sm:gap-2 text-center">
@@ -247,7 +274,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
                 type="button"
                 tabIndex={-1}
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-650 transition-colors cursor-pointer"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}

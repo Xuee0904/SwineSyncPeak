@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// ─── Pig Nose Logo (mirrors LoginModal) ───────────────────────────────────────
 function PigNoseLogo({ className = 'w-9 h-9 sm:w-10 sm:h-10' }) {
   return (
     <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
@@ -19,6 +20,7 @@ function PigNoseLogo({ className = 'w-9 h-9 sm:w-10 sm:h-10' }) {
   );
 }
 
+// ─── Password strength calculator ─────────────────────────────────────────────
 function calcStrength(password) {
   const checks = {
     minLength:      password.length >= 8,
@@ -37,6 +39,7 @@ function calcStrength(password) {
   return { checks, score, ...(levels[score] ?? levels[0]) };
 }
 
+// ─── Requirement bullet ───────────────────────────────────────────────────────
 function Req({ met, label }) {
   return (
     <div className="flex items-center gap-2">
@@ -45,7 +48,7 @@ function Req({ met, label }) {
         style={{ borderColor: met ? '#16a34a' : '#cbd5e1', backgroundColor: met ? '#16a34a' : 'transparent' }}
       >
         {met && (
-          <svg viewBox="0 0 10 8" className="w-2 h-2" fill="none">
+          <svg viewBox="0 0 10 8" className="w-2  h-2" fill="none">
             <path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
@@ -57,6 +60,7 @@ function Req({ met, label }) {
   );
 }
 
+// ─── Field wrapper (mirrors LoginModal) ───────────────────────────────────────
 function Field({ label, htmlFor, error, touched, children }) {
   return (
     <div className="space-y-1">
@@ -82,6 +86,7 @@ const inputBase = [
 const inputOk  = 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500/20';
 const inputErr = 'border-rose-400 focus:border-rose-400 focus:ring-rose-400/20 bg-rose-50/30';
 
+// ─── Main Component ───
 export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, onResetSuccess, initialView = 'send-email', oldPassword }) {
   const [email,        setEmail]        = useState('');
   const [emailTouched, setEmailTouched] = useState(false);
@@ -97,6 +102,25 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
   const [view,        setView]        = useState(initialView);
   const [isLoading,   setIsLoading]   = useState(false);
   const [serverError, setServerError] = useState('');
+
+  // Lock global scrollbar and compensate for structural padding
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const originalOverflow = document.body.style.overflow;
+    const originalPaddingRight = document.body.style.paddingRight;
+
+    document.body.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.paddingRight = originalPaddingRight;
+    };
+  }, [isOpen]);
 
   useEffect(() => { setView(initialView); }, [initialView]);
 
@@ -141,16 +165,13 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
   const strength = calcStrength(newPassword);
   const pwErrors = {};
 
-  // Strict validation rules
   if (!newPassword) {
     pwErrors.newPassword = 'New password is required.';
   } else if (newPassword.length < 8) {
     pwErrors.newPassword = 'Password must be at least 8 characters.';
   } else if (strength.score < 4) {
-    // Mandates that all 4 criteria badges are checked
     pwErrors.newPassword = 'Your password must satisfy all security requirements listed below.';
   } else if (oldPassword && newPassword === oldPassword) {
-    // Prevents reuse of the temporary first-time credential
     pwErrors.newPassword = 'For security purposes, you cannot reuse your temporary password.';
   }
 
@@ -171,17 +192,15 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
     if (!isPwValid) return;
     setIsLoading(true);
     try {
-      // Updates the password and clears the must_change_password meta flag simultaneously
       const { error } = await supabase.auth.updateUser({ 
         password: newPassword,
-        data: { must_change_password: false } // Clears forced reset status
+        data: { must_change_password: false } 
       });
       if (error) {
         setServerError(error.message);
       } else {
         setSuccessMsg('Your password has been successfully updated! Redirecting to the login screen...');
         if (onResetSuccess) {
-          // Delay redirect slightly to let the user read the success text
           setTimeout(() => {
             onResetSuccess();
           }, 2000);
@@ -222,11 +241,22 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
       id="update-password-modal-overlay"
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
+      {/* Scrollbar-suppression styling context */}
+      <style>{`
+        .modal-scroll-container::-webkit-scrollbar {
+          display: none;
+        }
+        .modal-scroll-container {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
+
       <div
         className="relative w-full bg-white shadow-2xl border border-slate-100 rounded-t-3xl sm:rounded-3xl h-[85vh] sm:h-[530px] max-h-[92dvh] sm:max-h-[90vh] sm:max-w-sm sm:my-auto flex flex-col overflow-hidden"
         id="update-password-modal-content"
       >
-        {/* Close/Back button hidden on forced password reset to ensure compliance */}
+        {/* Close button */}
         {initialView !== 'update-password' && (
           <button
             onClick={handleClose}
@@ -244,8 +274,8 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
           <div className="w-10 h-1 rounded-full bg-slate-200" />
         </div>
 
-        {/* Scrollable Container */}
-        <div className="flex-1 overflow-y-auto px-5 sm:px-8 pt-7 sm:pt-9 pb-4 sm:pb-5 space-y-3.5 sm:space-y-4">
+        {/* Scrollable Container (Uses suppression class) */}
+        <div className="flex-1 overflow-y-auto modal-scroll-container px-5 sm:px-8 pt-7 sm:pt-9 pb-4 sm:pb-5 space-y-3.5 sm:space-y-4">
 
           <div className="flex flex-col items-center gap-1.5 sm:gap-2 text-center">
             <div className="relative">
@@ -345,7 +375,7 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
                     className={`${inputBase} pl-4 pr-10 ${pwTouched.newPassword && pwErrors.newPassword ? inputErr : inputOk}`}
                   />
                   <button type="button" tabIndex={-1} onClick={() => setShowNew(!showNew)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-450 hover:text-slate-650 transition-colors cursor-pointer"
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-455 hover:text-slate-655 transition-colors cursor-pointer"
                     aria-label={showNew ? 'Hide password' : 'Show password'}>
                     {showNew ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
@@ -365,7 +395,7 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
                     className={`${inputBase} pl-4 pr-10 ${pwTouched.confirmPassword && pwErrors.confirmPassword ? inputErr : inputOk}`}
                   />
                   <button type="button" tabIndex={-1} onClick={() => setShowConfirm(!showConfirm)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-450 hover:text-slate-650 transition-colors cursor-pointer"
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-455 hover:text-slate-655 transition-colors cursor-pointer"
                     aria-label={showConfirm ? 'Hide password' : 'Show password'}>
                     {showConfirm ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>

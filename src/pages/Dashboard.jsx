@@ -189,9 +189,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 border border-white" />
               )}
             </button>
-            <button className="p-2 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors cursor-pointer">
-              <Settings className="w-5 h-5" />
-            </button>
             <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm flex items-center justify-center select-none cursor-pointer">
               {loggedInUser?.charAt(0)?.toUpperCase()}
             </div>
