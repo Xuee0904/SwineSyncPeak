@@ -85,12 +85,13 @@ app.get('/api/admin/users', async (req, res) => {
       const email = user.email || 'no-email@swinesync.com';
       const name = user.user_metadata?.full_name || user.user_metadata?.name || email.split('@')[0];
       return {
-        id: user.id.slice(0, 8).toUpperCase(), // Short visual ID matching your screenshot
+        id: user.id.slice(0, 8).toUpperCase(),
         fullId: user.id,
         name,
         email,
         role: user.user_metadata?.role || 'Staff',
         status: user.last_sign_in_at ? 'Active' : 'Inactive',
+        lastSignInAt: user.last_sign_in_at || null, // Keep raw ISO timestamp for precise front-end sorting
         lastLogin: user.last_sign_in_at 
           ? new Date(user.last_sign_in_at).toLocaleDateString(undefined, {
               month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -136,6 +137,35 @@ app.post('/api/admin/users', async (req, res) => {
     res.json({ message: 'Staff account created successfully', user });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/admin/activity-logs
+app.get('/api/admin/activity-logs', async (req, res) => {
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ 
+        error: 'Administrative client (service role key) is not configured on this server.',
+        hint: 'Verify that SUPABASE_SERVICE_ROLE_KEY is defined in your server/.env file and that you restarted your terminal.'
+      });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('activity_logs')
+      .select('*')
+      .order('timestamp', { ascending: false })
+      .limit(10); 
+
+    // If Supabase returned an error, return its full descriptive body
+    if (error) {
+      console.error('Supabase Query Error:', error);
+      return res.status(500).json({ error: error.message, details: error });
+    }
+
+    res.json({ logs: data ?? [] });
+  } catch (error) {
+    console.error('Express Server Exception:', error);
+    res.status(500).json({ error: error.message, stack: error.stack });
   }
 });
 
