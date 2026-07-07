@@ -4,7 +4,6 @@ import { supabase } from '../supabaseClient';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// ─── Pig Nose Logo (mirrors LoginModal) ───────────────────────────────────────
 function PigNoseLogo({ className = 'w-9 h-9 sm:w-10 sm:h-10' }) {
   return (
     <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
@@ -20,7 +19,6 @@ function PigNoseLogo({ className = 'w-9 h-9 sm:w-10 sm:h-10' }) {
   );
 }
 
-// ─── Password strength calculator ─────────────────────────────────────────────
 function calcStrength(password) {
   const checks = {
     minLength:      password.length >= 8,
@@ -39,7 +37,6 @@ function calcStrength(password) {
   return { checks, score, ...(levels[score] ?? levels[0]) };
 }
 
-// ─── Requirement bullet ───────────────────────────────────────────────────────
 function Req({ met, label }) {
   return (
     <div className="flex items-center gap-2">
@@ -60,7 +57,6 @@ function Req({ met, label }) {
   );
 }
 
-// ─── Field wrapper (mirrors LoginModal) ───────────────────────────────────────
 function Field({ label, htmlFor, error, touched, children }) {
   return (
     <div className="space-y-1">
@@ -78,7 +74,6 @@ function Field({ label, htmlFor, error, touched, children }) {
   );
 }
 
-// ─── Shared input styles ──────────────────────────────────────────────────────
 const inputBase = [
   'w-full bg-white border rounded-xl text-slate-900 placeholder-slate-400',
   'text-sm focus:outline-none focus:ring-2 transition-all',
@@ -87,14 +82,11 @@ const inputBase = [
 const inputOk  = 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500/20';
 const inputErr = 'border-rose-400 focus:border-rose-400 focus:ring-rose-400/20 bg-rose-50/30';
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, initialView = 'send-email' }) {
-  // Phase 1 state
+export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, onResetSuccess, initialView = 'send-email', oldPassword }) {
   const [email,        setEmail]        = useState('');
   const [emailTouched, setEmailTouched] = useState(false);
   const [emailSent,    setEmailSent]    = useState(false);
 
-  // Phase 2 state
   const [newPassword,     setNewPassword]     = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNew,         setShowNew]         = useState(false);
@@ -102,15 +94,12 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
   const [pwTouched,       setPwTouched]       = useState({ newPassword: false, confirmPassword: false });
   const [successMsg,      setSuccessMsg]      = useState('');
 
-  // Shared state
   const [view,        setView]        = useState(initialView);
   const [isLoading,   setIsLoading]   = useState(false);
   const [serverError, setServerError] = useState('');
 
-  // Sync view when parent changes initialView (e.g. PASSWORD_RECOVERY fires)
   useEffect(() => { setView(initialView); }, [initialView]);
 
-  // Reset everything when modal closes
   useEffect(() => {
     if (!isOpen) {
       setEmail(''); setEmailTouched(false); setEmailSent(false);
@@ -123,7 +112,6 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
 
   if (!isOpen) return null;
 
-  // ── Phase 1 logic ─────────────────────────────────────────────────────────
   const emailError = !email.trim()
     ? 'Email is required.'
     : !EMAIL_RE.test(email)
@@ -145,20 +133,33 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
       else        setEmailSent(true);
     } catch (err) {
       setServerError('Something went wrong. Please try again.');
-      console.error('[UpdatePasswordModal] resetPasswordForEmail:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ── Phase 2 logic ─────────────────────────────────────────────────────────
   const strength = calcStrength(newPassword);
   const pwErrors = {};
-  if (!newPassword)                pwErrors.newPassword     = 'New password is required.';
-  else if (newPassword.length < 8) pwErrors.newPassword     = 'Password must be at least 8 characters.';
-  if (!confirmPassword)            pwErrors.confirmPassword = 'Please confirm your password.';
-  else if (newPassword !== confirmPassword)
-                                   pwErrors.confirmPassword = 'Passwords do not match.';
+
+  // Strict validation rules
+  if (!newPassword) {
+    pwErrors.newPassword = 'New password is required.';
+  } else if (newPassword.length < 8) {
+    pwErrors.newPassword = 'Password must be at least 8 characters.';
+  } else if (strength.score < 4) {
+    // Mandates that all 4 criteria badges are checked
+    pwErrors.newPassword = 'Your password must satisfy all security requirements listed below.';
+  } else if (oldPassword && newPassword === oldPassword) {
+    // Prevents reuse of the temporary first-time credential
+    pwErrors.newPassword = 'For security purposes, you cannot reuse your temporary password.';
+  }
+
+  if (!confirmPassword) {
+    pwErrors.confirmPassword = 'Please confirm your new password.';
+  } else if (newPassword !== confirmPassword) {
+    pwErrors.confirmPassword = 'Passwords do not match. Please verify your entries.';
+  }
+
   const isPwValid  = Object.keys(pwErrors).length === 0;
   const touchPw    = (f) => setPwTouched((t) => ({ ...t, [f]: true }));
   const touchPwAll = ()  => setPwTouched({ newPassword: true, confirmPassword: true });
@@ -170,23 +171,35 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
     if (!isPwValid) return;
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) setServerError(error.message);
-      else       setSuccessMsg('Password updated successfully! You can now log in with your new password.');
+      // Updates the password and clears the must_change_password meta flag simultaneously
+      const { error } = await supabase.auth.updateUser({ 
+        password: newPassword,
+        data: { must_change_password: false } // Clears forced reset status
+      });
+      if (error) {
+        setServerError(error.message);
+      } else {
+        setSuccessMsg('Your password has been successfully updated! Redirecting to the login screen...');
+        if (onResetSuccess) {
+          // Delay redirect slightly to let the user read the success text
+          setTimeout(() => {
+            onResetSuccess();
+          }, 2000);
+        }
+      }
     } catch (err) {
       setServerError('Something went wrong. Please try again.');
-      console.error('[UpdatePasswordModal] updateUser:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleClose       = () => { onClose(); };
+  const handleClose       = () => { if (initialView === 'update-password') return; onClose(); };
   const handleBackToLogin = () => { onClose(); if (onBackToLogin) onBackToLogin(); };
 
   const titles = {
     'send-email':      { heading: 'Forgot Password?',    sub: 'Enter your email to receive a reset link.' },
-    'update-password': { heading: 'Secure Your Account', sub: 'Enter a new, and strong password.'         },
+    'update-password': { heading: 'Secure Your Account', sub: 'Please set a secure password to activate your portal session.' },
   };
   const { heading, sub } = titles[view] ?? titles['send-email'];
 
@@ -213,26 +226,27 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
         className="relative w-full bg-white shadow-2xl border border-slate-100 rounded-t-3xl sm:rounded-3xl h-[85vh] sm:h-[530px] max-h-[92dvh] sm:max-h-[90vh] sm:max-w-sm sm:my-auto flex flex-col overflow-hidden"
         id="update-password-modal-content"
       >
-        {/* Close button */}
-        <button
-          onClick={handleClose}
-          className="absolute top-3 left-3 sm:top-4 sm:left-4 flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer"
-          aria-label="Close modal"
-          id="close-update-password-btn"
-        >
-          <X className="w-3.5 h-3.5" />
-          Back
-        </button>
+        {/* Close/Back button hidden on forced password reset to ensure compliance */}
+        {initialView !== 'update-password' && (
+          <button
+            onClick={handleClose}
+            className="absolute top-3 left-3 sm:top-4 sm:left-4 flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer z-10"
+            aria-label="Close modal"
+            id="close-update-password-btn"
+          >
+            <X className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            Back
+          </button>
+        )}
 
         {/* Mobile drag handle */}
         <div className="flex justify-center pt-3 sm:hidden shrink-0">
           <div className="w-10 h-1 rounded-full bg-slate-200" />
         </div>
 
-        {/* ── Scrollable Body Container ── */}
+        {/* Scrollable Container */}
         <div className="flex-1 overflow-y-auto px-5 sm:px-8 pt-7 sm:pt-9 pb-4 sm:pb-5 space-y-3.5 sm:space-y-4">
 
-          {/* Logo + title */}
           <div className="flex flex-col items-center gap-1.5 sm:gap-2 text-center">
             <div className="relative">
               <PigNoseLogo />
@@ -247,11 +261,10 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
               <h2 id="update-password-title" className="text-xl font-extrabold text-slate-900 tracking-tight mt-0.5">
                 {heading}
               </h2>
-              <p className="text-[11px] sm:text-xs text-slate-500 mt-1">{sub}</p>
+              <p className="text-[11px] sm:text-xs text-slate-500 mt-1 leading-relaxed">{sub}</p>
             </div>
           </div>
 
-          {/* Server error */}
           {serverError && (
             <div className="flex items-start gap-2 p-3 bg-rose-50 border border-rose-100 rounded-xl text-[11px] sm:text-xs text-rose-700 font-medium animate-fade-in">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-500" />
@@ -259,7 +272,7 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
             </div>
           )}
 
-          {/* ── PHASE 1: Send reset email ───────────────────────────────────── */}
+          {/* ── PHASE 1: Send reset email ── */}
           {view === 'send-email' && !emailSent && (
             <>
               <Field label="Email Address" htmlFor="reset-email" error={emailError} touched={emailTouched}>
@@ -316,7 +329,7 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
             </div>
           )}
 
-          {/* ── PHASE 2: Set new password (after recovery link) ─────────────── */}
+          {/* ── PHASE 2: Set new password ── */}
           {view === 'update-password' && !successMsg && (
             <>
               <Field label="New Password" htmlFor="update-new-password" error={pwErrors.newPassword} touched={pwTouched.newPassword}>
@@ -332,7 +345,7 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
                     className={`${inputBase} pl-4 pr-10 ${pwTouched.newPassword && pwErrors.newPassword ? inputErr : inputOk}`}
                   />
                   <button type="button" tabIndex={-1} onClick={() => setShowNew(!showNew)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-650 transition-colors cursor-pointer"
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-450 hover:text-slate-650 transition-colors cursor-pointer"
                     aria-label={showNew ? 'Hide password' : 'Show password'}>
                     {showNew ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
@@ -352,7 +365,7 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
                     className={`${inputBase} pl-4 pr-10 ${pwTouched.confirmPassword && pwErrors.confirmPassword ? inputErr : inputOk}`}
                   />
                   <button type="button" tabIndex={-1} onClick={() => setShowConfirm(!showConfirm)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-650 transition-colors cursor-pointer"
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-450 hover:text-slate-650 transition-colors cursor-pointer"
                     aria-label={showConfirm ? 'Hide password' : 'Show password'}>
                     {showConfirm ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
@@ -402,17 +415,19 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, in
             </div>
           )}
 
-          {/* Back to Log In */}
-          <div className="flex justify-center pt-1">
-            <button
-              type="button"
-              onClick={handleBackToLogin}
-              className="text-[11px] sm:text-xs font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-widest transition-colors cursor-pointer"
-              id="back-to-login-link"
-            >
-              Back to Log In
-            </button>
-          </div>
+          {/* Back to Log In (Hidden during forced reset) */}
+          {initialView !== 'update-password' && (
+            <div className="flex justify-center pt-1">
+              <button
+                type="button"
+                onClick={handleBackToLogin}
+                className="text-[11px] sm:text-xs font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-widest transition-colors cursor-pointer"
+                id="back-to-login-link"
+              >
+                Back to Log In
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

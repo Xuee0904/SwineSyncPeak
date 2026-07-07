@@ -26,7 +26,7 @@ function validate(email, password) {
   if (!email.trim())              errs.email    = 'Email is required.';
   else if (!EMAIL_RE.test(email)) errs.email    = 'Enter a valid email address.';
   if (!password)                  errs.password = 'Password is required.';
-  else if (password.length < 6)  errs.password = 'Password must be at least 6 characters.';
+  else if (password.length < 8)  errs.password = 'Password must be at least 8 characters.';
   return errs;
 }
 
@@ -51,8 +51,8 @@ function Field({ label, htmlFor, error, touched, children }) {
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPassword }) {
+// ─── Main Component ───
+export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPassword, onForcePasswordChange }) {
   const [email, setEmail]               = useState('');
   const [password, setPassword]         = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -99,6 +99,17 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
       }
 
       const user = data.user;
+
+      // Check if user is logging in for the first time
+      if (user?.user_metadata?.must_change_password) {
+        if (onForcePasswordChange) {
+          // Hand off control to the forced-reset workflow inside App.jsx
+          onForcePasswordChange(user, password);
+          handleClose();
+          return;
+        }
+      }
+
       const displayName =
         user.user_metadata?.full_name ||
         user.user_metadata?.name ||
@@ -140,7 +151,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
         className={[
           'relative w-full bg-white shadow-2xl border border-slate-100',
           'rounded-t-3xl sm:rounded-3xl',
-          'h-[85vh] sm:h-[490px]', // Height slightly shortened to prevent scrolling
+          'h-[85vh] sm:h-[490px]',
           'max-h-[92dvh] sm:max-h-[90vh]',
           'sm:max-w-sm sm:my-auto',
           'flex flex-col overflow-hidden',
@@ -163,7 +174,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
           <div className="w-10 h-1 rounded-full bg-slate-200" />
         </div>
 
-        {/* ── Scrollable Body Container (Tighter paddings & gaps) ── */}
+        {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto px-5 sm:px-8 pt-7 sm:pt-9 pb-4 sm:pb-5 space-y-3.5 sm:space-y-4">
 
           {/* Logo + Title */}

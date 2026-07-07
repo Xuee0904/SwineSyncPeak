@@ -227,7 +227,6 @@ export default function Admin({ loggedInUser }) {
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-800">Account Management</h2>
-              <p className="text-[11px] text-slate-400 mt-0.5">Manage administrative credentials, staff rosters, and audit records.</p>
             </div>
           </div>
 
@@ -372,7 +371,6 @@ export default function Admin({ loggedInUser }) {
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-800">Activity Log</h2>
-              <p className="text-[11px] text-slate-400 mt-0.5">System audit tracking trail of modifications and logins.</p>
             </div>
           </div>
           <button 

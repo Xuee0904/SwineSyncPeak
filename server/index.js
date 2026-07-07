@@ -107,7 +107,7 @@ app.get('/api/admin/users', async (req, res) => {
   }
 });
 
-// 2. POST /api/admin/users
+// POST /api/admin/users
 app.post('/api/admin/users', async (req, res) => {
   try {
     if (!supabaseAdmin) {
@@ -120,15 +120,15 @@ app.post('/api/admin/users', async (req, res) => {
       return res.status(400).json({ error: 'Missing required registration parameters (email, password, name).' });
     }
 
-    // Create the user administratively. This bypasses client-side signup flow,
-    // auto-confirms their email address, and records user metadata.
+    // Register user administratively and assign first-time reset flag inside metadata
     const { data: { user }, error } = await supabaseAdmin.auth.admin.createUser({
       email: email.trim(),
       password: password,
-      email_confirm: true, // auto-confirm email so staff can log in immediately
+      email_confirm: true,
       user_metadata: {
         full_name: name,
-        role: role || 'Staff'
+        role: role || 'Staff',
+        must_change_password: true // Forced reset indicator
       }
     });
 

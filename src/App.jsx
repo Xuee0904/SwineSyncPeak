@@ -16,6 +16,10 @@ export default function App() {
   const [isLoginOpen, setIsLoginOpen]                   = useState(false);
   const [isUpdatePasswordOpen, setIsUpdatePasswordOpen] = useState(false);
   const [updatePasswordView, setUpdatePasswordView]     = useState('send-email');
+  
+  // Cache to prevent reuse of temporary first-time log in password
+  const [tempPasswordUsed, setTempPasswordUsed]         = useState('');
+
   const [loggedInUser, setLoggedInUser]                 = useState(null);
   const [toast, setToast]                               = useState(null);
   const [activeSection, setActiveSection]               = useState('home');
@@ -48,7 +52,7 @@ export default function App() {
     });
 
     return () => subscription.unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -137,10 +141,10 @@ export default function App() {
         />
       )}
 
-      {/* Toast Alert notification */}
+      {/* Toast Alert notification — z-[60] prevents clipping behind active backdrops */}
       {toast && (
         <div
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 bg-slate-900 border border-slate-850 text-white rounded-2xl shadow-xl animate-slide-in max-w-sm"
+          className="fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-5 py-3.5 bg-slate-900 border border-slate-850 text-white rounded-2xl shadow-xl animate-slide-in max-w-sm"
           id="toast-notification"
         >
           <CheckCircle2 className={`w-5 h-5 shrink-0 ${toast.type === 'success' ? 'text-primary-500' : 'text-indigo-400'}`} />
@@ -228,65 +232,77 @@ export default function App() {
           setIsLoginOpen(false);
           setIsUpdatePasswordOpen(true);
         }}
+        onForcePasswordChange={(user, oldPass) => {
+          setTempPasswordUsed(oldPass);
+          setIsLoginOpen(false);
+          setUpdatePasswordView('update-password');
+          setIsUpdatePasswordOpen(true);
+        }}
       />
 
       {/* Update Password Modal */}
       <UpdatePasswordModal
         isOpen={isUpdatePasswordOpen}
         initialView={updatePasswordView}
-        onClose={() => setIsUpdatePasswordOpen(false)}
-        onBackToLogin={() => { setIsUpdatePasswordOpen(false); setIsLoginOpen(true); }}
+        oldPassword={tempPasswordUsed}
+        onClose={() => {
+          setIsUpdatePasswordOpen(false);
+          setTempPasswordUsed('');
+        }}
+        onBackToLogin={() => {
+          setIsUpdatePasswordOpen(false);
+          setIsLoginOpen(true);
+        }}
+        onResetSuccess={async () => {
+          try {
+            await supabase.auth.signOut();
+            setIsUpdatePasswordOpen(false);
+            setTempPasswordUsed('');
+            setIsLoginOpen(true);
+            showToast('Password updated successfully. Please log in with your new credentials.', 'success');
+          } catch (e) {
+            console.error('Error handling password update transition:', e);
+          }
+        }}
       />
 
-      {/* ─── SLIM HORIZONTAL FOOTER (Zero Cliche Text, Maximum Spacing) ─── */}
-      {!loggedInUser && (
-        <footer className="bg-slate-900 text-slate-400 border-t border-slate-800" id="swinesync-footer">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-            
-            {/* Top row: Logo on the left, horizontal link navigation on the right */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-slate-800">
-              
-              {/* Pure Brand Logo Grid */}
-              <div className="flex items-center gap-2.5 text-white shrink-0">
-                <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-primary-600 text-white font-extrabold text-sm shadow-md">
-                  S
-                </div>
-                <span className="font-black font-display text-lg tracking-tight">Swine<span className="text-primary-400">Sync</span></span>
+      {/* Public Footer */}
+      {!loggedInUser && <footer className="bg-slate-900 text-slate-400 border-t border-slate-800" id="swinesync-footer">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-slate-800">
+            <div className="flex items-center gap-2.5 text-white shrink-0">
+              <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-primary-600 text-white font-extrabold text-sm shadow-md">
+                S
               </div>
-
-              {/* Spread Quick Links Navigation */}
-              <nav aria-label="Footer platform links">
-                <ul className="flex flex-wrap items-center gap-x-6 sm:gap-x-8 lg:gap-x-10 gap-y-3 text-xs font-semibold">
-                  {[
-                    { label: 'Home', id: 'home' },
-                    { label: 'Safety Protocols', id: 'protocols' },
-                    { label: 'News & Announcements', id: 'news' },
-                    { label: 'Swine Catalog', id: 'catalog' },
-                    { label: 'FAQs', id: 'faqs' },
-                    { label: 'Contact Us', id: 'contact' }
-                  ].map((link) => (
-                    <li key={link.id}>
-                      <button
-                        onClick={() => scrollToSection(link.id)}
-                        className="hover:text-white transition-colors cursor-pointer text-left py-1"
-                      >
-                        {link.label}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-
+              <span className="font-black font-display text-lg tracking-tight">Swine<span className="text-primary-400">Sync</span></span>
             </div>
-
-            {/* Bottom Copyright bar */}
-            <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-              <p>&copy; {new Date().getFullYear()} SwineSync. All rights reserved.</p>
-            </div>
-            
+            <nav aria-label="Footer platform links">
+              <ul className="flex flex-wrap items-center gap-x-6 sm:gap-x-8 lg:gap-x-10 gap-y-3 text-xs font-semibold">
+                {[
+                  { label: 'Home', id: 'home' },
+                  { label: 'Safety Protocols', id: 'protocols' },
+                  { label: 'News & Announcements', id: 'news' },
+                  { label: 'Swine Catalog', id: 'catalog' },
+                  { label: 'FAQs', id: 'faqs' },
+                  { label: 'Contact Us', id: 'contact' }
+                ].map((link) => (
+                  <li key={link.id}>
+                    <button
+                      onClick={() => scrollToSection(link.id)}
+                      className="hover:text-white transition-colors cursor-pointer text-left py-1"
+                    >
+                      {link.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
           </div>
-        </footer>
-      )}
+          <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+            <p>&copy; {new Date().getFullYear()} SwineSync. All rights reserved.</p>
+          </div>
+        </div>
+      </footer>}
 
     </div>
   );
