@@ -22,7 +22,6 @@ export default function App() {
   const [showBackToTop, setShowBackToTop]               = useState(false);
   const observerRef = useRef(null);
 
-  // ── Supabase PASSWORD_RECOVERY handler ─────────────────────────────────────
   // ─── Supabase PASSWORD_RECOVERY handler ─────────────────────────────────────
   useEffect(() => {
     const openRecoveryModal = () => {
@@ -31,8 +30,6 @@ export default function App() {
       setIsUpdatePasswordOpen(true);
     };
 
-  // 1️⃣ Robust raw string check — catches implicit redirects, query redirects,
-  // and links sanitized/encoded by different email clients
     const href = window.location.href.toLowerCase();
     const hasRecoveryToken = 
       href.includes('type=recovery') || 
@@ -41,11 +38,9 @@ export default function App() {
 
     if (hasRecoveryToken) {
       openRecoveryModal();
-      // Clean the token/hash out of the address bar to keep the URL clean
       window.history.replaceState(null, '', window.location.pathname);
     }
 
-  // 2️⃣ Ongoing listener — catches PKCE code-exchange events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         openRecoveryModal();
@@ -54,7 +49,7 @@ export default function App() {
 
     return () => subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+  }, []);
 
   useEffect(() => {
     const sectionIds = ['home', 'protocols', 'news', 'catalog', 'faqs', 'contact'];
@@ -106,7 +101,6 @@ export default function App() {
   const handleLoginSuccess = (name) => {
     setLoggedInUser(name);
     showToast(`Welcome back, ${name}! Staff session established successfully.`, 'success');
-    // Scroll to top (dashboard view)
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -214,7 +208,7 @@ export default function App() {
             <FAQs scrollToSection={scrollToSection} />
           </section>
 
-          {/* CONTACT — full-width dark background band */}
+          {/* CONTACT */}
           <div id="contact" className="bg-slate-950 py-20 reveal-on-scroll">
             <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
               <Contact />
@@ -244,70 +238,55 @@ export default function App() {
         onBackToLogin={() => { setIsUpdatePasswordOpen(false); setIsLoginOpen(true); }}
       />
 
-      {/* Public Footer — hidden when staff is logged in */}
-      {!loggedInUser && <footer className="bg-slate-900 text-slate-400 border-t border-slate-800" id="swinesync-footer">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8 text-left">
-            {/* Brand column */}
-            <div className="space-y-4 md:col-span-2">
-              <div className="flex items-center gap-2.5 text-white">
+      {/* ─── SLIM HORIZONTAL FOOTER (Zero Cliche Text, Maximum Spacing) ─── */}
+      {!loggedInUser && (
+        <footer className="bg-slate-900 text-slate-400 border-t border-slate-800" id="swinesync-footer">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+            
+            {/* Top row: Logo on the left, horizontal link navigation on the right */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-slate-800">
+              
+              {/* Pure Brand Logo Grid */}
+              <div className="flex items-center gap-2.5 text-white shrink-0">
                 <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-primary-600 text-white font-extrabold text-sm shadow-md">
                   S
                 </div>
                 <span className="font-black font-display text-lg tracking-tight">Swine<span className="text-primary-400">Sync</span></span>
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed font-light max-w-sm">
-                Next-generation swine operations monitoring, digital trace registration, and compliance log ecosystem. Prepared for Supabase and RFID scanner integrations.
-              </p>
-            </div>
 
-            {/* Quick Links Column */}
-            <div className="space-y-3.5">
-              <h4 className="text-xs font-bold text-white uppercase tracking-widest">Platform</h4>
-              <ul className="space-y-2 text-xs">
-                {['Home', 'Safety & Protocols', 'News', 'FAQs', 'Contact Us'].map((label, i) => {
-                  const ids = ['home', 'protocols', 'news', 'faqs', 'contact'];
-                  return (
-                    <li key={ids[i]}>
+              {/* Spread Quick Links Navigation */}
+              <nav aria-label="Footer platform links">
+                <ul className="flex flex-wrap items-center gap-x-6 sm:gap-x-8 lg:gap-x-10 gap-y-3 text-xs font-semibold">
+                  {[
+                    { label: 'Home', id: 'home' },
+                    { label: 'Safety Protocols', id: 'protocols' },
+                    { label: 'News & Announcements', id: 'news' },
+                    { label: 'Swine Catalog', id: 'catalog' },
+                    { label: 'FAQs', id: 'faqs' },
+                    { label: 'Contact Us', id: 'contact' }
+                  ].map((link) => (
+                    <li key={link.id}>
                       <button
-                        onClick={() => scrollToSection(ids[i])}
-                        className="hover:text-white transition-colors cursor-pointer text-left"
+                        onClick={() => scrollToSection(link.id)}
+                        className="hover:text-white transition-colors cursor-pointer text-left py-1"
                       >
-                        {label}
+                        {link.label}
                       </button>
                     </li>
-                  );
-                })}
-              </ul>
+                  ))}
+                </ul>
+              </nav>
+
             </div>
 
-            {/* Infrastructure info */}
-            <div className="space-y-3.5">
-              <h4 className="text-xs font-bold text-white uppercase tracking-widest">Security Status</h4>
-              <div className="space-y-2.5">
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>All Systems Operational</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <ShieldCheck className="w-4 h-4 text-primary-500" />
-                  <span>SSL SECURED • AES-256</span>
-                </div>
-              </div>
+            {/* Bottom Copyright bar */}
+            <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+              <p>&copy; {new Date().getFullYear()} SwineSync. All rights reserved.</p>
             </div>
+            
           </div>
-
-          {/* Copyright line */}
-          <div className="pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-            <p>&copy; {new Date().getFullYear()} SwineSync Livestock Ecosystem. All rights reserved.</p>
-            <div className="flex items-center gap-1">
-              <span>Designed for precision agriculture with</span>
-              <Heart className="w-3 h-3 text-swine-450 text-rose-500 fill-rose-500" />
-              <span>and React.js.</span>
-            </div>
-          </div>
-        </div>
-      </footer>}
+        </footer>
+      )}
 
     </div>
   );

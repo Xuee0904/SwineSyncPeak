@@ -2,13 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../supabaseClient';
 import {
-  Search, Eye, RefreshCw, Database, Loader2, WifiOff,
-  Heart, Syringe, Tag, Weight, Calendar, HelpCircle,
+  Search, RefreshCw, WifiOff, Syringe, Weight, Calendar,
   ChevronLeft, ChevronRight, Baby, ShieldCheck, CheckCircle2,
-  AlertCircle, ShieldAlert, Award
+  Award, Users, User
 } from 'lucide-react';
 
-// ─── Constants & Program Feeds ────────────────────────────────────────────────
 const ITEMS_PER_PAGE = 6;
 
 const GROUP_TABS = [
@@ -28,7 +26,6 @@ const FEED_PROGRAMS = {
   Sow: 'Gestation Crumbles (2.0 kg/day)'
 };
 
-// Fallback breeds based on swine groups for visual completeness
 const FALLBACK_BREEDS = {
   Weaner: 'Large White',
   Grower: 'Landrace',
@@ -83,29 +80,73 @@ function ErrorBanner({ message, onRetry }) {
   );
 }
 
-// ─── Health Passport Modal ────────────────────────────────────────────────────
+// ─── Health Passport Modal (With Layout Shift Prevention) ─────────────────────
 function HealthPassportModal({ item, onClose }) {
   const isPig = item.type === 'pig';
   const vaccs = item.vaccinations || [];
+  
+  const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => {
-    // Disable background scroll and prevent white scrollbar track leaking
+    // 1. Calculate physical scrollbar width (e.g., 17px on Windows, 0px on macOS overlay)
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    
+    // 2. Cache original style parameters
+    const originalOverflow = document.body.style.overflow;
+    const originalPaddingRight = document.body.style.paddingRight;
+    
+    // 3. Apply scroll-lock
     document.body.style.overflow = 'hidden';
+    
+    // 4. Inject right-side padding equivalent to scrollbar width to prevent visual jump
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+    
+    // 5. Restore styling variables on unmount
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = originalOverflow;
+      document.body.style.paddingRight = originalPaddingRight;
     };
   }, []);
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      onClose();
+    }, 200);
+  };
   
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in"
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${
+        isClosing ? 'animate-fade-out' : 'animate-fade-in'
+      }`}
       role="dialog"
       aria-modal="true"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
-      <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left max-h-[85vh] flex flex-col animate-slide-up">
+      <style>{`
+        @keyframes fade-out {
+          from { opacity: 1; }
+          to { opacity: 0; }
+        }
+        @keyframes slide-down {
+          from { transform: translateY(0) scale(1); opacity: 1; }
+          to { transform: translateY(20px) scale(0.96); opacity: 0; }
+        }
+        .animate-fade-out {
+          animation: fade-out 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .animate-slide-down {
+          animation: slide-down 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+      `}</style>
 
-        {/* Modal Header */}
+      <div className={`w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left max-h-[85vh] flex flex-col ${
+        isClosing ? 'animate-slide-down' : 'animate-slide-up'
+      }`}>
+
         <div className="p-6 border-b border-slate-100 flex justify-between items-start shrink-0">
           <div>
             <div className="flex items-center gap-2">
@@ -126,7 +167,7 @@ function HealthPassportModal({ item, onClose }) {
           </div>
           
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
             aria-label="Close"
           >
@@ -136,9 +177,7 @@ function HealthPassportModal({ item, onClose }) {
           </button>
         </div>
 
-        {/* Scrollable Timeline Content */}
         <div className="p-6 overflow-y-auto space-y-6 flex-grow bg-slate-50/50">
-          {/* Quick Metrics */}
           <div className="grid grid-cols-3 gap-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-xs">
             <div>
               <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[9px]">Status</span>
@@ -162,9 +201,25 @@ function HealthPassportModal({ item, onClose }) {
             </div>
           </div>
 
-          {/* Vaccination timeline */}
+          {!isPig && (
+            <div className="grid grid-cols-3 gap-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-xs">
+              <div>
+                <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[9px]">Born Alive</span>
+                <span className="font-bold text-slate-800 block mt-1">{item.total_born_alive ?? '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[9px]">Stillborn</span>
+                <span className="font-bold text-slate-800 block mt-1">{item.stillborn_count ?? '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 font-semibold block uppercase tracking-wider text-[9px]">Mummified</span>
+                <span className="font-bold text-slate-800 block mt-1">{item.mummy_count ?? '—'}</span>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider pl-1">
+            <h3 className="text-xs font-bold text-slate-500 tracking-wider pl-1">
               Vaccination History ({vaccs.length})
             </h3>
 
@@ -174,12 +229,10 @@ function HealthPassportModal({ item, onClose }) {
                   const isBoosterOverdue = v.booster_due_date && new Date(v.booster_due_date) < new Date();
                   return (
                     <div key={v.vaccination_id || idx} className="relative">
-                      {/* Timeline Dot */}
-                      <span className="absolute -left-[27px] top-1.5 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-white border-2 border-emerald-500 ring-4 ring-white">
+                      <span className="absolute -left-[27px] top-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white border-2 border-emerald-500 ring-4 ring-white">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                       </span>
 
-                      {/* Record Details Card */}
                       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-2">
                         <div className="flex justify-between items-start">
                           <h4 className="font-bold text-slate-800 text-sm capitalize">{v.vaccine_name}</h4>
@@ -230,10 +283,9 @@ function HealthPassportModal({ item, onClose }) {
           </div>
         </div>
 
-        {/* Modal Footer */}
         <div className="p-5 border-t border-slate-100 bg-white flex justify-end shrink-0">
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
           >
             Close Passport
@@ -249,12 +301,11 @@ function SwineCard({ item, index, onInspectPassport }) {
   const isPig = item.type === 'pig';
   const vaccCount = item.vaccinations?.length || 0;
 
-  // Determine availability status mapping
   let availability = 'Available';
   let availabilityStyle = 'bg-emerald-50 text-emerald-800 border-emerald-100';
 
-  if (item.type === 'batch') {
-    if ((item.rawItem?.current_count || 0) < 10) {
+  if (!isPig) {
+    if ((item.current_count || 0) < 10) {
       availability = 'Low Stock';
       availabilityStyle = 'bg-amber-50 text-amber-800 border-amber-100';
     }
@@ -265,56 +316,92 @@ function SwineCard({ item, index, onInspectPassport }) {
     }
   }
 
-  // Stagger animation based on index
+  let accentBorder = 'border-l-4 border-l-slate-300';
+  if (!isPig) {
+    accentBorder = 'border-l-4 border-l-sky-400';
+  } else if (item.group === 'Sow') {
+    accentBorder = 'border-l-4 border-l-pink-500';
+  } else if (item.group === 'Boar') {
+    accentBorder = 'border-l-4 border-l-emerald-600';
+  }
+
+  let taxonomyLabel = 'Market Swine';
+  if (item.group === 'Sow') taxonomyLabel = 'Breeding Female (Sow)';
+  else if (item.group === 'Boar') taxonomyLabel = 'Breeding Male (Boar)';
+  else if (!isPig) taxonomyLabel = 'Cohesive Litter Batch';
+
   const animationDelay = `${(index % ITEMS_PER_PAGE) * 75}ms`;
 
   return (
     <div
-      className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 hover:border-emerald-100 transition-all duration-300 flex flex-col justify-between relative overflow-hidden group animate-slide-up"
+      className={`bg-white border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 hover:border-emerald-100 transition-all duration-300 flex flex-col justify-between relative overflow-hidden group animate-slide-up ${accentBorder}`}
       style={{ animationDelay, animationFillMode: 'both' }}
       id={`swine-card-${item.id}`}
     >
       <div>
-        {/* Top Pills */}
         <div className="flex justify-between items-center mb-4">
-          <span className="px-3 py-1 bg-slate-50 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-semibold uppercase tracking-wide">
+          {isPig ? (
+            <span className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider bg-slate-50 text-slate-500 px-2.5 py-1 rounded-lg border border-slate-150">
+              <User className="w-3 h-3 text-slate-400" />
+              Single Swine
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wider bg-sky-50 text-sky-700 px-2.5 py-1 rounded-lg border border-sky-100">
+              <Users className="w-3 h-3 text-sky-500" />
+              Litter Batch
+            </span>
+          )}
+
+          <span className="px-2.5 py-0.5 bg-slate-50 border border-slate-200 text-slate-650 rounded-full text-[10px] font-bold uppercase tracking-wide">
             {item.group}
-          </span>
-          <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wider ${availabilityStyle}`}>
-            {availability}
           </span>
         </div>
 
-        {/* Breed Title */}
-        <h3 className="text-xl font-bold font-display text-slate-900 group-hover:text-emerald-700 transition-colors">
-          {item.breed}
-        </h3>
+        <div>
+          <h3 className="text-xl font-bold font-display text-slate-900 group-hover:text-emerald-700 transition-colors">
+            {item.breed}
+          </h3>
+          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 block">
+            {taxonomyLabel}
+          </span>
+        </div>
 
-        {/* Quick Info (Weight & Weeks) */}
-        <div className="flex items-center gap-3 mt-3 text-slate-500 font-medium text-xs">
+        <div className="flex items-center gap-3 mt-3 text-slate-500 font-medium text-xs flex-wrap">
           <span className="flex items-center gap-1.5">
             <Weight className="w-3.5 h-3.5 text-slate-400" />
             {isPig ? `${item.weight} kg` : `${item.average_weight} kg (avg)`}
           </span>
-          <span className="text-slate-300">|</span>
+          <span className="text-slate-200">|</span>
           <span className="flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             Week {item.ageWeeks}
           </span>
+          {!isPig && (
+            <>
+              <span className="text-slate-200">|</span>
+              <span className="flex items-center gap-1.5 font-bold text-sky-700">
+                <Baby className="w-3.5 h-3.5 text-sky-400" />
+                {item.current_count ?? 0} head
+              </span>
+            </>
+          )}
         </div>
 
-        {/* Program Feed Box */}
         <div className="bg-slate-50/70 border border-slate-100 rounded-2xl p-4 mt-5">
-          <span className="text-slate-400 font-bold text-[9px] uppercase tracking-wider block">
-            Program Feed
-          </span>
+          <div className="flex justify-between items-center">
+            <span className="text-slate-400 font-bold text-[9px] uppercase tracking-wider">
+              Program Feed
+            </span>
+            <span className={`px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase tracking-wider ${availabilityStyle}`}>
+              {availability}
+            </span>
+          </div>
           <span className="text-slate-700 font-bold text-xs mt-1 block">
             {FEED_PROGRAMS[item.group] || 'Standard Feed'}
           </span>
         </div>
       </div>
 
-      {/* Action Button: Inspect Health Passport */}
       <button
         onClick={() => onInspectPassport(item)}
         className="w-full mt-6 py-3 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100/70 text-emerald-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-sm"
@@ -333,17 +420,11 @@ export default function Catalog() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Filters
   const [search, setSearch] = useState('');
   const [activeGroup, setActiveGroup] = useState('all');
-
-  // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-
-  // Selected Health Passport
   const [passportItem, setPassportItem] = useState(null);
 
-  // Fetch from Supabase
   const loadCatalogData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -363,13 +444,10 @@ export default function Catalog() {
       const allVaccinations = vaccRes.data ?? [];
       const allHealthLogs = healthRes.data ?? [];
 
-      // ─── Process Individual Pigs ───
       const healthyPigs = (pigsRes.data ?? []).filter(p => {
         if (p.is_archived) return false;
-        // Keep only healthy swine
         if (p.status !== 'healthy') return false;
 
-        // Check health logs for active treatment/illness
         const pigLogs = allHealthLogs.filter(h => h.pig_id === p.pig_id);
         if (pigLogs.length > 0) {
           const latestLog = pigLogs.sort((a, b) => new Date(b.log_date) - new Date(a.log_date))[0];
@@ -380,11 +458,9 @@ export default function Catalog() {
         return true;
       });
 
-      // ─── Process Piglet Batches ───
       const healthyBatches = (batchesRes.data ?? []).filter(b => {
         if (b.is_archived) return false;
 
-        // Check health logs for active treatment/illness
         const batchLogs = allHealthLogs.filter(h => h.batch_id === b.batch_id);
         if (batchLogs.length > 0) {
           const latestLog = batchLogs.sort((a, b) => new Date(b.log_date) - new Date(a.log_date))[0];
@@ -395,17 +471,15 @@ export default function Catalog() {
         return true;
       });
 
-      // Map pigs into unified card model
       const mappedPigs = healthyPigs.map(p => {
         const pVaccs = allVaccinations.filter(v => v.pig_id === p.pig_id);
         const pLogs = allHealthLogs.filter(h => h.pig_id === p.pig_id);
 
         const ageWeeks = Math.max(1, Math.floor((new Date() - new Date(p.date_of_birth)) / (1000 * 60 * 60 * 24 * 7)));
 
-        // Classification
         let group = 'Grower';
-        if (p.gender?.toLowerCase() === 'male') group = 'Boar';
-        else if (p.gender?.toLowerCase() === 'female' && p.parity_count > 0) group = 'Sow';
+        if (p.gender?.toLowerCase() === 'male' || p.gender?.toLowerCase() === 'm') group = 'Boar';
+        else if ((p.gender?.toLowerCase() === 'female' || p.gender?.toLowerCase() === 'f') && p.parity_count > 0) group = 'Sow';
         else if (p.weight < 25) group = 'Weaner';
         else if (p.weight >= 80) group = 'Finisher';
 
@@ -427,7 +501,6 @@ export default function Catalog() {
         };
       });
 
-      // Map batches into unified card model
       const mappedBatches = healthyBatches.map(b => {
         const bVaccs = allVaccinations.filter(v => v.batch_id === b.batch_id);
         const bLogs = allHealthLogs.filter(h => h.batch_id === b.batch_id);
@@ -453,6 +526,10 @@ export default function Catalog() {
           date_of_birth: null,
           parity_count: null,
           pen_id: b.pen_id,
+          current_count: b.current_count,
+          total_born_alive: b.total_born_alive,
+          stillborn_count: b.stillborn_count,
+          mummy_count: b.mummy_count,
           vaccinations: bVaccs,
           healthLogs: bLogs
         };
@@ -471,13 +548,10 @@ export default function Catalog() {
     loadCatalogData();
   }, [loadCatalogData]);
 
-  // Client filtering & pagination
   const filteredItems = items.filter(item => {
-    // 1. Group filtering
     if (activeGroup !== 'all' && item.group.toLowerCase() !== activeGroup) {
       return false;
     }
-    // 2. Search query matching
     if (search.trim()) {
       const q = search.toLowerCase();
       return (
@@ -489,7 +563,6 @@ export default function Catalog() {
     return true;
   });
 
-  // Sort logically: Sows/Boars first, then by age/week desc
   const sortedItems = [...filteredItems].sort((a, b) => {
     const priority = { Sow: 1, Boar: 2, Finisher: 3, Grower: 4, Weaner: 5 };
     const aPriority = priority[a.group] || 99;
@@ -498,11 +571,8 @@ export default function Catalog() {
     return b.ageWeeks - a.ageWeeks;
   });
 
-  // Pagination bounds
   const totalItems = sortedItems.length;
   const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1;
-  
-  // Safe page index correction
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, totalItems);
@@ -510,12 +580,11 @@ export default function Catalog() {
 
   const handleGroupChange = (groupId) => {
     setActiveGroup(groupId);
-    setCurrentPage(1); // Reset page on tab shift
+    setCurrentPage(1);
   };
 
   return (
     <div className="space-y-8 pb-20 text-left" id="catalog-section">
-      {/* Catalog Header */}
       <section className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 border-b border-slate-100 pb-6">
         <div>
           <h1 className="text-3xl font-extrabold font-display text-slate-900 tracking-tight flex items-center gap-2">
@@ -533,7 +602,6 @@ export default function Catalog() {
           </p>
         </div>
 
-        {/* Inline Search Bar & Refresh */}
         <div className="flex items-center gap-3 w-full lg:w-auto">
           <div className="relative flex-grow lg:flex-grow-0 lg:w-72">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
@@ -562,7 +630,6 @@ export default function Catalog() {
         </div>
       </section>
 
-      {/* Swine Group Tabs */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none shrink-0" role="tablist">
         {GROUP_TABS.map(tab => {
           const isActive = activeGroup === tab.id;
@@ -584,7 +651,6 @@ export default function Catalog() {
         })}
       </div>
 
-      {/* Grid of Swine Cards */}
       {loading ? (
         <LoadingSkeleton />
       ) : error ? (
@@ -602,7 +668,6 @@ export default function Catalog() {
             ))}
           </section>
 
-          {/* Simple Clean Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t border-slate-100 pt-6">
               <button
@@ -622,7 +687,7 @@ export default function Catalog() {
                     <button
                       key={pageNum}
                       onClick={() => setCurrentPage(pageNum)}
-                      className={`w-8.5 h-8.5 flex items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      className={`w-[34px] h-[34px] flex items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
                         isCurrent
                           ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10'
                           : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -655,7 +720,6 @@ export default function Catalog() {
         </div>
       )}
 
-      {/* ── Modal ── */}
       {passportItem && createPortal(
         <HealthPassportModal
           item={passportItem}
