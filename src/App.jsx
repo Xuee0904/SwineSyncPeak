@@ -102,9 +102,9 @@ export default function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const handleLoginSuccess = (name) => {
-    setLoggedInUser(name);
-    showToast(`Welcome back, ${name}! Staff session established successfully.`, 'success');
+  const handleLoginSuccess = (userObj) => {
+    setLoggedInUser(userObj);
+    showToast(`Welcome back, ${userObj.name}! Session established successfully.`, 'success');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 

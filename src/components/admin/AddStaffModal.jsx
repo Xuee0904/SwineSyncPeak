@@ -23,7 +23,7 @@ function validate(name, email, password) {
   return errs;
 }
 
-export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUrl }) {
+export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUrl, loggedInUser }) {
   const [newStaff, setNewStaff] = useState({ name: '', email: '', password: '', role: 'Staff' });
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState(null);
@@ -60,10 +60,24 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
 
     try {
       setLoading(true);
+      
+      // Type-safe string extraction to prevent passing objects to the backend
+      let creatorString = 'Admin System';
+      if (typeof loggedInUser === 'string' && loggedInUser.trim() !== '') {
+        creatorString = loggedInUser;
+      } else if (loggedInUser && typeof loggedInUser === 'object') {
+        creatorString = loggedInUser.user_metadata?.full_name || loggedInUser.email || 'Admin System';
+      }
+
+      const payload = {
+        ...newStaff,
+        creator: creatorString
+      };
+
       const response = await fetch(`${apiBaseUrl}/api/admin/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newStaff)
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -119,6 +133,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
         style={{ animation: isClosing ? 'staffModalScaleOut 180ms ease-in forwards' : 'staffModalScaleIn 220ms cubic-bezier(0.16, 1, 0.3, 1)' }}
       >
         <button
+          type="button"
           onClick={requestClose}
           className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
           aria-label="Close"
@@ -214,7 +229,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
                 type="button"
                 tabIndex={-1}
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-655 transition-colors cursor-pointer"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -245,7 +260,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
             <button
               type="button"
               onClick={requestClose}
-              className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-655 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
             >
               Cancel
             </button>

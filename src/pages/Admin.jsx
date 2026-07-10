@@ -144,11 +144,28 @@ export default function Admin({ loggedInUser }) {
     alert(`Exporting ${tableName} dataset as CSV…`);
   };
 
-  // Sort: current logged-in session always remains at top
+  // Helper function to extract a string username safely regardless of input type
+  const getUsernameSafe = () => {
+    if (!loggedInUser) return '';
+    if (typeof loggedInUser === 'string') return loggedInUser.toLowerCase();
+    if (typeof loggedInUser === 'object') {
+      return (loggedInUser.user_metadata?.full_name || loggedInUser.email || '').toLowerCase();
+    }
+    return '';
+  };
+
+  // Chronological priorities sorting with type-safe metadata checks
   const processedStaff = [...staffList].sort((a, b) => {
-    const currentUser = loggedInUser || '';
-    const aIsYou = a.name.toLowerCase().includes(currentUser.toLowerCase());
-    const bIsYou = b.name.toLowerCase().includes(currentUser.toLowerCase());
+    const currentUser = getUsernameSafe();
+    
+    const aName = (a.name || '').toLowerCase();
+    const bName = (b.name || '').toLowerCase();
+    const aEmail = (a.email || '').toLowerCase();
+    const bEmail = (b.email || '').toLowerCase();
+
+    // Safe comparison mapping
+    const aIsYou = currentUser && (aName.includes(currentUser) || aEmail.includes(currentUser));
+    const bIsYou = currentUser && (bName.includes(currentUser) || bEmail.includes(currentUser));
 
     if (aIsYou && !bIsYou) return -1;
     if (!aIsYou && bIsYou) return 1;
@@ -159,13 +176,16 @@ export default function Admin({ loggedInUser }) {
     return bTime - aTime;
   });
 
-  const filteredStaff = processedStaff.filter(staff => 
-    staff.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    staff.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    staff.id.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredStaff = processedStaff.filter(staff => {
+    const name = (staff.name || '').toLowerCase();
+    const email = (staff.email || '').toLowerCase();
+    const id = (staff.id || '').toLowerCase();
+    const q = searchQuery.toLowerCase();
 
-  // ─── Filtered Activity Logs (Timeframe Date Bounds) ───────────────────────
+    return name.includes(q) || email.includes(q) || id.includes(q);
+  });
+
+  // ─── Filtered Activity Logs (Timeframe Date Bounds) ──────────────────────
   const filteredLogs = activityLogs.filter((log) => {
     const logDate = new Date(log.timestamp);
     const now = new Date();
@@ -207,9 +227,9 @@ export default function Admin({ loggedInUser }) {
     // 3. Search input keyword checks
     const q = logSearchQuery.toLowerCase().trim();
     const matchesSearch = !q || 
-      log.user_name.toLowerCase().includes(q) ||
-      log.user_email.toLowerCase().includes(q) ||
-      log.event_title.toLowerCase().includes(q) ||
+      (log.user_name || '').toLowerCase().includes(q) ||
+      (log.user_email || '').toLowerCase().includes(q) ||
+      (log.event_title || '').toLowerCase().includes(q) ||
       (log.event_desc && log.event_desc.toLowerCase().includes(q));
 
     return matchesSearch;
@@ -218,7 +238,7 @@ export default function Admin({ loggedInUser }) {
   return (
     <div className="space-y-6 pb-16 text-left animate-fade-in" id="admin-portal-view">
 
-      {/* ─── CARD 1: ACCOUNT MANAGEMENT ─────────────────────────────────────── */}
+      {/* ─── CARD 1: ACCOUNT MANAGEMENT (Dashboard Consistent) ───────────────── */}
       <section className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden" id="account-management-card">
         <div className="px-5 py-4 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -227,6 +247,7 @@ export default function Admin({ loggedInUser }) {
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-800">Account Management</h2>
+              <p className="text-[11px] text-slate-400 mt-0.5">Manage administrative credentials, staff rosters, and audit records.</p>
             </div>
           </div>
 
@@ -259,7 +280,7 @@ export default function Admin({ loggedInUser }) {
             className="bg-transparent border-none text-[11px] text-slate-700 outline-none w-full placeholder-slate-450"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-slate-450 hover:text-slate-655">
+            <button onClick={() => setSearchQuery('')} className="text-slate-450 hover:text-slate-650">
               <X className="w-3 h-3" />
             </button>
           )}
@@ -290,8 +311,11 @@ export default function Admin({ loggedInUser }) {
                 <TableSkeleton rows={4} />
               ) : (
                 filteredStaff.map((staff) => {
-                  const currentUser = loggedInUser || '';
-                  const isYou = staff.name.toLowerCase().includes(currentUser.toLowerCase());
+                  const currentUser = getUsernameSafe();
+                  
+                  const staffName = staff.name || '';
+                  const staffEmail = staff.email || '';
+                  const isYou = currentUser && (staffName.toLowerCase().includes(currentUser) || staffEmail.toLowerCase().includes(currentUser));
                   
                   return (
                     <tr key={staff.fullId} className="hover:bg-slate-50/30 transition-colors">
@@ -299,25 +323,25 @@ export default function Admin({ loggedInUser }) {
                         <div className="flex items-center gap-3">
                           <img 
                             src={staff.avatar} 
-                            alt={staff.name} 
+                            alt={staffName} 
                             className="w-8 h-8 rounded-full object-cover ring-2 ring-slate-100 shrink-0"
                           />
                           <div className="flex flex-col">
                             <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                              {staff.name}
+                              {staffName}
                               {isYou && (
                                 <span className="text-[9px] bg-emerald-50 text-emerald-600 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider">
                                   You
                                 </span>
                               )}
                             </span>
-                            <span className="text-[10px] text-slate-400">{staff.email}</span>
+                            <span className="text-[10px] text-slate-400">{staffEmail}</span>
                           </div>
                         </div>
                       </td>
                       <td className="p-4 pl-6 text-left">
                         <span className={`inline-block px-2 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wider ${
-                          staff.role.toLowerCase() === 'admin' 
+                          (staff.role || '').toLowerCase() === 'admin' 
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
                             : 'bg-blue-50 text-blue-700 border border-blue-100'
                         }`}>
@@ -336,13 +360,10 @@ export default function Admin({ loggedInUser }) {
                         {staff.lastLogin}
                       </td>
                       <td className="p-4 text-right pr-6 space-x-1 shrink-0">
-                        <button className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title="View Audit Logs">
-                          <BarChart2 className="w-4 h-4" />
-                        </button>
                         <button className="p-1.5 text-slate-400 hover:text-indigo-650 rounded-lg transition-all" title="Edit Profile">
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
-                        <button className="p-1.5 text-slate-400 hover:text-slate-650 rounded-lg transition-all">
+                        <button className="p-1.5 text-slate-400 hover:text-slate-655 rounded-lg transition-all">
                           <MoreVertical className="w-3.5 h-3.5" />
                         </button>
                       </td>
@@ -353,7 +374,7 @@ export default function Admin({ loggedInUser }) {
               {!loading && filteredStaff.length === 0 && (
                 <tr>
                   <td colSpan="5" className="text-center py-10 text-slate-400">
-                    No matching credentials found in Supabase Auth.
+                    No matching credentials found.
                   </td>
                 </tr>
               )}
@@ -362,7 +383,7 @@ export default function Admin({ loggedInUser }) {
         </div>
       </section>
 
-      {/* ─── CARD 2: REAL-TIME ACTIVITY LOG ─────────────────────────────────── */}
+      {/* ─── CARD 2: REAL-TIME ACTIVITY LOG (Dashboard Consistent) ──────────── */}
       <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden" id="activity-log-card">
         <div className="px-5 py-4 border-b border-slate-50 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -371,11 +392,12 @@ export default function Admin({ loggedInUser }) {
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-800">Activity Log</h2>
+              <p className="text-[11px] text-slate-400 mt-0.5">System audit tracking trail of modifications and logins.</p>
             </div>
           </div>
           <button 
             onClick={() => handleExport('Activity Log')}
-            className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+            className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-605 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 mr-1 inline-block" />
             Export
@@ -396,13 +418,13 @@ export default function Admin({ loggedInUser }) {
                 className="w-full pl-9 pr-8 py-1.5 bg-white border border-slate-200 rounded-xl text-[11px] text-slate-700 outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 placeholder-slate-450"
               />
               {logSearchQuery && (
-                <button onClick={() => setLogSearchQuery('')} className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-655">
+                <button onClick={() => setLogSearchQuery('')} className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600">
                   <X className="w-3 h-3" />
                 </button>
               )}
             </div>
 
-            {/* Time-Period Quick Selector Dropdown (Now Including Custom Option) */}
+            {/* Time-Period Selector Dropdown */}
             <div className="w-full sm:w-44 shrink-0">
               <select
                 value={logDateFilter}
@@ -425,7 +447,7 @@ export default function Admin({ loggedInUser }) {
             </div>
           </div>
 
-          {/* ─── Animated Sliding/Fading Custom Date Picker Drawer ─── */}
+          {/* Collapsible Custom Date Picker Drawer */}
           <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
             logDateFilter === 'custom' 
               ? 'max-h-32 opacity-100 mt-1' 
@@ -498,7 +520,7 @@ export default function Admin({ loggedInUser }) {
                     <tr key={log.log_id} className="hover:bg-slate-50/30 transition-colors">
                       <td className="p-4 pl-6 font-medium text-slate-500 space-y-0.5">
                         <span className="block font-bold text-slate-700">{dateFormatted}</span>
-                        <span className="block text-[10px] text-slate-450">{timeFormatted}</span>
+                        <span className="block text-[10px] text-slate-400">{timeFormatted}</span>
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-3">
@@ -506,8 +528,8 @@ export default function Admin({ loggedInUser }) {
                             {log.user_initials}
                           </div>
                           <div className="flex flex-col min-w-0">
-                            <span className="font-bold text-slate-700 truncate">{log.user_name}</span>
-                            <span className="text-[10px] text-slate-450 truncate">{log.user_email}</span>
+                            <span className="font-bold text-slate-700 truncate">{log.user_name || 'System User'}</span>
+                            <span className="text-[10px] text-slate-450 truncate">{log.user_email || 'internal@system'}</span>
                           </div>
                         </div>
                       </td>
@@ -549,9 +571,11 @@ export default function Admin({ loggedInUser }) {
       <AddStaffModal 
         isOpen={isAddStaffOpen}
         onClose={() => setIsAddStaffOpen(false)}
+        loggedInUser={loggedInUser}
         onAddSuccess={() => {
           setIsAddStaffOpen(false);
           loadStaffAccounts();
+          loadActivityLogs(); // Triggers a clean reload of both tables on success
         }}
         apiBaseUrl={API_BASE_URL}
       />

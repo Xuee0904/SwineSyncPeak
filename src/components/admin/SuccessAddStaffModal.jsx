@@ -1,6 +1,6 @@
 import React from 'react';
 import { Check, X } from 'lucide-react';
-import useModalAnimation from '../../hooks/useModalAnimation';
+import useModalAnimation from '../../hooks/useModalAnimation'; // Restored hook import
 
 export default function SuccessAddStaffModal({ isOpen, onClose, staff }) {
   const { shouldRender, isClosing, requestClose } = useModalAnimation(isOpen, onClose);

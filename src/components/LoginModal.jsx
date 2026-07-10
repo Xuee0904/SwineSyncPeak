@@ -132,7 +132,10 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
         user.user_metadata?.name ||
         user.email.split('@')[0].charAt(0).toUpperCase() + user.email.split('@')[0].slice(1);
 
-      onLoginSuccess(displayName);
+      onLoginSuccess({
+        name: displayName,
+        role: user.user_metadata?.role || 'Staff'
+      });
       handleClose();
     } catch (err) {
       setServerError('Something went wrong. Please try again.');

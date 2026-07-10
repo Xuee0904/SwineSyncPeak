@@ -111,6 +111,14 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (loggedInUser && loggedInUser.role !== 'Admin') {
+      if (activeTab === 'admin' || activeTab === 'transactions') {
+        setActiveTab('dashboard');
+      }
+    }
+  }, [activeTab, loggedInUser]);
+
   const firstDay    = new Date(calMonth.year, calMonth.month, 1).getDay();
   const daysInMonth = new Date(calMonth.year, calMonth.month + 1, 0).getDate();
   const prevMonth   = () => setCalMonth(p => p.month === 0 ? { year: p.year - 1, month: 11 } : { ...p, month: p.month - 1 });
@@ -190,7 +198,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
               )}
             </button>
             <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm flex items-center justify-center select-none cursor-pointer">
-              {loggedInUser?.charAt(0)?.toUpperCase()}
+              {loggedInUser?.name?.charAt(0)?.toUpperCase()}
             </div>
           </div>
         </header>

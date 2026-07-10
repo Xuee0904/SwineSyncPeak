@@ -114,7 +114,7 @@ app.post('/api/admin/users', async (req, res) => {
       return res.status(500).json({ error: 'Administrative client (service role key) is not configured on this server.' });
     }
 
-    const { email, password, name, role } = req.body;
+    const { email, password, name, role, creator } = req.body;
 
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'Missing required registration parameters (email, password, name).' });
@@ -133,6 +133,38 @@ app.post('/api/admin/users', async (req, res) => {
     });
 
     if (error) throw error;
+
+    // ─── SAFE TYPE GUARD FOR CREATOR NAME ───
+    let creatorName = 'Admin System';
+    if (typeof creator === 'string' && creator.trim() !== '') {
+      creatorName = creator;
+    } else if (creator && typeof creator === 'object') {
+      creatorName = creator.full_name || creator.name || creator.email || 'Admin System';
+    }
+
+    // Generate initials (e.g. John Doe -> JD)
+    const initials = creatorName
+      .split(' ')
+      .map(word => word ? word[0] : '')
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+
+    const { error: logError } = await supabaseAdmin
+      .from('activity_logs')
+      .insert({
+        user_name: creatorName,
+        user_email: creatorName.toLowerCase() === 'admin system' ? 'system@internal' : 'admin@gmail.com',
+        user_initials: initials || 'AD',
+        user_bg_color: 'bg-emerald-100 text-emerald-700',
+        event_title: 'Account Created',
+        event_desc: `Registered new caretaker account: ${name} (${email}) as ${role}.`,
+        status: 'SUCCESS'
+      });
+
+    if (logError) {
+      console.error('Failed to log account creation event:', logError.message);
+    }
 
     res.json({ message: 'Staff account created successfully', user });
   } catch (error) {

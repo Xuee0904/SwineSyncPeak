@@ -23,6 +23,15 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
     onClose?.();
   };
 
+  const filteredNavItems = NAV_ITEMS.filter(({ id }) => {
+    if (loggedInUser?.role !== 'Admin') {
+      if (id === 'transactions' || id === 'admin') {
+        return false;
+      }
+    }
+    return true;
+  });
+
   return (
     <>
       {/*
@@ -67,7 +76,7 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
 
           {/* Nav */}
           <nav className="px-3 py-4 space-y-0.5" aria-label="Main menu">
-            {NAV_ITEMS.map(({ id, label, icon: Icon, sub }) => {
+            {filteredNavItems.map(({ id, label, icon: Icon, sub }) => {
               const active = activeTab === id;
               return (
                 <button
@@ -98,11 +107,11 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
           {loggedInUser && (
             <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-100 mb-2">
               <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center shrink-0">
-                {loggedInUser.charAt(0).toUpperCase()}
+                {loggedInUser.name ? loggedInUser.name.charAt(0).toUpperCase() : '?'}
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-bold text-slate-800 truncate">{loggedInUser}</p>
-                <p className="text-[10px] text-slate-400 font-semibold">Staff Portal</p>
+                <p className="text-xs font-bold text-slate-800 truncate">{loggedInUser.name}</p>
+                <p className="text-[10px] text-slate-400 font-semibold">{loggedInUser.role} Portal</p>
               </div>
             </div>
           )}
