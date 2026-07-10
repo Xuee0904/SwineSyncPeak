@@ -172,7 +172,7 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
   } else if (strength.score < 4) {
     pwErrors.newPassword = 'Your password must satisfy all security requirements listed below.';
   } else if (oldPassword && newPassword === oldPassword) {
-    pwErrors.newPassword = 'For security purposes, you cannot reuse your temporary password.';
+    pwErrors.newPassword = 'You cannot reuse your most recent password.';
   }
 
   if (!confirmPassword) {
@@ -407,7 +407,7 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
                 <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 sm:p-4 space-y-3 animate-fade-in" id="password-strength-panel">
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Security Strength</span>
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Password Strength</span>
                       <span className="text-[11px] sm:text-xs font-bold transition-colors duration-300" style={{ color: strength.color }}>
                         {strength.label}
                       </span>

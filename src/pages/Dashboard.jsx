@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Catalog from '../landing-page/Catalog';
 import SideNav, { NAV_ITEMS } from '../components/SideNav';
-import Admin from './Admin'; // Imported our new high-fidelity Admin panel
+import Admin from './Admin';
 import {
   Sparkles, Database, ArrowUpRight, ChevronRight,
   AlertTriangle, CheckSquare, Square,
