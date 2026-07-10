@@ -84,14 +84,18 @@ app.get('/api/admin/users', async (req, res) => {
     const formattedUsers = users.map(user => {
       const email = user.email || 'no-email@swinesync.com';
       const name = user.user_metadata?.full_name || user.user_metadata?.name || email.split('@')[0];
+      const isArchived = !!user.user_metadata?.is_archived;
+
       return {
         id: user.id.slice(0, 8).toUpperCase(),
         fullId: user.id,
         name,
         email,
         role: user.user_metadata?.role || 'Staff',
-        status: user.last_sign_in_at ? 'Active' : 'Inactive',
-        lastSignInAt: user.last_sign_in_at || null, // Keep raw ISO timestamp for precise front-end sorting
+        isArchived,
+        // Shows as Archived first, otherwise falls back to active tracking status
+        status: isArchived ? 'Archived' : (user.last_sign_in_at ? 'Active' : 'Inactive'),
+        lastSignInAt: user.last_sign_in_at || null, 
         lastLogin: user.last_sign_in_at 
           ? new Date(user.last_sign_in_at).toLocaleDateString(undefined, {
               month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -107,7 +111,7 @@ app.get('/api/admin/users', async (req, res) => {
   }
 });
 
-// POST /api/admin/users
+// 2. POST /api/admin/users
 app.post('/api/admin/users', async (req, res) => {
   try {
     if (!supabaseAdmin) {
@@ -120,7 +124,6 @@ app.post('/api/admin/users', async (req, res) => {
       return res.status(400).json({ error: 'Missing required registration parameters (email, password, name).' });
     }
 
-    // Register user administratively and assign first-time reset flag inside metadata
     const { data: { user }, error } = await supabaseAdmin.auth.admin.createUser({
       email: email.trim(),
       password: password,
@@ -128,13 +131,13 @@ app.post('/api/admin/users', async (req, res) => {
       user_metadata: {
         full_name: name,
         role: role || 'Staff',
-        must_change_password: true // Forced reset indicator
+        must_change_password: true,
+        is_archived: false // Default to active on creation
       }
     });
 
     if (error) throw error;
 
-    // ─── SAFE TYPE GUARD FOR CREATOR NAME ───
     let creatorName = 'Admin System';
     if (typeof creator === 'string' && creator.trim() !== '') {
       creatorName = creator;
@@ -142,7 +145,6 @@ app.post('/api/admin/users', async (req, res) => {
       creatorName = creator.full_name || creator.name || creator.email || 'Admin System';
     }
 
-    // Generate initials (e.g. John Doe -> JD)
     const initials = creatorName
       .split(' ')
       .map(word => word ? word[0] : '')
@@ -172,7 +174,68 @@ app.post('/api/admin/users', async (req, res) => {
   }
 });
 
-// GET /api/admin/activity-logs
+// 3. PUT /api/admin/users/:id (Edit & Archive/Restore Toggle)
+app.put('/api/admin/users/:id', async (req, res) => {
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: 'Administrative client not configured.' });
+    }
+
+    const { id } = req.params;
+    const { name, role, is_archived, creator, targetRole } = req.body;
+
+    if (targetRole && targetRole.toLowerCase() === 'admin') {
+      return res.status(403).json({ error: 'Administrative security rules prevent editing fellow Admin accounts.' });
+    }
+
+    // Standard business lockout suspension: 100,000 hours ban duration if archived, 'none' if restored
+    const banDuration = is_archived ? '100000h' : 'none';
+
+    // Update user metadata & login permissions in Supabase Auth
+    const { data: { user }, error } = await supabaseAdmin.auth.admin.updateUserById(id, {
+      ban_duration: banDuration,
+      user_metadata: {
+        full_name: name,
+        role: role || 'Staff',
+        is_archived: !!is_archived
+      }
+    });
+
+    if (error) throw error;
+
+    let creatorName = 'Admin System';
+    if (typeof creator === 'string' && creator.trim() !== '') {
+      creatorName = creator;
+    } else if (creator && typeof creator === 'object') {
+      creatorName = creator.full_name || creator.name || creator.email || 'Admin System';
+    }
+
+    const initials = creatorName.split(' ').map(w => w ? w[0] : '').join('').toUpperCase().slice(0, 2);
+
+    // Determine event details dynamically
+    const eventTitle = is_archived ? 'Account Archived' : 'Account Restored';
+    const eventDesc = is_archived 
+      ? `Temporarily suspended access credentials for ${name} (${user.email}).`
+      : `Restored login capabilities and credentials for ${name} (${user.email}).`;
+
+    await supabaseAdmin.from('activity_logs').insert({
+      user_name: creatorName,
+      user_email: 'admin@gmail.com',
+      user_initials: initials || 'AD',
+      // Color: rose for archiving, emerald for restoring, amber for plain edits
+      user_bg_color: is_archived ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700',
+      event_title: eventTitle,
+      event_desc: eventDesc,
+      status: 'SUCCESS'
+    });
+
+    res.json({ message: 'Caretaker account updated successfully', user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/admin/activity-logs (PAGINATION SUPPORTED — limit removed)
 app.get('/api/admin/activity-logs', async (req, res) => {
   try {
     if (!supabaseAdmin) {
@@ -185,10 +248,8 @@ app.get('/api/admin/activity-logs', async (req, res) => {
     const { data, error } = await supabaseAdmin
       .from('activity_logs')
       .select('*')
-      .order('timestamp', { ascending: false })
-      .limit(10); 
+      .order('timestamp', { ascending: false }); // Limit constraint removed completely
 
-    // If Supabase returned an error, return its full descriptive body
     if (error) {
       console.error('Supabase Query Error:', error);
       return res.status(500).json({ error: error.message, details: error });

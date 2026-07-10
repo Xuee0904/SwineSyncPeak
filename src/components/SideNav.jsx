@@ -4,7 +4,6 @@ import {
   Baby, ClipboardList, Receipt, Settings, LogOut, X, ChevronRight,
 } from 'lucide-react';
 
-// ─── Nav items — exported so Dashboard can read the active label ──────────────
 export const NAV_ITEMS = [
   { id: 'dashboard',         label: 'Dashboard',           icon: LayoutDashboard },
   { id: 'swine_management',  label: 'Swine Management',    icon: Users,          sub: true },
@@ -16,29 +15,35 @@ export const NAV_ITEMS = [
   { id: 'admin',             label: 'Admin Settings',      icon: Settings },
 ];
 
-// ─── SideNav ──────────────────────────────────────────────────────────────────
 export default function SideNav({ activeTab, onTabChange, onClose, onLogout, loggedInUser, mobileOpen }) {
   const handleClick = (id) => {
     onTabChange(id);
     onClose?.();
   };
 
-  const filteredNavItems = NAV_ITEMS.filter(({ id }) => {
-    if (loggedInUser?.role !== 'Admin') {
-      if (id === 'transactions' || id === 'admin') {
-        return false;
-      }
+  // Type-safe initials extractor
+  const getInitials = () => {
+    if (!loggedInUser) return '?';
+    if (typeof loggedInUser === 'string') return loggedInUser.charAt(0).toUpperCase();
+    if (typeof loggedInUser === 'object') {
+      const name = loggedInUser.user_metadata?.full_name || loggedInUser.email || '';
+      return name.charAt(0).toUpperCase() || '?';
     }
-    return true;
-  });
+    return '?';
+  };
+
+  // Type-safe display name extractor
+  const getDisplayName = () => {
+    if (!loggedInUser) return '';
+    if (typeof loggedInUser === 'string') return loggedInUser;
+    if (typeof loggedInUser === 'object') {
+      return loggedInUser.user_metadata?.full_name || loggedInUser.email || 'Staff';
+    }
+    return '';
+  };
 
   return (
     <>
-      {/*
-        fixed + inset-y-0 left-0 = always glued to the left edge of the viewport.
-        h-screen overflow-y-auto = sidebar scrolls internally if items overflow,
-        the rest of the page is never affected.
-      */}
       <aside
         className={[
           'fixed inset-y-0 left-0 z-30',
@@ -53,7 +58,6 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
         id="sidenav"
         aria-label="Staff navigation"
       >
-        {/* ── Top: brand + nav ── */}
         <div>
           {/* Brand */}
           <div className="flex items-center justify-between px-5 py-5 border-b border-slate-100 shrink-0">
@@ -76,7 +80,7 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
 
           {/* Nav */}
           <nav className="px-3 py-4 space-y-0.5" aria-label="Main menu">
-            {filteredNavItems.map(({ id, label, icon: Icon, sub }) => {
+            {NAV_ITEMS.map(({ id, label, icon: Icon, sub }) => {
               const active = activeTab === id;
               return (
                 <button
@@ -102,16 +106,16 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
           </nav>
         </div>
 
-        {/* ── Bottom: user chip + logout ── */}
+        {/* Bottom User Chip & Logout (Safe render guards) */}
         <div className="px-3 py-4 border-t border-slate-100 space-y-1 shrink-0">
           {loggedInUser && (
             <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-100 mb-2">
               <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center shrink-0">
-                {loggedInUser.name ? loggedInUser.name.charAt(0).toUpperCase() : '?'}
+                {getInitials()}
               </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-slate-800 truncate">{loggedInUser.name}</p>
-                <p className="text-[10px] text-slate-400 font-semibold">{loggedInUser.role} Portal</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-slate-800 truncate">{getDisplayName()}</p>
+                <p className="text-[10px] text-slate-400 font-semibold">Staff Portal</p>
               </div>
             </div>
           )}
@@ -126,7 +130,6 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
         </div>
       </aside>
 
-      {/* Mobile backdrop */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-20 bg-slate-900/40 lg:hidden"
