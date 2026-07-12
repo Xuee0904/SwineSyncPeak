@@ -73,8 +73,8 @@ html {
 }
 
 body {
-  background-color: #f8fafc; /* Slate-50 */
-  color: #0f172a; /* Slate-900 */
+  background-color: #eef2f6; /* Premium cool-grey canvas (slightly darker than slate-100) */
+  color: #0f172a;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }

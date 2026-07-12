@@ -138,8 +138,8 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800 antialiased" id="swinesync-app-root">
-
+  <div className="min-h-screen bg-[#eef2f6] flex flex-col font-sans text-slate-800 antialiased" id="swinesync-app-root">
+    
       {/* Navigation Header — hidden when staff is logged in */}
       {!loggedInUser && (
         <Navbar

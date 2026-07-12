@@ -73,9 +73,10 @@ function Pill({ children, color = 'slate' }) {
   );
 }
 
+// ─── Upgraded Section Card Component (Defined borders & hover scaling) ───
 function SectionCard({ title, action, actionLabel, children, id }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden" id={id}>
+    <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md hover:border-slate-200/90 transition-all duration-300 overflow-hidden" id={id}>
       <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-50">
         <h3 className="text-sm font-bold text-slate-800">{title}</h3>
         {action && (
@@ -123,7 +124,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
     if (!loggedInUser) return '?';
     if (typeof loggedInUser === 'string') return loggedInUser.charAt(0).toUpperCase();
     if (typeof loggedInUser === 'object') {
-      const name = loggedInUser.user_metadata?.full_name || loggedInUser.email || '';
+      const name = loggedInUser.name || loggedInUser.user_metadata?.full_name || loggedInUser.email || '';
       return name.charAt(0).toUpperCase() || '?';
     }
     return '?';
@@ -204,7 +205,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
           </div>
         </header>
 
-        {/* ─── Scrollable content area (Dynamic key binds slide-up module animation) ─── */}
         <div className="flex-1 overflow-y-auto animate-module-switch" key={activeTab}>
           <style>{`
             @keyframes moduleSlideUp {
@@ -314,6 +314,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
               </div>
 
               <div className="space-y-5">
+                {/* Visual stats cards with upgraded shadow elevations */}
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { label: 'Total Herd',  value: pigStats.total,      color: 'text-slate-900',   bg: 'bg-white'       },
@@ -321,7 +322,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                     { label: 'Sick',        value: pigStats.sick,       color: 'text-amber-600',   bg: 'bg-amber-50'    },
                     { label: 'Quarantine',  value: pigStats.quarantine, color: 'text-rose-600',    bg: 'bg-rose-50'     },
                   ].map((s, i) => (
-                    <div key={i} className={`${s.bg} border border-slate-100 rounded-2xl p-4 shadow-sm text-center`}>
+                    <div key={i} className={`${s.bg} border border-slate-200/60 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow text-center`}>
                       <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
                       <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-0.5">{s.label}</p>
                     </div>
@@ -382,7 +383,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {/* Tab 2: Admin settings module */}
           {activeTab === 'admin' && (
             <main className="p-5 lg:p-6">
               <Admin loggedInUser={loggedInUser} />
@@ -397,7 +397,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {/* ── Tab 3: Fallback Module Integration (Cleaned-up RLS constraints, removes simultaneous display bugs) ── */}
           {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && (
             <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
               <div className="text-center space-y-4 max-w-xs mx-auto animate-fade-in">

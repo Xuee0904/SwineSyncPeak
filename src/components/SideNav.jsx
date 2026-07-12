@@ -28,28 +28,25 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
     return parentWithChild ? { [parentWithChild.id]: true } : {};
   });
 
-  // Type-safe initials extractor
   const getInitials = () => {
     if (!loggedInUser) return '?';
     if (typeof loggedInUser === 'string') return loggedInUser.charAt(0).toUpperCase();
     if (typeof loggedInUser === 'object') {
-      const name = loggedInUser.user_metadata?.full_name || loggedInUser.email || '';
+      const name = loggedInUser.name || loggedInUser.user_metadata?.full_name || loggedInUser.email || '';
       return name.charAt(0).toUpperCase() || '?';
     }
     return '?';
   };
 
-  // Type-safe display name extractor
   const getDisplayName = () => {
     if (!loggedInUser) return '';
     if (typeof loggedInUser === 'string') return loggedInUser;
     if (typeof loggedInUser === 'object') {
-      return loggedInUser.user_metadata?.full_name || loggedInUser.email || 'Staff';
+      return loggedInUser.name || loggedInUser.user_metadata?.full_name || loggedInUser.email || 'Staff';
     }
     return '';
   };
 
-  // Safe user role extractor
   const getUserRole = () => {
     if (!loggedInUser) return 'Staff';
     if (typeof loggedInUser === 'string') return 'Staff';
@@ -68,7 +65,6 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
   const role = getUserRole().toLowerCase();
 
   const filteredNavItems = NAV_ITEMS.filter((item) => {
-    // If the logged-in user is NOT an Admin, hide Admin Settings and Transaction Records
     if (role !== 'admin') {
       if (item.id === 'admin' || item.id === 'transactions') {
         return false;
@@ -83,7 +79,7 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
         className={[
           'fixed inset-y-0 left-0 z-30',
           'w-60 h-screen',
-          'bg-white border-r border-slate-100 shadow-sm',
+          'bg-white border-r border-slate-200/80 shadow-[4px_0_24px_-4px_rgba(15,23,42,0.05)]', // Upgraded right border & right-facing shelf shadow
           'flex flex-col justify-between',
           'overflow-y-auto',
           'transition-transform duration-300 ease-in-out',
@@ -113,7 +109,7 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
             </button>
           </div>
 
-          {/* Nav Menu — rendered using filteredNavItems to enforce role safety */}
+          {/* Nav Menu */}
           <nav className="px-3 py-4 space-y-0.5" aria-label="Main menu">
             {filteredNavItems.map(({ id, label, icon: Icon, sub, children }) => {
               const active       = activeTab === id;
@@ -179,7 +175,7 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
                     </div>
                   )}
 
-                  {/* Children (sub-items) */}
+                  {/* Children */}
                   {hasChildren && isExpanded && (
                     <div className="ml-4 mt-0.5 space-y-0.5 border-l-2 border-slate-100 pl-2">
                       {children.map(({ id: cid, label: clabel, icon: CIcon }) => {
