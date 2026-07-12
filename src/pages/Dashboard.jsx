@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import Catalog from '../landing-page/Catalog';
 import SideNav, { NAV_ITEMS } from '../components/SideNav';
-import Admin from './Admin'; // Imported our high-fidelity Admin panel
+import Admin from './Admin';
+import SwineManagement from './SwineManagement';
 import {
   Sparkles, Database, ArrowUpRight, ChevronRight,
   AlertTriangle, CheckSquare, Square,
   Bell, ChevronLeft, Settings, Menu,
 } from 'lucide-react';
 
-// ─── Temporary inventory data (no DB table yet) ───────────────────────────────
 const LOW_THRESHOLD = 15;
 const INVENTORY = [
   { name: 'Supplements',      percent: 8,  dailyUsage: 0.8, color: '#ef4444' },
@@ -97,15 +97,15 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   const [pigStats,    setPigStats]   = useState({ total: 0, healthy: 0, sick: 0, quarantine: 0 });
 
   useEffect(() => {
-    fetch('/api/pigs')
+    fetch('/api/pigs/stats')
       .then(r => r.ok ? r.json() : null)
       .then(d => {
-        if (!d?.data) return;
+        if (!d) return;
         setPigStats({
-          total:      d.data.length,
-          healthy:    d.data.filter(p => p.status === 'healthy').length,
-          sick:       d.data.filter(p => p.status === 'sick').length,
-          quarantine: d.data.filter(p => p.status === 'quarantine').length,
+          total:      d.total ?? 0,
+          healthy:    d.healthy ?? 0,
+          sick:       d.sick ?? 0,
+          quarantine: d.quarantine ?? 0,
         });
       })
       .catch(() => {});
@@ -119,7 +119,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   const toggleTodo     = id => setTodos(ts => ts.map(t => t.id === id ? { ...t, done: !t.done } : t));
   const completedTodos = todos.filter(t => t.done).length;
 
-  // Type-safe avatar initials extractor
   const getInitialsSafe = () => {
     if (!loggedInUser) return '?';
     if (typeof loggedInUser === 'string') return loggedInUser.charAt(0).toUpperCase();
@@ -164,8 +163,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden" id="staff-portal">
-
-      {/* SideNav */}
       <SideNav
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -175,13 +172,9 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         mobileOpen={mobileNav}
       />
 
-      {/* Main Content Workspace Container */}
       <div className="flex-1 flex flex-col ml-0 lg:ml-60 min-w-0 overflow-hidden">
-
-        {/* Sticky top bar */}
         <header className="sticky top-0 z-10 bg-white border-b border-slate-100 px-5 py-3.5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            {/* Hamburger — mobile only */}
             <button
               className="lg:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-50 cursor-pointer"
               onClick={() => setMobileNav(true)}
@@ -190,7 +183,9 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
               <Menu className="w-5 h-5" />
             </button>
             <h1 className="text-sm font-extrabold text-slate-900 tracking-tight">
-              {NAV_ITEMS.find(n => n.id === activeTab)?.label ?? 'Dashboard'}
+              {activeTab === 'pen_management'
+                ? 'Swine Management'
+                : NAV_ITEMS.find(n => n.id === activeTab)?.label ?? 'Dashboard'}
             </h1>
           </div>
           <div className="flex items-center gap-2">
@@ -209,9 +204,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
           </div>
         </header>
 
-        {/* ─── Scrollable content area (Dynamic key binds slide-up module animation) ─── */}
         <div className="flex-1 overflow-y-auto animate-module-switch" key={activeTab}>
-          
           <style>{`
             @keyframes moduleSlideUp {
               from { opacity: 0; transform: translateY(12px); }
@@ -222,12 +215,9 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             }
           `}</style>
 
-          {/* Tab 1: Dashboard overview grid */}
           {activeTab === 'dashboard' && (
             <main className="p-5 lg:p-6 grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-              {/* LEFT column (spans 2) */}
               <div className="lg:col-span-2 space-y-5">
-                {/* Health Alerts */}
                 <SectionCard title="⚠️ Active Health Alerts" id="health-alerts-card">
                   {HEALTH_ALERTS.length === 0 ? (
                     <p className="text-xs text-slate-400 py-2">No active health alerts — herd is healthy.</p>
@@ -252,7 +242,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                   )}
                 </SectionCard>
 
-                {/* To-Do */}
                 <SectionCard
                   title="To-Do"
                   id="todo-card"
@@ -290,7 +279,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                   </div>
                 </SectionCard>
 
-                {/* Inventory */}
                 <SectionCard title="Inventory" actionLabel="Manage Inventory" action={() => setActiveTab('inventory')} id="inventory-card">
                   <div className="space-y-4">
                     {INVENTORY.map((item, i) => {
@@ -324,9 +312,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                 </SectionCard>
               </div>
 
-              {/* RIGHT column */}
               <div className="space-y-5">
-                {/* Herd stats */}
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     { label: 'Total Herd',  value: pigStats.total,      color: 'text-slate-900',   bg: 'bg-white'       },
@@ -341,7 +327,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                   ))}
                 </div>
 
-                {/* Farm Schedule */}
                 <SectionCard title="Farm Schedule" id="farm-calendar">
                   <div className="flex items-center justify-between mb-4">
                     <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-slate-50 text-slate-400 cursor-pointer">
@@ -396,15 +381,21 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {/* Tab 2: Admin settings module */}
           {activeTab === 'admin' && (
             <main className="p-5 lg:p-6">
               <Admin loggedInUser={loggedInUser} />
             </main>
           )}
 
-          {/* ── Tab 3: Fallback Module Integration (Cleaned-up RLS constraints, removes simultaneous display bugs) ── */}
-          {activeTab !== 'dashboard' && activeTab !== 'admin' && (
+          {(activeTab === 'swine_management' || activeTab === 'pen_management') && (
+            <main>
+              <SwineManagement
+                activeSubTab={activeTab === 'pen_management' ? 'pen_management' : undefined}
+              />
+            </main>
+          )}
+
+          {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && (
             <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
               <div className="text-center space-y-4 max-w-xs mx-auto animate-fade-in">
                 <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">
@@ -425,9 +416,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
               </div>
             </main>
           )}
-
-        </div>{/* end scrollable area */}
-      </div>{/* end main column */}
+        </div>
+      </div>
     </div>
   );
 }

@@ -88,22 +88,16 @@ function HealthPassportModal({ item, onClose }) {
   const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => {
-    // 1. Calculate physical scrollbar width (e.g., 17px on Windows, 0px on macOS overlay)
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    
-    // 2. Cache original style parameters
     const originalOverflow = document.body.style.overflow;
     const originalPaddingRight = document.body.style.paddingRight;
     
-    // 3. Apply scroll-lock
     document.body.style.overflow = 'hidden';
     
-    // 4. Inject right-side padding equivalent to scrollbar width to prevent visual jump
     if (scrollbarWidth > 0) {
       document.body.style.paddingRight = `${scrollbarWidth}px`;
     }
     
-    // 5. Restore styling variables on unmount
     return () => {
       document.body.style.overflow = originalOverflow;
       document.body.style.paddingRight = originalPaddingRight;
@@ -429,6 +423,7 @@ export default function Catalog() {
     setLoading(true);
     setError(null);
     try {
+      // The queries must use underscores as defined in your database schema
       const [pigsRes, batchesRes, vaccRes, healthRes] = await Promise.all([
         supabase.from('pigs').select('*'),
         supabase.from('piglet_batches').select('*'),

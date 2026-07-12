@@ -328,29 +328,203 @@ app.get('/api/philippines-swine-news', async (req, res) => {
   }
 });
 
+// GET /api/pigs/stats – aggregate counts for summary cards
+app.get('/api/pigs/stats', async (req, res) => {
+  try {
+    const [pigsRes, sickRes, quarRes, batchesRes] = await Promise.all([
+      supabase.from('pigs').select('*').eq('is_archived', false),
+      supabase.from('pigs').select('*', { count: 'exact' }).eq('status', 'sick').eq('is_archived', false),
+      supabase.from('pigs').select('*', { count: 'exact' }).eq('status', 'quarantine').eq('is_archived', false),
+      supabase.from('piglet_batches').select('*').eq('is_archived', false),
+    ]);
+
+    const pigsCount = pigsRes.data?.length || 0;
+    const sickCount = sickRes.count ?? 0;
+    const quarCount = quarRes.count ?? 0;
+    
+    // Sum of current_count in active piglet batches
+    const batches = batchesRes.data || [];
+    const pigletCount = batches.reduce((sum, b) => sum + (b.current_count || 0), 0);
+    
+    const totalCount = pigsCount + pigletCount;
+    const healthyCount = totalCount - sickCount - quarCount;
+
+    // Female pigs are Sow, representing pregnant/breeding candidates
+    const femalePigs = (pigsRes.data || []).filter(p => {
+      const g = (p.gender || '').toLowerCase();
+      return g.startsWith('f') || g === 'female' || g === 'sow';
+    }).length;
+
+    res.json({
+      total: totalCount,
+      healthy: Math.max(0, healthyCount),
+      sick: sickCount,
+      quarantine: quarCount,
+      pregnant: femalePigs
+    });
+  } catch (error) {
+    console.error("Express Error at /api/pigs/stats:", error);
+    res.status(500).json({ error: error.message, details: error });
+  }
+});
+
+// GET /api/pens – fetch all pens for dropdown filter
+// Returns empty array gracefully if the pens table doesn't exist yet
+app.get('/api/pens', async (req, res) => {
+  const { data, error } = await supabase.from('pens').select('id, name').order('name', { ascending: true });
+  // If table doesn't exist or any DB error, just return empty list — not a hard failure
+  res.json({ data: error ? [] : (data ?? []) });
+});
+
 // GET /api/pigs
 app.get('/api/pigs', async (req, res) => {
   try {
-    const { search, status, gender } = req.query;
-    let dbQuery = supabase.from('pigs').select('*', { count: 'exact' });
+    const { search, status, gender, pen, category, page, limit } = req.query;
 
-    if (status && status !== 'all') {
-      dbQuery = dbQuery.eq('status', status.toLowerCase());
+    const pageNum  = Math.max(1, parseInt(page)  || 1);
+    const pageSize = Math.min(100, parseInt(limit) || 10);
+    const from     = (pageNum - 1) * pageSize;
+    const to       = from + pageSize - 1;
+
+    let pigData = [];
+    let batchData = [];
+
+    // Determine if we should query the pigs table
+    const queryPigs = !category || category === 'all' || category === 'sow' || category === 'boar';
+    // Determine if we should query the piglet_batches table
+    const queryBatches = !category || category === 'all' || category === 'piglet_batch';
+
+    // 1. Fetch from pigs table
+    if (queryPigs) {
+      let pigQuery = supabase.from('pigs').select('*').eq('is_archived', false);
+      
+      if (pen && pen !== 'all') {
+        pigQuery = pigQuery.eq('pen_id', pen);
+      }
+      
+      if (status && status !== 'all') {
+        pigQuery = pigQuery.eq('status', status.toLowerCase());
+      }
+      
+      if (search) {
+        pigQuery = pigQuery.ilike('pig_tag', `%${search}%`);
+      }
+
+      // If gender is explicitly passed, or we can filter gender based on category
+      if (gender && gender !== 'all') {
+        pigQuery = pigQuery.ilike('gender', `${gender}%`);
+      } else if (category === 'sow') {
+        // Female pigs are Sow
+        pigQuery = pigQuery.or('gender.ilike.f%,gender.ilike.female,gender.ilike.sow');
+      } else if (category === 'boar') {
+        // Male pigs are Boar
+        pigQuery = pigQuery.or('gender.ilike.m%,gender.ilike.male,gender.ilike.boar,gender.ilike.castrated');
+      }
+
+      const { data, error } = await pigQuery;
+      if (error) throw error;
+      pigData = data || [];
     }
 
-    if (gender && gender !== 'all') {
-      dbQuery = dbQuery.ilike('gender', `${gender}%`);
+    // 2. Fetch from piglet_batches table
+    if (queryBatches) {
+      let batchQuery = supabase.from('piglet_batches').select('*').eq('is_archived', false);
+      
+      if (pen && pen !== 'all') {
+        batchQuery = batchQuery.eq('pen_id', pen);
+      }
+      
+      if (status && status !== 'all') {
+        batchQuery = batchQuery.eq('status', status.toLowerCase());
+      }
+      
+      if (search) {
+        batchQuery = batchQuery.ilike('batch_tag', `%${search}%`);
+      }
+
+      const { data, error } = await batchQuery;
+      if (error) throw error;
+      batchData = data || [];
     }
 
-    if (search) {
-      dbQuery = dbQuery.ilike('pig_tag', `%${search}%`);
+    // 3. Map both lists to the target category format
+    const unifiedPigs = pigData.map(pig => {
+      const g = (pig.gender || '').toLowerCase();
+      let categoryMapped = 'Boar'; // Default fallback
+      if (g.startsWith('f') || g === 'female' || g === 'sow') {
+        categoryMapped = 'Sow';
+      } else if (g.startsWith('m') || g === 'male' || g === 'boar' || g === 'castrated') {
+        categoryMapped = 'Boar';
+      }
+
+      let age_weeks = '—';
+      if (pig.date_of_birth) {
+        const diffTime = Date.now() - new Date(pig.date_of_birth).getTime();
+        age_weeks = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7)));
+      }
+
+      return {
+        id: pig.pig_id,
+        pig_tag: pig.pig_tag,
+        breed: pig.breed || '—',
+        age_weeks: age_weeks,
+        current_weight: pig.weight,
+        category: categoryMapped,
+        status: pig.status || 'healthy',
+        pen_id: pig.pen_id
+      };
+    });
+
+    const unifiedBatches = batchData.map(batch => {
+      return {
+        id: batch.batch_id,
+        pig_tag: batch.batch_tag,
+        breed: '—',
+        age_weeks: '—',
+        current_weight: batch.average_weight,
+        category: 'Piglet Batch',
+        status: batch.status || 'suckling',
+        pen_id: batch.pen_id
+      };
+    });
+
+    // 4. Combine and filter
+    let merged = [...unifiedPigs, ...unifiedBatches];
+
+    // Filter by category again to be 100% sure
+    if (category && category !== 'all') {
+      const lowerCat = category.toLowerCase();
+      if (lowerCat === 'sow') {
+        merged = merged.filter(item => item.category === 'Sow');
+      } else if (lowerCat === 'boar') {
+        merged = merged.filter(item => item.category === 'Boar');
+      } else if (lowerCat === 'piglet_batch') {
+        merged = merged.filter(item => item.category === 'Piglet Batch');
+      }
     }
 
-    const { data, error, count } = await dbQuery;
-    if (error) throw error;
-    res.json({ data: data ?? [], count: count ?? 0 });
+    // 5. Sort alphabetically by tag
+    merged.sort((a, b) => {
+      const tagA = (a.pig_tag || '').toUpperCase();
+      const tagB = (b.pig_tag || '').toUpperCase();
+      if (tagA < tagB) return -1;
+      if (tagA > tagB) return 1;
+      return 0;
+    });
+
+    // 6. Paginate
+    const totalCount = merged.length;
+    const paginated = merged.slice(from, to + 1);
+
+    res.json({
+      data: paginated,
+      count: totalCount,
+      page: pageNum,
+      limit: pageSize
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Express Error at /api/pigs:", error);
+    res.status(500).json({ error: error.message, details: error });
   }
 });
 

@@ -1,12 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   LayoutDashboard, Users, TrendingUp, Activity,
   Baby, ClipboardList, Receipt, Settings, LogOut, X, ChevronRight,
+  Grid3X3,
 } from 'lucide-react';
 
 export const NAV_ITEMS = [
   { id: 'dashboard',         label: 'Dashboard',           icon: LayoutDashboard },
-  { id: 'swine_management',  label: 'Swine Management',    icon: Users,          sub: true },
+  { id: 'swine_management',  label: 'Swine Management',    icon: Users,          sub: true,
+    children: [
+      { id: 'pen_management', label: 'Pen Management', icon: Grid3X3 },
+    ]
+  },
   { id: 'growth_program',    label: 'Growth Program',      icon: TrendingUp,     sub: true },
   { id: 'health_management', label: 'Health Management',   icon: Activity,       sub: true },
   { id: 'breeding_logs',     label: 'Breeding Logs',       icon: Baby,           sub: true },
@@ -16,12 +21,13 @@ export const NAV_ITEMS = [
 ];
 
 export default function SideNav({ activeTab, onTabChange, onClose, onLogout, loggedInUser, mobileOpen }) {
-  const handleClick = (id) => {
-    onTabChange(id);
-    onClose?.();
-  };
+  const [expanded, setExpanded] = useState(() => {
+    const parentWithChild = NAV_ITEMS.find(item =>
+      item.children?.some(child => child.id === activeTab) || (item.id === activeTab && !!item.children?.length)
+    );
+    return parentWithChild ? { [parentWithChild.id]: true } : {};
+  });
 
-  // Type-safe initials extractor
   const getInitials = () => {
     if (!loggedInUser) return '?';
     if (typeof loggedInUser === 'string') return loggedInUser.charAt(0).toUpperCase();
@@ -32,7 +38,6 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
     return '?';
   };
 
-  // Type-safe display name extractor
   const getDisplayName = () => {
     if (!loggedInUser) return '';
     if (typeof loggedInUser === 'string') return loggedInUser;
@@ -40,6 +45,11 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
       return loggedInUser.user_metadata?.full_name || loggedInUser.email || 'Staff';
     }
     return '';
+  };
+
+  const isItemActive = (item) => {
+    if (activeTab === item.id) return true;
+    return item.children?.some(c => c.id === activeTab) ?? false;
   };
 
   return (
@@ -80,33 +90,102 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
 
           {/* Nav */}
           <nav className="px-3 py-4 space-y-0.5" aria-label="Main menu">
-            {NAV_ITEMS.map(({ id, label, icon: Icon, sub }) => {
-              const active = activeTab === id;
+            {NAV_ITEMS.map(({ id, label, icon: Icon, sub, children }) => {
+              const active       = activeTab === id;
+              const parentActive = isItemActive({ id, children });
+              const isExpanded   = !!expanded[id];
+              const hasChildren  = !!children?.length;
+
               return (
-                <button
-                  key={id}
-                  onClick={() => handleClick(id)}
-                  className={[
-                    'w-full flex items-center gap-3 rounded-xl text-xs font-semibold',
-                    'transition-all duration-150 cursor-pointer text-left py-2.5',
-                    active
-                      ? 'bg-emerald-50 text-emerald-700 border-l-4 border-emerald-600 pl-2 pr-3'
-                      : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 px-3',
-                  ].join(' ')}
-                  aria-current={active ? 'page' : undefined}
-                >
-                  <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-emerald-600' : 'text-slate-400'}`} />
-                  <span className="flex-1 truncate">{label}</span>
-                  {sub && !active && (
-                    <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />
+                <div key={id} className="space-y-0.5">
+                  {!hasChildren ? (
+                    <button
+                      onClick={() => {
+                        onTabChange(id);
+                        onClose?.();
+                      }}
+                      className={[
+                        'w-full flex items-center gap-3 rounded-xl text-xs font-semibold py-2.5 text-left transition-all duration-150 cursor-pointer',
+                        parentActive
+                          ? 'bg-emerald-50 text-emerald-700 border-l-4 border-emerald-600 pl-2 pr-3'
+                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 px-3',
+                      ].join(' ')}
+                      aria-current={active ? 'page' : undefined}
+                    >
+                      <Icon className={`w-4 h-4 shrink-0 ${parentActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+                      <span className="flex-1 truncate">{label}</span>
+                      {sub && !parentActive && (
+                        <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />
+                      )}
+                    </button>
+                  ) : (
+                    <div className="flex items-center w-full justify-between">
+                      <button
+                        onClick={() => {
+                          onTabChange(id);
+                        }}
+                        className={[
+                          'flex-1 flex items-center gap-3 rounded-l-xl text-xs font-semibold py-2.5 text-left transition-all duration-150 cursor-pointer',
+                          parentActive
+                            ? 'bg-emerald-50 text-emerald-700 border-l-4 border-emerald-600 pl-2 pr-1'
+                            : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 pl-3 pr-1',
+                        ].join(' ')}
+                        aria-current={active ? 'page' : undefined}
+                      >
+                        <Icon className={`w-4 h-4 shrink-0 ${parentActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+                        <span className="flex-1 truncate">{label}</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+                        }}
+                        className={[
+                          'py-2.5 px-3 rounded-r-xl transition-all duration-150 cursor-pointer flex items-center justify-center border-l border-slate-100/40',
+                          parentActive 
+                            ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100/50' 
+                            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50',
+                        ].join(' ')}
+                        title={isExpanded ? "Collapse sub-items" : "Expand sub-items"}
+                        aria-label={isExpanded ? `Collapse ${label} menu` : `Expand ${label} menu`}
+                      >
+                        <ChevronRight className={`w-4 h-4 shrink-0 transition-transform duration-200 stroke-[2.5px] ${isExpanded ? 'rotate-90 text-emerald-600' : 'text-slate-400'}`} />
+                      </button>
+                    </div>
                   )}
-                </button>
+
+                  {/* Children (sub-items) */}
+                  {hasChildren && isExpanded && (
+                    <div className="ml-4 mt-0.5 space-y-0.5 border-l-2 border-slate-100 pl-2">
+                      {children.map(({ id: cid, label: clabel, icon: CIcon }) => {
+                        const childActive = activeTab === cid;
+                        return (
+                          <button
+                            key={cid}
+                            onClick={() => { onTabChange(cid); onClose?.(); }}
+                            className={[
+                              'w-full flex items-center gap-2.5 rounded-lg text-xs font-semibold',
+                              'transition-all duration-150 cursor-pointer text-left py-2 px-2.5',
+                              childActive
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50',
+                            ].join(' ')}
+                            aria-current={childActive ? 'page' : undefined}
+                          >
+                            <CIcon className={`w-3.5 h-3.5 shrink-0 ${childActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+                            <span className="flex-1 truncate">{clabel}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </nav>
         </div>
 
-        {/* Bottom User Chip & Logout (Safe render guards) */}
+        {/* Bottom User Chip & Logout */}
         <div className="px-3 py-4 border-t border-slate-100 space-y-1 shrink-0">
           {loggedInUser && (
             <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-100 mb-2">
