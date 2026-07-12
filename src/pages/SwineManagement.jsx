@@ -204,21 +204,6 @@ export default function SwineManagement({ activeSubTab }) {
 
   return (
     <div className="p-5 lg:p-6 space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h2 className="text-lg font-black text-slate-900 tracking-tight">Swine Management</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Monitor, track and manage all swine in the facility</p>
-        </div>
-        <button
-          onClick={() => { fetchStats(); fetchSwine(); }}
-          className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors cursor-pointer"
-          title="Refresh"
-          id="swine-refresh-btn"
-        >
-          <RefreshCw className="w-4 h-4" />
-        </button>
-      </div>
-
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           icon={<PiggyBank className="w-6 h-6 text-emerald-600" />}
