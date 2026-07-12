@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Mail, Loader2, AlertCircle, CheckCircle2, X, ShieldCheck } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import useModalAnimation from '../hooks/useModalAnimation';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -103,24 +104,8 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
   const [isLoading,   setIsLoading]   = useState(false);
   const [serverError, setServerError] = useState('');
 
-  // Lock global scrollbar and compensate for structural padding
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    const originalOverflow = document.body.style.overflow;
-    const originalPaddingRight = document.body.style.paddingRight;
-
-    document.body.style.overflow = 'hidden';
-    if (scrollbarWidth > 0) {
-      document.body.style.paddingRight = `${scrollbarWidth}px`;
-    }
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-      document.body.style.paddingRight = originalPaddingRight;
-    };
-  }, [isOpen]);
+  const { shouldRender, requestClose, overlayClassName, panelClassName } =
+    useModalAnimation(isOpen, onClose);
 
   useEffect(() => { setView(initialView); }, [initialView]);
 
@@ -134,13 +119,15 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  if (!shouldRender) return null;
 
   const emailError = !email.trim()
     ? 'Email is required.'
-    : !EMAIL_RE.test(email)
-      ? 'Enter a valid email address.'
-      : '';
+    : email !== email.trim()
+      ? 'Email cannot start or end with a space.'
+      : !EMAIL_RE.test(email)
+        ? 'Enter a valid email address.'
+        : '';
 
   const handleSendReset = async (e) => {
     e.preventDefault();
@@ -202,7 +189,7 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
         setSuccessMsg('Your password has been successfully updated! Redirecting to the login screen...');
         if (onResetSuccess) {
           setTimeout(() => {
-            onResetSuccess();
+            requestClose(onResetSuccess);
           }, 2000);
         }
       }
@@ -213,8 +200,8 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
     }
   };
 
-  const handleClose       = () => { if (initialView === 'update-password') return; onClose(); };
-  const handleBackToLogin = () => { onClose(); if (onBackToLogin) onBackToLogin(); };
+  const handleClose       = () => { if (initialView === 'update-password') return; requestClose(); };
+  const handleBackToLogin = () => { requestClose(onBackToLogin); };
 
   const titles = {
     'send-email':      { heading: 'Forgot Password?',    sub: 'Enter your email to receive a reset link.' },
@@ -234,7 +221,7 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:py-6 bg-slate-900/50 backdrop-blur-sm animate-fade-in overflow-y-auto"
+      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:py-6 bg-slate-900/50 backdrop-blur-sm overflow-y-auto ${overlayClassName}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="update-password-title"
@@ -250,10 +237,20 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
           -ms-overflow-style: none;
           scrollbar-width: none;
         }
+        @keyframes modal-panel-in {
+          from { opacity: 0; transform: translateY(16px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes modal-panel-out {
+          from { opacity: 1; transform: translateY(0) scale(1); }
+          to   { opacity: 0; transform: translateY(16px) scale(0.97); }
+        }
+        .animate-modal-in  { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .animate-modal-out { animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
       `}</style>
 
       <div
-        className="relative w-full bg-white shadow-2xl border border-slate-100 rounded-t-3xl sm:rounded-3xl h-[85vh] sm:h-[530px] max-h-[92dvh] sm:max-h-[90vh] sm:max-w-sm sm:my-auto flex flex-col overflow-hidden"
+        className={`relative w-full bg-white shadow-2xl border border-slate-100 rounded-t-3xl sm:rounded-3xl h-[85vh] sm:h-[530px] max-h-[92dvh] sm:max-h-[90vh] sm:max-w-sm sm:my-auto flex flex-col overflow-hidden ${panelClassName}`}
         id="update-password-modal-content"
       >
         {/* Close button */}
@@ -311,7 +308,8 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
                     <Mail className="w-3.5 h-3.5" />
                   </span>
                   <input
-                    type="email"
+                    type="text"
+                    inputMode="email"
                     id="reset-email"
                     autoComplete="email"
                     placeholder="manager@farm.com"

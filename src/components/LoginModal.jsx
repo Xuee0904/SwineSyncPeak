@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import useModalAnimation from '../hooks/useModalAnimation';
 
 // ─── Minimalist Pig Nose Logo ─────────────────────────────────────────────────
 function PigNoseLogo({ className = 'w-9 h-9 sm:w-10 sm:h-10' }) {
@@ -23,8 +24,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function validate(email, password) {
   const errs = {};
-  if (!email.trim())              errs.email    = 'Email is required.';
-  else if (!EMAIL_RE.test(email)) errs.email    = 'Enter a valid email address.';
+  if (!email.trim())                     errs.email    = 'Email is required.';
+  else if (email !== email.trim())       errs.email    = 'Email cannot start or end with a space.';
+  else if (!EMAIL_RE.test(email))        errs.email    = 'Enter a valid email address.';
   if (!password)                  errs.password = 'Password is required.';
   else if (password.length < 8)  errs.password = 'Password must be at least 8 characters.';
   return errs;
@@ -60,26 +62,10 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
   const [serverError, setServerError]   = useState('');
   const [touched, setTouched]           = useState({ email: false, password: false });
 
-  // Prevent scrollbar leakage and visual layout shifting on mount
-  useEffect(() => {
-    if (!isOpen) return;
+  const { shouldRender, requestClose, overlayClassName, panelClassName } =
+    useModalAnimation(isOpen, onClose);
 
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    const originalOverflow = document.body.style.overflow;
-    const originalPaddingRight = document.body.style.paddingRight;
-
-    document.body.style.overflow = 'hidden';
-    if (scrollbarWidth > 0) {
-      document.body.style.paddingRight = `${scrollbarWidth}px`;
-    }
-
-    return () => {
-      document.body.style.overflow = originalOverflow;
-      document.body.style.paddingRight = originalPaddingRight;
-    };
-  }, [isOpen]);
-
-  if (!isOpen) return null;
+  if (!shouldRender) return null;
 
   const fieldErrors = validate(email, password);
   const isFormValid = Object.keys(fieldErrors).length === 0;
@@ -87,10 +73,10 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
   const touch    = (f) => setTouched((t) => ({ ...t, [f]: true }));
   const touchAll = ()  => setTouched({ email: true, password: true });
 
-  const handleClose = () => {
+  const handleClose = (afterClose) => {
     setEmail(''); setPassword(''); setServerError('');
     setTouched({ email: false, password: false });
-    onClose();
+    requestClose(afterClose);
   };
 
   const handleSubmit = async (e) => {
@@ -121,8 +107,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
 
       if (user?.user_metadata?.must_change_password) {
         if (onForcePasswordChange) {
-          onForcePasswordChange(user, password);
-          handleClose();
+          handleClose(() => onForcePasswordChange(user, password));
           return;
         }
       }
@@ -147,8 +132,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
 
   const handleForgotPassword = (e) => {
     e.preventDefault();
-    handleClose();
-    if (onForgotPassword) onForgotPassword();
+    handleClose(() => { if (onForgotPassword) onForgotPassword(); });
   };
 
   const inputBase = [
@@ -161,7 +145,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:py-6 bg-slate-900/50 backdrop-blur-sm animate-fade-in overflow-y-auto"
+      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:py-6 bg-slate-900/50 backdrop-blur-sm overflow-y-auto ${overlayClassName}`}
       role="dialog"
       aria-modal="true"
       id="login-modal-overlay"
@@ -175,6 +159,16 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
           -ms-overflow-style: none;
           scrollbar-width: none;
         }
+        @keyframes modal-panel-in {
+          from { opacity: 0; transform: translateY(16px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes modal-panel-out {
+          from { opacity: 1; transform: translateY(0) scale(1); }
+          to   { opacity: 0; transform: translateY(16px) scale(0.97); }
+        }
+        .animate-modal-in  { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .animate-modal-out { animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
       `}</style>
 
       <div
@@ -185,6 +179,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
           'max-h-[92dvh] sm:max-h-[90vh]',
           'sm:max-w-sm sm:my-auto',
           'flex flex-col overflow-hidden',
+          panelClassName,
         ].join(' ')}
         id="login-modal-content"
       >
@@ -240,7 +235,8 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
                 <Mail className="w-3.5 h-3.5" />
               </span>
               <input
-                type="email"
+                type="text"
+                inputMode="email"
                 id="login-email"
                 autoComplete="email"
                 placeholder="manager@farm.com"

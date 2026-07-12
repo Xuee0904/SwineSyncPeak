@@ -28,7 +28,17 @@ export default function App() {
 
   // ─── Supabase PASSWORD_RECOVERY handler ─────────────────────────────────────
   useEffect(() => {
+    // Guards against a stray/late PASSWORD_RECOVERY event firing later in the
+    // session (e.g. a trailing token-refresh tick on the recovery session as
+    // it's being signed out) and abruptly yanking whatever modal is open at
+    // the time. Once we've handled the *real* recovery link, we stop
+    // reacting to this event entirely.
+    let recoveryInProgress = false;
+    let recoveryHandled = false;
+
     const openRecoveryModal = () => {
+      if (recoveryHandled) return;
+      recoveryHandled = true;
       setIsLoginOpen(false);
       setUpdatePasswordView('update-password');
       setIsUpdatePasswordOpen(true);
@@ -41,12 +51,13 @@ export default function App() {
       href.includes('access_token');
 
     if (hasRecoveryToken) {
+      recoveryInProgress = true;
       openRecoveryModal();
       window.history.replaceState(null, '', window.location.pathname);
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
+      if (event === 'PASSWORD_RECOVERY' && recoveryInProgress) {
         openRecoveryModal();
       }
     });
