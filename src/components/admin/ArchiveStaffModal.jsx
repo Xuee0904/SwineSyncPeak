@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, AlertTriangle, Loader2 } from 'lucide-react';
+import { supabase } from '../../supabaseClient'; // Imported Supabase to retrieve active session token
 import useModalAnimation from '../../hooks/useModalAnimation';
 
 export default function ArchiveStaffModal({ isOpen, onClose, staff, onArchiveConfirm, loggedInUser, apiBaseUrl }) {
@@ -24,10 +25,16 @@ export default function ArchiveStaffModal({ isOpen, onClose, staff, onArchiveCon
         creatorString = loggedInUser.user_metadata?.full_name || loggedInUser.email || 'Admin System';
       }
 
-      // We call the PUT endpoint to modify the is_archived user_metadata flag on Supabase Auth
+      // Retrieve the current session token to authenticate with the backend
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
       const res = await fetch(`${apiBaseUrl}/api/admin/users/${staff.fullId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Added the secure Bearer token
+        },
         body: JSON.stringify({
           name: staff.name,
           role: staff.role,
@@ -42,7 +49,6 @@ export default function ArchiveStaffModal({ isOpen, onClose, staff, onArchiveCon
         throw new Error(body.error || 'Failed to update credentials.');
       }
 
-      // Fire success callback
       onArchiveConfirm(isArchiving);
     } catch (err) {
       setError(err.message);
@@ -101,7 +107,7 @@ export default function ArchiveStaffModal({ isOpen, onClose, staff, onArchiveCon
           </div>
 
           {error && (
-            <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 text-left">
+            <div className="p-3 text-xs text-rose-700 bg-rose-50 border-rose-100 rounded-xl flex items-center gap-2 text-left">
               <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
               <span>{error}</span>
             </div>

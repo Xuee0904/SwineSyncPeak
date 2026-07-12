@@ -67,10 +67,40 @@ function isSwineRelated(article) {
   return SWINE_KEYWORDS.some(kw => text.includes(kw));
 }
 
-// ─── ADMIN USER MANAGEMENT ENDPOINTS ────────────────────────────────────────
+// ─── SECURITY MIDDLEWARE: ROLE-BASED PRIVILEGES VERIFICATION ─────────────────
+async function verifyAdmin(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Access denied. No active session token provided.' });
+    }
+
+    const token = authHeader.split(' ')[1];
+
+    // Verify token identity using standard public client to authenticate the caller
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      return res.status(401).json({ error: 'Access denied. Session has expired or is invalid.' });
+    }
+
+    // Inspect user metadata to verify role permissions
+    const userRole = user.user_metadata?.role || 'Staff';
+    if (userRole.toLowerCase() !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Administrative privileges are required.' });
+    }
+
+    // Attach verified user to request context and proceed
+    req.user = user;
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+// ─── ADMIN USER MANAGEMENT ENDPOINTS (SECURED WITH VERIFYADMIN) ─────────────
 
 // 1. GET /api/admin/users
-app.get('/api/admin/users', async (req, res) => {
+app.get('/api/admin/users', verifyAdmin, async (req, res) => {
   try {
     if (!supabaseAdmin) {
       return res.status(500).json({ error: 'Administrative client (service role key) is not configured on this server.' });
@@ -112,7 +142,7 @@ app.get('/api/admin/users', async (req, res) => {
 });
 
 // 2. POST /api/admin/users
-app.post('/api/admin/users', async (req, res) => {
+app.post('/api/admin/users', verifyAdmin, async (req, res) => {
   try {
     if (!supabaseAdmin) {
       return res.status(500).json({ error: 'Administrative client (service role key) is not configured on this server.' });
@@ -175,7 +205,7 @@ app.post('/api/admin/users', async (req, res) => {
 });
 
 // 3. PUT /api/admin/users/:id (Edit & Archive/Restore Toggle)
-app.put('/api/admin/users/:id', async (req, res) => {
+app.put('/api/admin/users/:id', verifyAdmin, async (req, res) => {
   try {
     if (!supabaseAdmin) {
       return res.status(500).json({ error: 'Administrative client not configured.' });
@@ -235,8 +265,8 @@ app.put('/api/admin/users/:id', async (req, res) => {
   }
 });
 
-// GET /api/admin/activity-logs (PAGINATION SUPPORTED — limit removed)
-app.get('/api/admin/activity-logs', async (req, res) => {
+// 4. GET /api/admin/activity-logs (PAGINATION SUPPORTED — limit removed)
+app.get('/api/admin/activity-logs', verifyAdmin, async (req, res) => {
   try {
     if (!supabaseAdmin) {
       return res.status(500).json({ 
@@ -369,10 +399,8 @@ app.get('/api/pigs/stats', async (req, res) => {
 });
 
 // GET /api/pens – fetch all pens for dropdown filter
-// Returns empty array gracefully if the pens table doesn't exist yet
 app.get('/api/pens', async (req, res) => {
   const { data, error } = await supabase.from('pens').select('id, name').order('name', { ascending: true });
-  // If table doesn't exist or any DB error, just return empty list — not a hard failure
   res.json({ data: error ? [] : (data ?? []) });
 });
 
@@ -389,12 +417,9 @@ app.get('/api/pigs', async (req, res) => {
     let pigData = [];
     let batchData = [];
 
-    // Determine if we should query the pigs table
     const queryPigs = !category || category === 'all' || category === 'sow' || category === 'boar';
-    // Determine if we should query the piglet_batches table
     const queryBatches = !category || category === 'all' || category === 'piglet_batch';
 
-    // 1. Fetch from pigs table
     if (queryPigs) {
       let pigQuery = supabase.from('pigs').select('*').eq('is_archived', false);
       
@@ -410,14 +435,11 @@ app.get('/api/pigs', async (req, res) => {
         pigQuery = pigQuery.ilike('pig_tag', `%${search}%`);
       }
 
-      // If gender is explicitly passed, or we can filter gender based on category
       if (gender && gender !== 'all') {
         pigQuery = pigQuery.ilike('gender', `${gender}%`);
       } else if (category === 'sow') {
-        // Female pigs are Sow
         pigQuery = pigQuery.or('gender.ilike.f%,gender.ilike.female,gender.ilike.sow');
       } else if (category === 'boar') {
-        // Male pigs are Boar
         pigQuery = pigQuery.or('gender.ilike.m%,gender.ilike.male,gender.ilike.boar,gender.ilike.castrated');
       }
 
@@ -426,7 +448,6 @@ app.get('/api/pigs', async (req, res) => {
       pigData = data || [];
     }
 
-    // 2. Fetch from piglet_batches table
     if (queryBatches) {
       let batchQuery = supabase.from('piglet_batches').select('*').eq('is_archived', false);
       
@@ -447,10 +468,9 @@ app.get('/api/pigs', async (req, res) => {
       batchData = data || [];
     }
 
-    // 3. Map both lists to the target category format
     const unifiedPigs = pigData.map(pig => {
       const g = (pig.gender || '').toLowerCase();
-      let categoryMapped = 'Boar'; // Default fallback
+      let categoryMapped = 'Boar'; 
       if (g.startsWith('f') || g === 'female' || g === 'sow') {
         categoryMapped = 'Sow';
       } else if (g.startsWith('m') || g === 'male' || g === 'boar' || g === 'castrated') {
@@ -488,10 +508,8 @@ app.get('/api/pigs', async (req, res) => {
       };
     });
 
-    // 4. Combine and filter
     let merged = [...unifiedPigs, ...unifiedBatches];
 
-    // Filter by category again to be 100% sure
     if (category && category !== 'all') {
       const lowerCat = category.toLowerCase();
       if (lowerCat === 'sow') {
@@ -503,7 +521,6 @@ app.get('/api/pigs', async (req, res) => {
       }
     }
 
-    // 5. Sort alphabetically by tag
     merged.sort((a, b) => {
       const tagA = (a.pig_tag || '').toUpperCase();
       const tagB = (b.pig_tag || '').toUpperCase();
@@ -512,7 +529,6 @@ app.get('/api/pigs', async (req, res) => {
       return 0;
     });
 
-    // 6. Paginate
     const totalCount = merged.length;
     const paginated = merged.slice(from, to + 1);
 

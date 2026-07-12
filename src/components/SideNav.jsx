@@ -28,6 +28,7 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
     return parentWithChild ? { [parentWithChild.id]: true } : {};
   });
 
+  // Type-safe initials extractor
   const getInitials = () => {
     if (!loggedInUser) return '?';
     if (typeof loggedInUser === 'string') return loggedInUser.charAt(0).toUpperCase();
@@ -38,6 +39,7 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
     return '?';
   };
 
+  // Type-safe display name extractor
   const getDisplayName = () => {
     if (!loggedInUser) return '';
     if (typeof loggedInUser === 'string') return loggedInUser;
@@ -47,10 +49,33 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
     return '';
   };
 
+  // Safe user role extractor
+  const getUserRole = () => {
+    if (!loggedInUser) return 'Staff';
+    if (typeof loggedInUser === 'string') return 'Staff';
+    if (typeof loggedInUser === 'object') {
+      return loggedInUser.role || 'Staff';
+    }
+    return 'Staff';
+  };
+
   const isItemActive = (item) => {
     if (activeTab === item.id) return true;
     return item.children?.some(c => c.id === activeTab) ?? false;
   };
+
+  // ─── ROLE-BASED PRIVILEGES FILTERING ───
+  const role = getUserRole().toLowerCase();
+
+  const filteredNavItems = NAV_ITEMS.filter((item) => {
+    // If the logged-in user is NOT an Admin, hide Admin Settings and Transaction Records
+    if (role !== 'admin') {
+      if (item.id === 'admin' || item.id === 'transactions') {
+        return false;
+      }
+    }
+    return true;
+  });
 
   return (
     <>
@@ -88,9 +113,9 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
             </button>
           </div>
 
-          {/* Nav */}
+          {/* Nav Menu — rendered using filteredNavItems to enforce role safety */}
           <nav className="px-3 py-4 space-y-0.5" aria-label="Main menu">
-            {NAV_ITEMS.map(({ id, label, icon: Icon, sub, children }) => {
+            {filteredNavItems.map(({ id, label, icon: Icon, sub, children }) => {
               const active       = activeTab === id;
               const parentActive = isItemActive({ id, children });
               const isExpanded   = !!expanded[id];

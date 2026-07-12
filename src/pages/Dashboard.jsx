@@ -204,6 +204,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
           </div>
         </header>
 
+        {/* ─── Scrollable content area (Dynamic key binds slide-up module animation) ─── */}
         <div className="flex-1 overflow-y-auto animate-module-switch" key={activeTab}>
           <style>{`
             @keyframes moduleSlideUp {
@@ -381,6 +382,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
+          {/* Tab 2: Admin settings module */}
           {activeTab === 'admin' && (
             <main className="p-5 lg:p-6">
               <Admin loggedInUser={loggedInUser} />
@@ -395,6 +397,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
+          {/* ── Tab 3: Fallback Module Integration (Cleaned-up RLS constraints, removes simultaneous display bugs) ── */}
           {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && (
             <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
               <div className="text-center space-y-4 max-w-xs mx-auto animate-fade-in">

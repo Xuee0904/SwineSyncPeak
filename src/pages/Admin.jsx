@@ -3,6 +3,7 @@ import AddStaffModal from '../components/admin/AddStaffModal';
 import EditStaffModal from '../components/admin/EditStaffModal';
 import ArchiveStaffModal from '../components/admin/ArchiveStaffModal';
 import SuccessArchiveStaffModal from '../components/admin/SuccessArchiveStaffModal';
+import { supabase } from '../supabaseClient';
 import { 
   Users, Download, Plus, Edit2, MoreVertical, 
   Activity, Search, X, Loader2, AlertCircle, Lock, Unlock,
@@ -91,26 +92,32 @@ export default function Admin({ loggedInUser }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
+  // Real-time Activity Log States
   const [activityLogs, setActivityLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(true);
   const [logsError, setLogsError] = useState(null);
 
+  // Filter States
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [logSearchQuery, setLogSearchQuery] = useState('');
   const [logDateFilter, setLogDateFilter] = useState('all');
 
+  // Progressive Disclosure: Custom Date Range boundaries
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
+  // Dropdown & Edit Modal Targets
   const [activeDropdownId, setActiveDropdownId] = useState(null);
   const [selectedEditStaff, setSelectedEditStaff] = useState(null);
   
+  // Dynamic Archiving / Restoring States
   const [selectedArchiveStaff, setSelectedArchiveStaff] = useState(null);
   const [recentlyArchivedStaff, setRecentlyArchivedStaff] = useState(null);
   const [showArchiveSuccess, setShowArchiveSuccess] = useState(false);
   const [archiveSuccessType, setArchiveSuccessType] = useState(false); 
 
+  // Pagination states
   const [logCurrentPage, setLogCurrentPage] = useState(1);
   const [staffCurrentPage, setStaffCurrentPage] = useState(1);
 
@@ -118,7 +125,12 @@ export default function Admin({ loggedInUser }) {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`${API_BASE_URL}/api/admin/users`);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `Server returned error ${res.status}`);
@@ -137,7 +149,12 @@ export default function Admin({ loggedInUser }) {
     try {
       setLogsLoading(true);
       setLogsError(null);
-      const res = await fetch(`${API_BASE_URL}/api/admin/activity-logs`);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      const res = await fetch(`${API_BASE_URL}/api/admin/activity-logs`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `Server returned error ${res.status}`);
@@ -165,11 +182,13 @@ export default function Admin({ loggedInUser }) {
     if (!loggedInUser) return '';
     if (typeof loggedInUser === 'string') return loggedInUser.toLowerCase();
     if (typeof loggedInUser === 'object') {
+      if (loggedInUser.name) return loggedInUser.name.toLowerCase();
       return (loggedInUser.user_metadata?.full_name || loggedInUser.email || '').toLowerCase();
     }
     return '';
   };
 
+  // ─── Priority Sorting (You -> Active/Inactive -> Archived at the bottom) ───
   const processedStaff = [...staffList].sort((a, b) => {
     const currentUser = getUsernameSafe();
     const aName = (a.name || '').toLowerCase();
@@ -177,15 +196,18 @@ export default function Admin({ loggedInUser }) {
     const aEmail = (a.email || '').toLowerCase();
     const bEmail = (b.email || '').toLowerCase();
 
-    const aIsYou = currentUser && (aName.includes(currentUser) || aEmail.includes(currentUser));
-    const bIsYou = currentUser && (bName.includes(currentUser) || bEmail.includes(currentUser));
+    const aIsYou = currentUser && (aName === currentUser || aEmail.includes(currentUser));
+    const bIsYou = currentUser && (bName === currentUser || bEmail.includes(currentUser));
 
+    // 1. Current logged-in session user always first
     if (aIsYou && !bIsYou) return -1;
     if (!aIsYou && bIsYou) return 1;
 
+    // 2. Archived accounts pushed to the absolute bottom of the entire table
     if (a.isArchived && !b.isArchived) return 1;
     if (!a.isArchived && b.isArchived) return -1;
 
+    // 3. Sort active/inactive chronologically by last sign-in timestamp
     const aTime = a.lastSignInAt ? new Date(a.lastSignInAt).getTime() : 0;
     const bTime = b.lastSignInAt ? new Date(b.lastSignInAt).getTime() : 0;
     
@@ -201,6 +223,7 @@ export default function Admin({ loggedInUser }) {
     return name.includes(q) || email.includes(q) || id.includes(q);
   });
 
+  // Account Management Pagination bounds
   const totalStaff = filteredStaff.length;
   const totalStaffPages = Math.ceil(totalStaff / STAFF_PER_PAGE) || 1;
   const safeStaffPage = Math.min(staffCurrentPage, totalStaffPages);
@@ -209,6 +232,7 @@ export default function Admin({ loggedInUser }) {
   const staffEndIndex = Math.min(staffStartIndex + STAFF_PER_PAGE, totalStaff);
   const paginatedStaff = filteredStaff.slice(staffStartIndex, staffEndIndex);
 
+  // Filtered Activity Logs
   const filteredLogs = activityLogs.filter((log) => {
     const logDate = new Date(log.timestamp);
     const now = new Date();
@@ -252,6 +276,7 @@ export default function Admin({ loggedInUser }) {
     return matchesSearch;
   });
 
+  // Activity Log Pagination bounds
   const totalLogs = filteredLogs.length;
   const totalLogPages = Math.ceil(totalLogs / LOGS_PER_PAGE) || 1;
   const safeLogPage = Math.min(logCurrentPage, totalLogPages);
@@ -290,7 +315,6 @@ export default function Admin({ loggedInUser }) {
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-800">Account Management</h2>
-              <p className="text-[11px] text-slate-400 mt-0.5">Manage administrative credentials, staff rosters, and audit records.</p>
             </div>
           </div>
 
@@ -323,7 +347,7 @@ export default function Admin({ loggedInUser }) {
             className="bg-transparent border-none text-[11px] text-slate-700 outline-none w-full placeholder-slate-450"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-slate-450 hover:text-slate-655">
+            <button onClick={() => setSearchQuery('')} className="text-slate-455 hover:text-slate-655">
               <X className="w-3 h-3" />
             </button>
           )}
@@ -337,7 +361,7 @@ export default function Admin({ loggedInUser }) {
           </div>
         )}
 
-        {/* Table Area (with scrollbar hiding class applied) */}
+        {/* Table Area */}
         <div className="overflow-x-auto no-scrollbar">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -354,12 +378,15 @@ export default function Admin({ loggedInUser }) {
               {loading ? (
                 <TableSkeleton rows={4} />
               ) : (
-                paginatedStaff.map((staff) => {
+                paginatedStaff.map((staff, index) => {
                   const currentUser = getUsernameSafe();
                   const staffName = staff.name || '';
                   const staffEmail = staff.email || '';
                   const isYou = currentUser && (staffName.toLowerCase().includes(currentUser) || staffEmail.toLowerCase().includes(currentUser));
                   const isTargetAdmin = (staff.role || '').toLowerCase() === 'admin';
+                  
+                  // Detects if the current item is the last row in the pagination slice
+                  const isLastRow = index === paginatedStaff.length - 1;
 
                   return (
                     <tr 
@@ -402,7 +429,7 @@ export default function Admin({ loggedInUser }) {
                       <td className="p-4 pl-7 text-left">
                         <span className="flex items-center gap-1.5 font-medium text-slate-655 text-slate-600">
                           <span className={`w-1.5 h-1.5 rounded-full ${
-                            staff.status === 'Active' ? 'bg-emerald-500' : staff.status === 'Archived' ? 'bg-rose-500' : 'bg-slate-400'
+                            staff.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-400'
                           }`} />
                           {staff.status}
                         </span>
@@ -411,7 +438,7 @@ export default function Admin({ loggedInUser }) {
                         {staff.lastLogin}
                       </td>
                       <td className="p-4 text-right pr-6 space-x-1 shrink-0">
-                        {/* Edit Button */}
+                        {/* Edit Button — Disabled/Greyed out for fellow Admin accounts and Archived accounts */}
                         {isTargetAdmin || staff.isArchived ? (
                           <button 
                             disabled 
@@ -430,27 +457,31 @@ export default function Admin({ loggedInUser }) {
                           </button>
                         )}
 
-                        {/* Three-dots menu */}
+                        {/* Three-dots contextual menu dropdown */}
                         <div className="relative inline-block text-left">
-                          <button 
-                            onClick={() => setActiveDropdownId(activeDropdownId === staff.fullId ? null : staff.fullId)}
-                            className="p-1.5 text-slate-455 hover:text-slate-655 hover:bg-slate-50 rounded-lg transition-all cursor-pointer"
-                          >
-                            <MoreVertical className="w-3.5 h-3.5" />
-                          </button>
+                          {/* Physically disabled menu trigger on Admin rows to provide visual clarity */}
+                          {isTargetAdmin ? (
+                            <button 
+                              disabled 
+                              className="p-1.5 text-slate-200 cursor-not-allowed opacity-40 inline-block"
+                              title="Administrative security rules prevent archiving fellow Admin accounts."
+                            >
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button 
+                              onClick={() => setActiveDropdownId(activeDropdownId === staff.fullId ? null : staff.fullId)}
+                              className="p-1.5 text-slate-455 hover:text-slate-655 hover:bg-slate-50 rounded-lg transition-all cursor-pointer"
+                            >
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           
                           {activeDropdownId === staff.fullId && (
-                            <div className="absolute right-0 mt-1 w-44 bg-white border border-slate-100 rounded-xl shadow-lg z-30 py-1.5 animate-fade-in text-left">
-                              {isTargetAdmin ? (
-                                <button
-                                  disabled
-                                  className="w-full flex items-center gap-2 px-3.5 py-2 text-[11px] text-slate-300 cursor-not-allowed opacity-40 font-semibold text-left"
-                                  title="Administrative security rules prevent archiving fellow Admin accounts."
-                                >
-                                  <Lock className="w-3.5 h-3.5" />
-                                  Archive (Locked)
-                                </button>
-                              ) : staff.isArchived ? (
+                            <div className={`absolute right-0 mt-1 w-44 bg-white border border-slate-100 rounded-xl shadow-lg z-30 py-1.5 animate-fade-in text-left ${
+                              isLastRow ? 'bottom-full mb-1' : 'top-full mt-1' // Positions upwards on last row to prevent clipping
+                            }`}>
+                              {staff.isArchived ? (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -541,7 +572,7 @@ export default function Admin({ loggedInUser }) {
         </div>
       </section>
 
-      {/* ─── CARD 2: REAL-TIME ACTIVITY LOG ─────────────────────────────────── */}
+      {/* ─── CARD 2: REAL-TIME ACTIVITY LOG (Dashboard Consistent) ──────────── */}
       <section className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden" id="activity-log-card">
         <div className="px-5 py-4 border-b border-slate-50 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -550,7 +581,6 @@ export default function Admin({ loggedInUser }) {
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-800">Activity Log</h2>
-              <p className="text-[11px] text-slate-400 mt-0.5">System audit tracking trail of modifications and logins.</p>
             </div>
           </div>
           <button 
@@ -565,6 +595,7 @@ export default function Admin({ loggedInUser }) {
         {/* Dynamic Log search & time-period filter bar */}
         <div className="px-5 py-2.5 bg-slate-50/40 border-b border-slate-50 flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
+            {/* Live Search Logs */}
             <div className="relative flex-grow w-full">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
               <input 
@@ -581,6 +612,7 @@ export default function Admin({ loggedInUser }) {
               )}
             </div>
 
+            {/* Time-Period Selector Dropdown */}
             <div className="w-full sm:w-44 shrink-0">
               <select
                 value={logDateFilter}
@@ -603,6 +635,7 @@ export default function Admin({ loggedInUser }) {
             </div>
           </div>
 
+          {/* Collapsible Custom Date Picker Drawer */}
           <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
             logDateFilter === 'custom' 
               ? 'max-h-32 opacity-100 mt-1' 
@@ -640,6 +673,7 @@ export default function Admin({ loggedInUser }) {
           </div>
         </div>
 
+        {/* Database Errors */}
         {logsError && (
           <div className="p-4 flex items-center gap-3 text-xs text-rose-700 bg-rose-50 border-b border-slate-50">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
@@ -647,7 +681,7 @@ export default function Admin({ loggedInUser }) {
           </div>
         )}
 
-        {/* Table Area (with scrollbar hiding class applied) */}
+        {/* Table Area */}
         <div className="overflow-x-auto no-scrollbar">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -675,7 +709,7 @@ export default function Admin({ loggedInUser }) {
                     <tr key={log.log_id} className="hover:bg-slate-50/30 transition-colors">
                       <td className="p-4 pl-6 font-medium text-slate-500 space-y-0.5">
                         <span className="block font-bold text-slate-700">{dateFormatted}</span>
-                        <span className="block text-[10px] text-slate-400">{timeFormatted}</span>
+                        <span className="block text-[10px] text-slate-450">{timeFormatted}</span>
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-3">
@@ -712,14 +746,14 @@ export default function Admin({ loggedInUser }) {
           </table>
         </div>
 
-        {/* Fully Functional Activity Log Pagination Footer */}
+        {/* Table Footer */}
         <div className="p-4 border-t border-slate-100 bg-slate-50/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 font-medium">
-          <span>Showing <strong>{totalLogs > 0 ? logStartIndex + 1 : 0} to {logEndIndex}</strong> of {totalLogs} log transactions</span>
+          <span>Showing <strong>{filteredLogs.length > 0 ? logStartIndex + 1 : 0} to {logEndIndex}</strong> of {filteredLogs.length} log transactions</span>
           <div className="flex items-center gap-1.5">
             <button 
               disabled={safeLogPage === 1}
               onClick={() => setLogCurrentPage(prev => Math.max(1, prev - 1))}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 rounded-xl transition-all cursor-pointer active:scale-95"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-semibold active:scale-95"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
               Previous

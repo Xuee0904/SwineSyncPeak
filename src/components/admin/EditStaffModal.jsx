@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle, Loader2, User } from 'lucide-react';
-import SuccessEditStaffModal from './SuccessEditStaffModal'; // Integrated Success Modal
+import { supabase } from '../../supabaseClient'; // Imported Supabase to retrieve active session token
+import SuccessEditStaffModal from './SuccessEditStaffModal';
 import useModalAnimation from '../../hooks/useModalAnimation';
 
 export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, loggedInUser, apiBaseUrl }) {
@@ -9,7 +10,6 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // States for handling intermediate success dialogue
   const [showSuccess, setShowSuccess] = useState(false);
   const [editedStaffInfo, setEditedStaffInfo] = useState(null);
 
@@ -44,9 +44,16 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
         creatorString = loggedInUser.user_metadata?.full_name || loggedInUser.email || 'Admin System';
       }
 
+      // Retrieve the current session token to authenticate with the backend
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
       const res = await fetch(`${apiBaseUrl}/api/admin/users/${staff.fullId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Added the secure Bearer token
+        },
         body: JSON.stringify({
           name: name.trim(),
           role,
@@ -60,7 +67,6 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
         throw new Error(body.error || 'Failed to update credentials.');
       }
 
-      // Record updated details to local visual state before showing success modal
       setEditedStaffInfo({ name: name.trim() });
       setShowSuccess(true);
     } catch (err) {
@@ -73,8 +79,8 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
   const handleSuccessClose = () => {
     setShowSuccess(false);
     setEditedStaffInfo(null);
-    onEditSuccess(); // Reload parent table records
-    requestClose(); // Safely unmount with exit animation
+    onEditSuccess();
+    requestClose();
   };
 
   return (

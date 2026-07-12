@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle, Loader2, Lock, Eye, EyeOff, User, Mail } from 'lucide-react';
 import AddStaffSuccessModal from './SuccessAddStaffModal';
+import { supabase } from '../../supabaseClient'; // Imported Supabase to retrieve active session token
 import useModalAnimation from '../../hooks/useModalAnimation';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -74,9 +75,16 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
         creator: creatorString
       };
 
+      // Retrieve the current session token to authenticate with the backend
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
       const response = await fetch(`${apiBaseUrl}/api/admin/users`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Added the secure Bearer token
+        },
         body: JSON.stringify(payload)
       });
 
