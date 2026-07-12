@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, AlertCircle, Loader2, Lock, Eye, EyeOff, User, Mail } from 'lucide-react';
 import AddStaffSuccessModal from './SuccessAddStaffModal';
-import { supabase } from '../../supabaseClient'; // Imported Supabase to retrieve active session token
+import { supabase } from '../../supabaseClient';
 import useModalAnimation from '../../hooks/useModalAnimation';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -33,7 +34,8 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
   const [showPassword, setShowPassword] = useState(false);
   const [touched, setTouched] = useState({ name: false, email: false, password: false });
 
-  const { shouldRender, isClosing, requestClose } = useModalAnimation(isOpen, onClose);
+  const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } = 
+    useModalAnimation(isOpen, onClose);
 
   useEffect(() => {
     if (isOpen) {
@@ -62,7 +64,6 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
     try {
       setLoading(true);
       
-      // Type-safe string extraction to prevent passing objects to the backend
       let creatorString = 'Admin System';
       if (typeof loggedInUser === 'string' && loggedInUser.trim() !== '') {
         creatorString = loggedInUser;
@@ -75,7 +76,6 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
         creator: creatorString
       };
 
-      // Retrieve the current session token to authenticate with the backend
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
@@ -83,7 +83,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // Added the secure Bearer token
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(payload)
       });
@@ -113,36 +113,38 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
 
   const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs";
   const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
-  const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 text-rose-955 placeholder-rose-450 bg-rose-50/20";
+  const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 text-rose-955 placeholder-rose-455 bg-rose-50/20";
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
-      style={{ animation: isClosing ? 'staffModalFadeOut 180ms ease-in forwards' : 'staffModalFadeIn 200ms ease-out' }}
+      // Added lg:left-60 to center the modal relative to the right workspace instead of the entire screen
+      className={`fixed inset-0 lg:left-60 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
       role="dialog"
       aria-modal="true"
       onClick={(e) => e.target === e.currentTarget && requestClose()}
     >
       <style>{`
-        @keyframes staffModalFadeIn { from { opacity: 0 } to { opacity: 1 } }
-        @keyframes staffModalFadeOut { from { opacity: 1 } to { opacity: 0 } }
-        @keyframes staffModalScaleIn {
-          from { opacity: 0; transform: scale(0.94) translateY(10px); }
-          to { opacity: 1; transform: scale(1) translateY(0); }
+        @keyframes modal-panel-in {
+          from { opacity: 0; transform: translateY(16px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
         }
-        @keyframes staffModalScaleOut {
-          from { opacity: 1; transform: scale(1) translateY(0); }
-          to { opacity: 0; transform: scale(0.94) translateY(10px); }
+        @keyframes modal-panel-out {
+          from { opacity: 1; transform: translateY(0) scale(1); }
+          to   { opacity: 0; transform: translateY(16px) scale(0.97); }
         }
+        .animate-modal-in  { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .animate-modal-out { animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
       `}</style>
 
       <div
-        className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left"
-        style={{ animation: isClosing ? 'staffModalScaleOut 180ms ease-in forwards' : 'staffModalScaleIn 220ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+        className={[
+          'w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left',
+          panelClassName,
+        ].join(' ')}
       >
         <button
           type="button"
-          onClick={requestClose}
+          onClick={() => requestClose()}
           className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
           aria-label="Close"
         >
@@ -267,7 +269,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
           <div className="pt-2 flex gap-2">
             <button
               type="button"
-              onClick={requestClose}
+              onClick={() => requestClose()}
               className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-655 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
             >
               Cancel
@@ -292,6 +294,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
         onClose={handleSuccessClose}
         staff={createdStaff}
       />
-    </div>
+    </div>,
+    document.body
   );
 }
