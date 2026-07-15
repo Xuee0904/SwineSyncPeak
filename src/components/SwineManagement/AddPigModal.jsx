@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ChevronLeft, Venus, Mars, Users, Loader2 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import AddPigletBatchModal from './AddPigletBatchModal';
@@ -18,7 +19,7 @@ const EMPTY_FORM = {
 };
 
 export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
-  // z-[60] ensures we cover the module header/sidebar
+  // useModalAnimation handles mounting/unmounting and exit timings
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
@@ -30,13 +31,10 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
   const [submitError, setSubmitError] = useState(null);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
 
-  // Data states for combo boxes
   const [pens, setPens] = useState([]);
   const [breeds, setBreeds] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
-  // Custom styled breed combobox (replaces native <select>/<datalist> so it
-  // matches the app's own dropdown look instead of the browser default)
   const [breedOpen, setBreedOpen] = useState(false);
   const breedWrapRef = useRef(null);
 
@@ -48,7 +46,6 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // 1. Fetch Pens and Breeds when modal opens
   useEffect(() => {
     if (isOpen) {
       const fetchData = async () => {
@@ -91,6 +88,8 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
     if (type === 'batch') {
       requestClose(() => {
         setStep('select');
+        setGender(null);
+        setForm(EMPTY_FORM);
         setBatchModalOpen(true);
       });
       return;
@@ -141,15 +140,16 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
     }
   };
 
-  const title = step === 'select' ? 'Add New Swine' : `Add New ${gender}`;
+  const title = step === 'select' ? 'Add New Swine' : `Add New ${gender} Swine`;
 
-  return (
+  return createPortal(
     <>
       {shouldRender && (
         <div
-          // z-[60] and backdrop-blur-md blurs the header and main module
-          className={`fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
-          onMouseDown={(e) => e.target === e.currentTarget && resetAndClose()}
+          className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) resetAndClose();
+          }}
         >
           <div
             style={{ willChange: 'transform, opacity, max-width' }}
@@ -161,13 +161,13 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
               <div className="flex items-center gap-2">
                 {step === 'form' && (
-                  <button type="button" onClick={() => setStep('select')} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+                  <button type="button" onClick={() => setStep('select')} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
                     <ChevronLeft size={18} />
                   </button>
                 )}
                 <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">{title}</h2>
               </div>
-              <button type="button" onClick={resetAndClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+              <button type="button" onClick={resetAndClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
                 <X size={18} />
               </button>
             </div>
@@ -175,10 +175,18 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
             <div className="transition-opacity duration-300">
               {step === 'select' && (
                 <div className="px-6 py-8">
+                  <p className="mb-6 text-center text-sm text-slate-500">
+                    Select the type of record you want to add to the herd
+                  </p>
                   <div className="grid grid-cols-3 gap-4">
                     <TypeCard icon={<Venus size={28} />} label="Sow" onClick={() => handleTypeSelect('sow')} />
                     <TypeCard icon={<Mars size={28} />} label="Boar" onClick={() => handleTypeSelect('boar')} />
                     <TypeCard icon={<Users size={28} />} label="Batch" onClick={() => handleTypeSelect('batch')} />
+                  </div>
+                  <div className="mt-8 flex justify-end border-t border-slate-100 pt-4 px-2">
+                    <button type="button" onClick={resetAndClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                      Cancel
+                    </button>
                   </div>
                 </div>
               )}
@@ -196,7 +204,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4 text-left">
                     <Field label="Tag Number" error={errors.tagNumber}>
                       <input type="text" value={form.tagNumber} onChange={handleChange('tagNumber')} placeholder="e.g. SW-29401" className={inputClass(errors.tagNumber)} />
                     </Field>
@@ -205,7 +213,6 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                       <input type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} className={inputClass(errors.dateOfBirth)} />
                     </Field>
 
-                    {/* BREED COMBO BOX — single styled input + suggestion list, no popup second field */}
                     <div className="relative" ref={breedWrapRef}>
                       <Field
                         label="Breed"
@@ -256,7 +263,6 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                       <input type="number" step="0.1" value={form.weight} onChange={handleChange('weight')} placeholder="0.0" className={inputClass(errors.weight)} />
                     </Field>
 
-                    {/* PEN CODE COMBO BOX */}
                     <Field label="Pen Code" error={errors.penId}>
                       <select 
                         value={form.penId} 
@@ -287,10 +293,12 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                   </div>
 
                   <div className="mt-8 flex justify-end gap-3 border-t border-slate-100 pt-5">
-                    <button type="button" onClick={resetAndClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+                    <button type="button" onClick={resetAndClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                      Cancel
+                    </button>
                     <button type="submit" disabled={isSaving || isLoadingData} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
                       {isSaving && <Loader2 size={16} className="animate-spin" />}
-                      Save {gender}
+                      Save
                     </button>
                   </div>
                 </form>
@@ -307,7 +315,8 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
         pens={pens} 
         breeds={breeds} 
       />
-    </>
+    </>,
+    document.body
   );
 }
 

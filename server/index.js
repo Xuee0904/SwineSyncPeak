@@ -547,7 +547,8 @@ app.get('/api/pigs', async (req, res) => {
     const queryBatches = !category || ['all', 'piglet_batch'].includes(category);
 
     if (queryPigs) {
-      let q = supabase.from('pigs').select('*').eq('is_archived', false);
+      // Join breeds so we get the breed name, not just the breed_id UUID stored on pigs.
+      let q = supabase.from('pigs').select('*, breeds(name)').eq('is_archived', false);
       if (pen && pen !== 'all') q = q.eq('pen_id', pen);
       if (status && status !== 'all') q = q.eq('status', status.toLowerCase());
       if (search) q = q.ilike('pig_tag', `%${search}%`);
@@ -567,7 +568,7 @@ app.get('/api/pigs', async (req, res) => {
     const unifiedPigs = pigData.map(pig => ({
       id: pig.pig_id, 
       pig_tag: pig.pig_tag, 
-      breed: pig.breed || '—',
+      breed: pig.breeds?.name || '—',
       age_weeks: pig.date_of_birth ? Math.floor((Date.now() - new Date(pig.date_of_birth)) / 604800000) : '—',
       current_weight: pig.weight,
       category: (pig.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
