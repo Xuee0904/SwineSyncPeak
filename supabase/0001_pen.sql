@@ -19,3 +19,8 @@ VALUES
 
 CREATE POLICY "Allow public read access to pens" 
 ON pens FOR SELECT TO public USING (true);
+
+create policy "Allow public read access"
+on public.pens for select
+to anon
+using (true);

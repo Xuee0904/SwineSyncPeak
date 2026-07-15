@@ -156,3 +156,44 @@ input::-ms-clear {
 .back-to-top:hover {
   background: #1e293b;
 }
+
+/* Backdrop Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Modal Panel Animations */
+@keyframes modalIn {
+  from { 
+    opacity: 0; 
+    transform: scale(0.96) translateY(10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: scale(1) translateY(0); 
+  }
+}
+
+@keyframes modalOut {
+  from { 
+    opacity: 1; 
+    transform: scale(1) translateY(0); 
+  }
+  to { 
+    opacity: 0; 
+    transform: scale(0.96) translateY(10px); 
+  }
+}
+
+/* Helper Classes */
+.animate-overlay-in { animation: fadeIn 0.2s cubic-bezier(0, 0, 0.2, 1) forwards; }
+.animate-overlay-out { animation: fadeOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards; }
+
+.animate-panel-in { animation: modalIn 0.2s cubic-bezier(0, 0, 0.2, 1) forwards; }
+.animate-panel-out { animation: modalOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards; }

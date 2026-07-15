@@ -5,6 +5,9 @@ import {
   X, Grid3X3, AlertCircle,
 } from 'lucide-react';
 
+// Import the Modal
+import AddPigModal from '../components/SwineManagement/AddPigModal.jsx';
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const PAGE_SIZE = 5;
 
@@ -87,6 +90,9 @@ export default function SwineManagement({ activeSubTab }) {
   const [search,       setSearch]       = useState('');
   const [page,         setPage]         = useState(1);
 
+  // Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
   const [openMenuId,   setOpenMenuId]   = useState(null);
   const menuRef = useRef(null);
 
@@ -147,6 +153,40 @@ export default function SwineManagement({ activeSubTab }) {
       setListLoading(false);
     }
   }, [page, search, filterPen, filterCat]);
+
+  // Logic for handling the Save from Modal.
+  // NOTE: these intentionally do NOT catch errors internally — they let them
+  // propagate so AddPigModal's handleSubmit can show the real failure to the
+  // user instead of silently closing as if it succeeded.
+  const handleSavePig = async (pigData) => {
+    const res = await fetch(`${API_BASE}/api/pigs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pigData),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || `Failed to save pig (status ${res.status})`);
+    }
+    fetchSwine();
+    fetchStats();
+  };
+
+  const handleSaveBatch = async (batchData) => {
+    // Note: Adjust the endpoint below if your backend has a different
+    // route for handling piglet batches.
+    const res = await fetch(`${API_BASE}/api/pigs/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(batchData),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || `Failed to save batch (status ${res.status})`);
+    }
+    fetchSwine();
+    fetchStats();
+  };
 
   useEffect(() => { fetchStats(); fetchPens(); }, [fetchStats, fetchPens]);
   useEffect(() => { fetchSwine(); }, [fetchSwine]);
@@ -246,7 +286,10 @@ export default function SwineManagement({ activeSubTab }) {
               >
                 <Download className="w-3.5 h-3.5" /> Export
               </button>
+              
+              {/* Add New Swine Button Trigger */}
               <button
+                onClick={() => setIsAddModalOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
                 id="add-swine-btn"
               >
@@ -475,6 +518,15 @@ export default function SwineManagement({ activeSubTab }) {
           </div>
         </div>
       </div>
+
+      {/* Render the Modal Component */}
+      <AddPigModal 
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onSave={handleSavePig}
+        onSaveBatch={handleSaveBatch}
+        pens={pens}
+      />
     </div>
   );
 }
