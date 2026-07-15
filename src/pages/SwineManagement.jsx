@@ -4,9 +4,8 @@ import {
   Search, ChevronLeft, ChevronRight, MoreVertical, RefreshCw,
   X, Grid3X3, AlertCircle,
 } from 'lucide-react';
-
-// Import the Modal
 import AddPigModal from '../components/SwineManagement/AddPigModal.jsx';
+import EditPigModal from '../components/SwineManagement/EditPigModal.jsx'; // NEW IMPORT
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const PAGE_SIZE = 5;
@@ -90,8 +89,10 @@ export default function SwineManagement({ activeSubTab }) {
   const [search,       setSearch]       = useState('');
   const [page,         setPage]         = useState(1);
 
-  // Modal State
+  // Modal States
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false); // NEW
+  const [selectedPig, setSelectedPig] = useState(null); // NEW
 
   const [openMenuId,   setOpenMenuId]   = useState(null);
   const menuRef = useRef(null);
@@ -154,10 +155,6 @@ export default function SwineManagement({ activeSubTab }) {
     }
   }, [page, search, filterPen, filterCat]);
 
-  // Logic for handling the Save from Modal.
-  // NOTE: these intentionally do NOT catch errors internally — they let them
-  // propagate so AddPigModal's handleSubmit can show the real failure to the
-  // user instead of silently closing as if it succeeded.
   const handleSavePig = async (pigData) => {
     const res = await fetch(`${API_BASE}/api/pigs`, {
       method: 'POST',
@@ -173,8 +170,6 @@ export default function SwineManagement({ activeSubTab }) {
   };
 
   const handleSaveBatch = async (batchData) => {
-    // Note: Adjust the endpoint below if your backend has a different
-    // route for handling piglet batches.
     const res = await fetch(`${API_BASE}/api/pigs/batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -183,6 +178,21 @@ export default function SwineManagement({ activeSubTab }) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || `Failed to save batch (status ${res.status})`);
+    }
+    fetchSwine();
+    fetchStats();
+  };
+
+  // NEW: Update Pig Logic
+  const handleUpdatePig = async (id, updatedData) => {
+    const res = await fetch(`${API_BASE}/api/pigs/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedData),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || `Failed to update record (status ${res.status})`);
     }
     fetchSwine();
     fetchStats();
@@ -287,7 +297,6 @@ export default function SwineManagement({ activeSubTab }) {
                 <Download className="w-3.5 h-3.5" /> Export
               </button>
               
-              {/* Add New Swine Button Trigger */}
               <button
                 onClick={() => setIsAddModalOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
@@ -299,7 +308,6 @@ export default function SwineManagement({ activeSubTab }) {
           </div>
 
           <div className="flex flex-wrap items-end gap-3 mt-4">
-            {/* Pen Filter */}
             <div className="flex flex-col gap-0.5">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Pen</label>
               <select
@@ -315,7 +323,6 @@ export default function SwineManagement({ activeSubTab }) {
               </select>
             </div>
 
-            {/* Category Filter */}
             <div className="flex flex-col gap-0.5">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Category</label>
               <select
@@ -331,7 +338,6 @@ export default function SwineManagement({ activeSubTab }) {
               </select>
             </div>
 
-            {/* Search */}
             <div className="flex flex-col gap-0.5 ml-auto">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Search</label>
               <div className="relative">
@@ -357,7 +363,6 @@ export default function SwineManagement({ activeSubTab }) {
           </div>
         </div>
 
-        {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -452,7 +457,15 @@ export default function SwineManagement({ activeSubTab }) {
                         {openMenuId === (pig.id ?? idx) && (
                           <div className="absolute right-0 top-full mt-1 z-20 w-36 bg-white rounded-xl shadow-lg border border-slate-100 py-1 text-xs font-semibold text-slate-700 overflow-hidden">
                             <button className="w-full text-left px-3.5 py-2 hover:bg-slate-50 transition-colors cursor-pointer">View Details</button>
-                            <button className="w-full text-left px-3.5 py-2 hover:bg-slate-50 transition-colors cursor-pointer">Edit Record</button>
+                            
+                            {/* CONNECTED: Edit Button */}
+                            <button 
+                              onClick={() => { setSelectedPig(pig); setIsEditModalOpen(true); setOpenMenuId(null); }}
+                              className="w-full text-left px-3.5 py-2 hover:bg-slate-50 transition-colors cursor-pointer"
+                            >
+                              Edit Record
+                            </button>
+
                             <button className="w-full text-left px-3.5 py-2 hover:bg-rose-50 text-rose-600 transition-colors cursor-pointer">Archive</button>
                           </div>
                         )}
@@ -465,7 +478,6 @@ export default function SwineManagement({ activeSubTab }) {
           </table>
         </div>
 
-        {/* Pagination Footer */}
         <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-50">
           <p className="text-[11px] font-semibold text-slate-400">
             {listLoading
@@ -519,13 +531,20 @@ export default function SwineManagement({ activeSubTab }) {
         </div>
       </div>
 
-      {/* Render the Modal Component */}
       <AddPigModal 
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         onSave={handleSavePig}
         onSaveBatch={handleSaveBatch}
         pens={pens}
+      />
+
+      {/* RENDER: Edit Modal */}
+      <EditPigModal
+        isOpen={isEditModalOpen}
+        onClose={() => { setIsEditModalOpen(false); setSelectedPig(null); }}
+        onSave={handleUpdatePig}
+        pigData={selectedPig}
       />
     </div>
   );

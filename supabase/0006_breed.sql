@@ -53,3 +53,5 @@ create policy "Allow public read access"
 on public.breeds for select
 to anon
 using (true);
+
+grant select on public.breeds to anon, authenticated;

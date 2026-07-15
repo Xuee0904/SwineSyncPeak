@@ -16,3 +16,8 @@ GRANT ALL ON public.pens TO authenticated;
 
 -- ─── 3. ENSURE PUBLIC SCHEMA USAGE IS ACTIVE ─────────────────────────────
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
+
+grant select, insert, update, delete on public.breeds to service_role;
+grant select, insert, update, delete on public.pigs to service_role;
+grant select, insert, update, delete on public.pens to service_role;
+grant select, insert, update, delete on public.piglet_batches to service_role;

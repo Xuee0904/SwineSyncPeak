@@ -24,3 +24,5 @@ create policy "Allow public read access"
 on public.pens for select
 to anon
 using (true);
+
+grant select on public.pens to anon, authenticated;
