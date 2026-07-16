@@ -119,6 +119,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
 
       onLoginSuccess({
         name: displayName,
+        email: user.email,
         role: user.user_metadata?.role || 'Staff'
       });
       handleClose();

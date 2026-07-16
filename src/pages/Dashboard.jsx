@@ -392,6 +392,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
           {(activeTab === 'swine_management' || activeTab === 'pen_management') && (
             <main>
               <SwineManagement
+                loggedInUser={loggedInUser}
                 activeSubTab={activeTab === 'pen_management' ? 'pen_management' : undefined}
               />
             </main>

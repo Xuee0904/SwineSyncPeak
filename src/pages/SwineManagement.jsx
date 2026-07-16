@@ -73,7 +73,7 @@ function TableSkeleton({ rows = 5 }) {
   );
 }
 
-export default function SwineManagement({ activeSubTab }) {
+export default function SwineManagement({ activeSubTab, loggedInUser }) {
   const [stats,        setStats]        = useState({ total: 0, pregnant: 0, sick: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
 
@@ -157,10 +157,11 @@ export default function SwineManagement({ activeSubTab }) {
   }, [page, search, filterPen, filterCat]);
 
   const handleSavePig = async (pigData) => {
+    const payload = { ...pigData, creator: loggedInUser };
     const res = await fetch(`${API_BASE}/api/pigs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(pigData),
+      body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -171,10 +172,11 @@ export default function SwineManagement({ activeSubTab }) {
   };
 
   const handleSaveBatch = async (batchData) => {
+    const payload = { ...batchData, creator: loggedInUser };
     const res = await fetch(`${API_BASE}/api/pigs/batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(batchData),
+      body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -186,10 +188,11 @@ export default function SwineManagement({ activeSubTab }) {
 
   // NEW: Update Pig Logic
   const handleUpdatePig = async (id, updatedData) => {
+    const payload = { ...updatedData, creator: loggedInUser };
     const res = await fetch(`${API_BASE}/api/pigs/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedData),
+      body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
