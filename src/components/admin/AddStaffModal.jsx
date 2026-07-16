@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, AlertCircle, Loader2, Lock, Eye, EyeOff, User, Mail } from 'lucide-react';
+import { X, AlertCircle, Loader2, Lock, Eye, EyeOff, User, Mail, UserPlus, Shield } from 'lucide-react';
 import AddStaffSuccessModal from './SuccessAddStaffModal';
 import { supabase } from '../../supabaseClient';
 import useModalAnimation from '../../hooks/useModalAnimation';
@@ -111,13 +111,12 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
     requestClose();
   };
 
-  const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs";
+  const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs font-medium";
   const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
   const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 text-rose-955 placeholder-rose-455 bg-rose-50/20";
 
   return createPortal(
     <div
-      // Added lg:left-60 to center the modal relative to the right workspace instead of the entire screen
       className={`fixed inset-0 lg:left-60 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
       role="dialog"
       aria-modal="true"
@@ -138,26 +137,36 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
 
       <div
         className={[
-          'w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left',
+          'w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left',
           panelClassName,
         ].join(' ')}
       >
-        <button
-          type="button"
-          onClick={() => requestClose()}
-          className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
-          aria-label="Close"
-        >
-          <X className="w-4 h-4" />
-        </button>
-
-        <form onSubmit={handleSubmit} className="p-8 space-y-4" noValidate>
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Add Staff Account</h3>
+        {/* Header matching redesigned modals */}
+        <div className="px-8 pt-8 pb-4 flex items-center justify-between border-b border-slate-50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0 shadow-sm border border-emerald-100/60">
+              <UserPlus className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 leading-tight">Add Staff Account</h3>
+              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                Create new portal credentials
+              </p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => requestClose()}
+            className="p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
+        <form onSubmit={handleSubmit} className="p-8 pt-6 space-y-4" noValidate>
           {formError && (
-            <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+            <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2.5 animate-fade-in">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
               <span>{formError}</span>
             </div>
@@ -239,7 +248,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
                 type="button"
                 tabIndex={-1}
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-655 transition-colors cursor-pointer"
+                className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -256,31 +265,36 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
           {/* Role */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">System Access Role</label>
-            <select
-              value={newStaff.role}
-              onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })}
-              className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-            >
-              <option value="Staff">Staff (View/Update Logs)</option>
-              <option value="Admin">Admin (Full System Privilege)</option>
-            </select>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
+                <Shield className="w-3.5 h-3.5" />
+              </span>
+              <select
+                value={newStaff.role}
+                onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })}
+                className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-700 outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
+              >
+                <option value="Staff">Staff (View & Update Telemetry/Logs)</option>
+                <option value="Admin">Admin (Full System & Account Management Privilege)</option>
+              </select>
+            </div>
           </div>
 
-          <div className="pt-2 flex gap-2">
+          <div className="pt-4 flex gap-3">
             <button
               type="button"
               onClick={() => requestClose()}
-              className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-655 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+              className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
             >
               {loading ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating Account…</>
               ) : (
                 'Create Account'
               )}

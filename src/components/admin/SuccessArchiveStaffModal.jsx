@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Check, X } from 'lucide-react';
+import { Check, X, Lock, Unlock } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 
 export default function SuccessArchiveStaffModal({ isOpen, onClose, staff, wasArchived }) {
@@ -11,7 +11,6 @@ export default function SuccessArchiveStaffModal({ isOpen, onClose, staff, wasAr
 
   return createPortal(
     <div
-      // Added lg:left-60
       className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
       role="dialog"
       aria-modal="true"
@@ -44,19 +43,23 @@ export default function SuccessArchiveStaffModal({ isOpen, onClose, staff, wasAr
           <X className="w-4 h-4" />
         </button>
 
-        <div className="p-8 space-y-4">
-          <div className="mx-auto w-14 h-14 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center">
-            <Check className="w-7 h-7 text-emerald-600" strokeWidth={3} />
+        <div className="p-8 space-y-5">
+          <div className={`mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm ${
+            wasArchived 
+              ? 'bg-rose-50 border-rose-100 text-rose-600' 
+              : 'bg-emerald-50 border-emerald-100 text-emerald-600'
+          }`}>
+            {wasArchived ? <Lock className="w-7 h-7" strokeWidth={2.5} /> : <Check className="w-7 h-7" strokeWidth={3} />}
           </div>
 
           <div>
             <h3 className="text-lg font-bold text-slate-900">
               {wasArchived ? 'Account Archived' : 'Account Restored'}
             </h3>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
               {staff?.name ? (
                 <>
-                  The caretaker account for <span className="font-semibold text-slate-655 text-slate-600">{staff.name}</span> has been successfully {wasArchived ? 'archived' : 'restored'}.
+                  The caretaker credentials for <span className="font-bold text-slate-800">{staff.name}</span> have been successfully {wasArchived ? 'archived and suspended' : 'restored to active status'}.
                 </>
               ) : (
                 `The staff account has been successfully ${wasArchived ? 'archived' : 'restored'}.`
@@ -67,7 +70,11 @@ export default function SuccessArchiveStaffModal({ isOpen, onClose, staff, wasAr
           <button
             type="button"
             onClick={() => requestClose()}
-            className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-md transition-colors cursor-pointer"
+            className={`w-full py-3 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 ${
+              wasArchived 
+                ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20' 
+                : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+            }`}
           >
             Done
           </button>

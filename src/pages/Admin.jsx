@@ -3,11 +3,12 @@ import AddStaffModal from '../components/admin/AddStaffModal';
 import EditStaffModal from '../components/admin/EditStaffModal';
 import ArchiveStaffModal from '../components/admin/ArchiveStaffModal';
 import SuccessArchiveStaffModal from '../components/admin/SuccessArchiveStaffModal';
+import StaffDetailModal from '../components/admin/StaffDetailModal';
 import { supabase } from '../supabaseClient';
 import { 
   Users, Download, Plus, Edit2, MoreVertical, 
   Activity, Search, X, Loader2, AlertCircle, Lock, Unlock,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, ShieldAlert, ShieldCheck, UserCheck, Shield, Clock, CheckCircle2, Archive
 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
@@ -15,38 +16,37 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001
 const LOGS_PER_PAGE = 5; 
 const STAFF_PER_PAGE = 5; 
 
-// ─── Table 1: Account Management Loading Skeleton ──────────────────────────
+// ─── Table 1: Account Management Loading Skeleton (Modern Shimmer) ──────────
 function TableSkeleton({ rows = 4 }) {
   return (
     <>
       {Array.from({ length: rows }).map((_, i) => (
-        <tr key={i} className="animate-pulse">
+        <tr key={i} className="animate-pulse border-b border-slate-50">
           <td className="p-4 pl-6">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-slate-100 shrink-0" />
-              <div className="space-y-1.5 flex-grow max-w-[140px]">
-                <div className="h-3 w-3/4 bg-slate-100 rounded" />
-                <div className="h-2 w-full bg-slate-100/70 rounded" />
+              <div className="w-9 h-9 rounded-full bg-slate-200/70 shrink-0" />
+              <div className="space-y-2 flex-grow max-w-[150px]">
+                <div className="h-3 w-4/5 bg-slate-200/80 rounded-md" />
+                <div className="h-2 w-3/5 bg-slate-100 rounded-md" />
               </div>
             </div>
           </td>
           <td className="p-4 pl-6">
-            <div className="h-5 w-12 bg-slate-100 rounded-full" />
+            <div className="h-5 w-16 bg-slate-200/70 rounded-full" />
           </td>
           <td className="p-4 pl-7">
-            <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-slate-200" />
-              <div className="h-3 w-10 bg-slate-100 rounded" />
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-slate-200" />
+              <div className="h-3 w-12 bg-slate-200/70 rounded-md" />
             </div>
           </td>
           <td className="p-4 text-left">
-            <div className="h-3 w-20 bg-slate-100 rounded" />
+            <div className="h-3 w-24 bg-slate-200/70 rounded-md" />
           </td>
           <td className="p-4 text-right pr-6">
-            <div className="flex justify-end gap-1.5">
-              <div className="w-6 h-6 bg-slate-100 rounded" />
-              <div className="w-6 h-6 bg-slate-100 rounded" />
-              <div className="w-6 h-6 bg-slate-100 rounded" />
+            <div className="flex justify-end items-center gap-2">
+              <div className="w-7 h-7 bg-slate-100 rounded-xl" />
+              <div className="w-7 h-7 bg-slate-100 rounded-xl" />
             </div>
           </td>
         </tr>
@@ -55,30 +55,30 @@ function TableSkeleton({ rows = 4 }) {
   );
 }
 
-// ─── Table 2: Activity Log Loading Skeleton ──────────────────────────────────
+// ─── Table 2: Activity Log Loading Skeleton (Modern Shimmer) ────────────────
 function ActivityLogSkeleton({ rows = 4 }) {
   return (
     <>
       {Array.from({ length: rows }).map((_, i) => (
-        <tr key={i} className="animate-pulse">
+        <tr key={i} className="animate-pulse border-b border-slate-50">
           <td className="p-4 pl-6">
-            <div className="space-y-1.5 w-24">
-              <div className="h-3.5 bg-slate-100 rounded w-5/6" />
-              <div className="h-2.5 bg-slate-100/70 rounded w-1/2" />
+            <div className="space-y-2 w-28">
+              <div className="h-3.5 bg-slate-200/80 rounded-md w-4/5" />
+              <div className="h-2.5 bg-slate-100 rounded-md w-3/5" />
             </div>
           </td>
           <td className="p-4">
             <div className="flex items-center gap-3">
-              <div className="w-7 h-7 rounded-full bg-slate-100 shrink-0" />
-              <div className="space-y-1.5 flex-grow max-w-[120px]">
-                <div className="h-3 bg-slate-100 rounded" />
-                <div className="h-2 bg-slate-100/70 rounded w-5/6" />
+              <div className="w-8 h-8 rounded-full bg-slate-200/70 shrink-0" />
+              <div className="space-y-2 flex-grow max-w-[140px]">
+                <div className="h-3 bg-slate-200/80 rounded-md w-3/4" />
+                <div className="h-2 bg-slate-100 rounded-md w-5/6" />
               </div>
             </div>
           </td>
           <td className="p-4 space-y-2">
-            <div className="h-3.5 bg-slate-100 rounded w-1/3" />
-            <div className="h-2.5 bg-slate-100/70 rounded w-2/3" />
+            <div className="h-3.5 bg-slate-200/80 rounded-md w-2/5" />
+            <div className="h-2.5 bg-slate-100 rounded-md w-3/4" />
           </td>
         </tr>
       ))}
@@ -107,9 +107,10 @@ export default function Admin({ loggedInUser }) {
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
-  // Dropdown & Edit Modal Targets
+  // Dropdown & Edit & Detail Modal Targets
   const [activeDropdownId, setActiveDropdownId] = useState(null);
   const [selectedEditStaff, setSelectedEditStaff] = useState(null);
+  const [selectedStaffDetail, setSelectedStaffDetail] = useState(null);
   
   // Dynamic Archiving / Restoring States
   const [selectedArchiveStaff, setSelectedArchiveStaff] = useState(null);
@@ -280,6 +281,9 @@ export default function Admin({ loggedInUser }) {
   const logEndIndex = Math.min(logStartIndex + LOGS_PER_PAGE, totalLogs);
   const paginatedLogs = filteredLogs.slice(logStartIndex, logEndIndex);
 
+  const activeAccountsCount = staffList.filter(s => s.status === 'Active').length;
+  const adminAccountsCount = staffList.filter(s => (s.role || '').toLowerCase() === 'admin').length;
+
   return (
     <div className="space-y-6 pb-16 text-left animate-fade-in" id="admin-portal-view">
 
@@ -305,7 +309,7 @@ export default function Admin({ loggedInUser }) {
       <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md hover:border-slate-200/90 transition-all duration-300 overflow-hidden" id="account-management-card">
         <div className="px-5 py-4 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100/60">
               <Users className="w-4 h-4" />
             </div>
             <div>
@@ -316,16 +320,16 @@ export default function Admin({ loggedInUser }) {
           <div className="flex items-center gap-2">
             <button 
               onClick={() => handleExport('Account Management')}
-              className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-655 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
             >
-              <Download className="w-3.5 h-3.5 mr-1 inline-block" />
+              <Download className="w-3.5 h-3.5" />
               Export
             </button>
             <button 
               onClick={() => setIsAddStaffOpen(true)}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm active:scale-95"
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-600/20 active:scale-95 flex items-center gap-1.5"
             >
-              <Plus className="w-3.5 h-3.5 mr-1 inline-block" />
+              <Plus className="w-3.5 h-3.5" />
               Add Staff
             </button>
           </div>
@@ -339,10 +343,10 @@ export default function Admin({ loggedInUser }) {
             placeholder="Filter staff by name or email..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-transparent border-none text-[11px] text-slate-700 outline-none w-full placeholder-slate-450"
+            className="bg-transparent border-none text-[11px] font-medium text-slate-700 outline-none w-full placeholder-slate-400"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-slate-455 hover:text-slate-655">
+            <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-600 cursor-pointer">
               <X className="w-3 h-3" />
             </button>
           )}
@@ -356,8 +360,8 @@ export default function Admin({ loggedInUser }) {
           </div>
         )}
 
-        {/* Table Area (with scrollbar hiding class applied) */}
-        <div className="overflow-x-auto no-scrollbar">
+        {/* Table Area (with scrollbar hiding & height stabilization applied) */}
+        <div className="overflow-x-auto no-scrollbar min-h-[310px] transition-all duration-300 ease-in-out">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50/20 text-slate-400 uppercase tracking-wider font-bold border-b border-slate-50">
@@ -386,11 +390,13 @@ export default function Admin({ loggedInUser }) {
                   return (
                     <tr 
                       key={staff.fullId} 
-                      className={`transition-colors ${
+                      onClick={() => setSelectedStaffDetail(staff)}
+                      className={`transition-all duration-200 cursor-pointer ${
                         staff.isArchived 
-                          ? 'bg-slate-50/40 opacity-60 text-slate-400' 
-                          : 'hover:bg-slate-50/30'
+                          ? 'bg-slate-50/40 opacity-60 text-slate-400 hover:opacity-80' 
+                          : 'hover:bg-indigo-50/40'
                       }`}
+                      title="Click to view full staff profile & activity audit trail"
                     >
                       <td className="p-4 pl-6">
                         <div className="flex items-center gap-3">
@@ -408,101 +414,82 @@ export default function Admin({ loggedInUser }) {
                                 </span>
                               )}
                             </span>
-                            <span className="text-[10px] text-slate-400">{staffEmail}</span>
+                            <span className="text-[10px] text-slate-400 font-medium">{staffEmail}</span>
                           </div>
                         </div>
                       </td>
                       <td className="p-4 pl-6 text-left">
-                        <span className={`inline-block px-2 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wider ${
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wider ${
                           isTargetAdmin 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
-                            : 'bg-blue-50 text-blue-700 border border-blue-100'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60 shadow-2xs' 
+                            : 'bg-blue-50 text-blue-700 border border-blue-200/60 shadow-2xs'
                         }`}>
+                          {isTargetAdmin ? <Shield className="w-2.5 h-2.5 shrink-0 text-emerald-600" /> : null}
                           {staff.role}
                         </span>
                       </td>
                       <td className="p-4 pl-7 text-left">
-                        <span className="flex items-center gap-1.5 font-medium text-slate-655 text-slate-600">
+                        <span className="inline-flex items-center gap-1.5 font-bold text-slate-600">
                           <span className={`w-1.5 h-1.5 rounded-full ${
-                            staff.status === 'Active' ? 'bg-emerald-500' : staff.status === 'Archived' ? 'bg-rose-500' : 'bg-slate-400'
+                            staff.status === 'Active' ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : staff.status === 'Archived' ? 'bg-rose-500' : 'bg-slate-400'
                           }`} />
                           {staff.status}
                         </span>
                       </td>
-                      <td className="p-4 text-left text-slate-550 font-medium">
+                      <td className="p-4 text-left text-slate-500 font-medium">
                         {staff.lastLogin}
                       </td>
-                      <td className="p-4 text-right pr-6 space-x-1 shrink-0">
-                        {/* Edit Button */}
-                        {isTargetAdmin || staff.isArchived ? (
-                          <button 
-                            disabled 
-                            className="p-1.5 text-slate-200 cursor-not-allowed opacity-40 inline-block" 
-                            title={staff.isArchived ? "Archived accounts cannot be edited. Please restore the account first." : "Administrative security rules prevent editing fellow Admin accounts."}
+                      <td className="p-4 text-right pr-6 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        {/* Protected Role Badge vs Edit/Direct Archive actions */}
+                        {isTargetAdmin ? (
+                          <span 
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-50 border border-slate-200/80 text-[10px] font-bold text-slate-500 shadow-2xs cursor-help transition-all hover:bg-slate-100 hover:text-slate-700" 
+                            title="System security rules protect administrative accounts from being edited or archived by fellow caretakers."
                           >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
+                            <ShieldAlert className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>Protected</span>
+                          </span>
                         ) : (
-                          <button 
-                            onClick={() => setSelectedEditStaff(staff)}
-                            className="p-1.5 text-slate-455 hover:text-indigo-650 hover:bg-indigo-50 rounded-lg transition-all inline-block hover:scale-105 cursor-pointer" 
-                            title="Edit Profile"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-
-                        {/* Three-dots menu */}
-                        <div className="relative inline-block text-left">
-                          {isTargetAdmin ? (
-                            <button 
-                              disabled 
-                              className="p-1.5 text-slate-200 cursor-not-allowed opacity-40 inline-block"
-                              title="Administrative security rules prevent archiving fellow Admin accounts."
-                            >
-                              <MoreVertical className="w-3.5 h-3.5" />
-                            </button>
-                          ) : (
-                            <button 
-                              onClick={() => setActiveDropdownId(activeDropdownId === staff.fullId ? null : staff.fullId)}
-                              className="p-1.5 text-slate-455 hover:text-slate-655 hover:bg-slate-50 rounded-lg transition-all cursor-pointer"
-                            >
-                              <MoreVertical className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          
-                          {activeDropdownId === staff.fullId && (
-                            <div className={`absolute right-0 mt-1 w-44 bg-white border border-slate-100 rounded-xl shadow-lg z-30 py-1.5 animate-fade-in text-left ${
-                              isLastRow ? 'bottom-full mb-1' : 'top-full mt-1'
-                            }`}>
-                              {staff.isArchived ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            {staff.isArchived ? (
+                              <>
+                                <button 
+                                  disabled 
+                                  className="p-1.5 text-slate-200 cursor-not-allowed opacity-40 inline-block" 
+                                  title="Archived accounts must be restored before editing profile parameters."
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setActiveDropdownId(null);
-                                    setSelectedArchiveStaff(staff);
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3.5 py-2 text-[11px] text-emerald-600 hover:bg-emerald-50 text-left font-semibold cursor-pointer transition-colors"
+                                  onClick={() => setSelectedArchiveStaff(staff)}
+                                  className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
+                                  title="Restore Caretaker Account"
                                 >
                                   <Unlock className="w-3.5 h-3.5" />
-                                  Restore Account
                                 </button>
-                              ) : (
+                              </>
+                            ) : (
+                              <>
+                                <button 
+                                  onClick={() => setSelectedEditStaff(staff)}
+                                  className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer" 
+                                  title="Edit Profile Details"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setActiveDropdownId(null);
-                                    setSelectedArchiveStaff(staff);
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3.5 py-2 text-[11px] text-rose-600 hover:bg-rose-50 text-left font-semibold cursor-pointer transition-colors"
+                                  onClick={() => setSelectedArchiveStaff(staff)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
+                                  title="Archive Caretaker Account"
                                 >
-                                  <Lock className="w-3.5 h-3.5" />
-                                  Archive Account
+                                  <Archive className="w-3.5 h-3.5" />
                                 </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -570,7 +557,7 @@ export default function Admin({ loggedInUser }) {
       <section className="bg-white rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md hover:border-slate-200/90 transition-all duration-300 overflow-hidden" id="activity-log-card">
         <div className="px-5 py-4 border-b border-slate-50 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-slate-50 text-slate-600 rounded-xl">
+            <div className="p-2 bg-amber-50 text-amber-600 rounded-xl border border-amber-100/60">
               <Activity className="w-4 h-4" />
             </div>
             <div>
@@ -579,9 +566,9 @@ export default function Admin({ loggedInUser }) {
           </div>
           <button 
             onClick={() => handleExport('Activity Log')}
-            className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-605 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+            className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
           >
-            <Download className="w-3.5 h-3.5 mr-1 inline-block" />
+            <Download className="w-3.5 h-3.5" />
             Export
           </button>
         </div>
@@ -675,8 +662,8 @@ export default function Admin({ loggedInUser }) {
           </div>
         )}
 
-        {/* Table Area */}
-        <div className="overflow-x-auto no-scrollbar">
+        {/* Table Area (with stable height transition applied) */}
+        <div className="overflow-x-auto no-scrollbar min-h-[310px] transition-all duration-300 ease-in-out">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50/20 text-slate-400 uppercase tracking-wider font-bold border-b border-slate-50">
@@ -838,6 +825,14 @@ export default function Admin({ loggedInUser }) {
         }}
         staff={recentlyArchivedStaff}
         wasArchived={archiveSuccessType}
+      />
+
+      {/* Interactive Staff Profile & Activity Log Audit Drawer */}
+      <StaffDetailModal
+        isOpen={!!selectedStaffDetail}
+        onClose={() => setSelectedStaffDetail(null)}
+        staff={selectedStaffDetail}
+        allLogs={activityLogs}
       />
 
     </div>
