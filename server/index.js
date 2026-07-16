@@ -534,6 +534,27 @@ app.get('/api/breeds', async (req, res) => {
   }
 });
 
+// GET /api/sows — lightweight list of active sows for the sow_id dropdown
+app.get('/api/sows', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('pigs')
+      .select('pig_id, pig_tag, breeds(name)')
+      .eq('gender', 'Female')
+      .eq('is_archived', false)
+      .order('pig_tag', { ascending: true });
+    if (error) throw error;
+    const sows = (data || []).map(p => ({
+      id: p.pig_id,
+      tag: p.pig_tag,
+      breed: p.breeds?.name || '—',
+    }));
+    res.json({ data: sows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/pigs', async (req, res) => {
   try {
     const { search, status, pen, category, page, limit } = req.query;
@@ -557,7 +578,7 @@ app.get('/api/pigs', async (req, res) => {
     }
 
     if (queryBatches) {
-      let q = supabase.from('piglet_batches').select('*').eq('is_archived', false);
+      let q = supabase.from('piglet_batches').select('*, breeds(name)').eq('is_archived', false);
       if (pen && pen !== 'all') q = q.eq('pen_id', pen);
       if (status && status !== 'all') q = q.eq('status', status.toLowerCase());
       if (search) q = q.ilike('batch_tag', `%${search}%`);
@@ -576,12 +597,14 @@ app.get('/api/pigs', async (req, res) => {
     }));
 
     const unifiedBatches = batchData.map(batch => ({
-      id: batch.batch_id, 
-      pig_tag: batch.batch_tag, 
-      breed: '—', 
-      age_weeks: '—',
-      current_weight: batch.average_weight, 
-      category: 'Piglet Batch', 
+      id: batch.batch_id,
+      pig_tag: batch.batch_tag,
+      breed: batch.breeds?.name || '—',
+      age_weeks: batch.date_of_birth
+        ? Math.floor((Date.now() - new Date(batch.date_of_birth)) / 604800000)
+        : '—',
+      current_weight: batch.average_weight,
+      category: 'Piglet Batch',
       status: batch.status || 'suckling'
     }));
 
@@ -678,20 +701,30 @@ app.post('/api/pigs', async (req, res) => {
 // 2. Create a piglet batch
 app.post('/api/pigs/batch', async (req, res) => {
   try {
-    const { batchId, penLocation, totalHerdCount, status } = req.body;
+    const {
+      batchTag, penId, sowId, dateOfBirth, breed,
+      totalBornAlive, currentCount, stillbornCount, mummyCount,
+      averageWeight, status,
+      // legacy fallback fields from old form
+      batchId, penLocation, totalHerdCount,
+    } = req.body;
+
+    const resolvedPenId    = penId || penLocation;
+    const resolvedTag      = batchTag || batchId;
+    const resolvedCount    = parseInt(currentCount ?? totalHerdCount) || 0;
 
     // Confirm the pen has room for the whole batch before inserting.
-    if (penLocation) {
+    if (resolvedPenId) {
       const { data: pen, error: penError } = await supabase
         .from('pens')
         .select('pen_code, max_capacity')
-        .eq('pen_id', penLocation)
+        .eq('pen_id', resolvedPenId)
         .single();
 
       if (penError) throw penError;
 
-      const occupied = await getPenOccupancy(penLocation);
-      const incoming = parseInt(totalHerdCount) || 0;
+      const occupied  = await getPenOccupancy(resolvedPenId);
+      const incoming  = resolvedCount;
       const remaining = Math.max(0, (pen.max_capacity ?? 0) - occupied);
 
       if (incoming > remaining) {
@@ -701,16 +734,44 @@ app.post('/api/pigs/batch', async (req, res) => {
       }
     }
 
-    // Use supabaseAdmin to bypass RLS
+    // Resolve breed name → breed_id (upsert if new)
+    let resolvedBreedId = null;
+    if (breed && breed.trim()) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(breed.trim());
+      if (isUuid) {
+        resolvedBreedId = breed.trim();
+      } else {
+        const { data: existingBreed } = await supabaseAdmin
+          .from('breeds').select('breed_id').eq('name', breed.trim()).single();
+        if (existingBreed) {
+          resolvedBreedId = existingBreed.breed_id;
+        } else {
+          const { data: newBreed, error: breedErr } = await supabaseAdmin
+            .from('breeds').insert([{ name: breed.trim() }]).select().single();
+          if (breedErr) throw breedErr;
+          resolvedBreedId = newBreed.breed_id;
+        }
+      }
+    }
+
+    const record = {
+      batch_tag:      resolvedTag,
+      pen_id:         resolvedPenId || null,
+      sow_id:         sowId || null,
+      date_of_birth:  dateOfBirth || null,
+      breed_id:       resolvedBreedId,
+      total_born_alive: parseInt(totalBornAlive) || null,
+      current_count:  resolvedCount,
+      stillborn_count: parseInt(stillbornCount) || 0,
+      mummy_count:    parseInt(mummyCount) || 0,
+      average_weight: averageWeight ? parseFloat(averageWeight) : null,
+      status:         status || 'suckling',
+      is_archived:    false,
+    };
+
     const { data, error } = await supabaseAdmin
       .from('piglet_batches')
-      .insert([{
-        batch_tag: batchId,
-        pen_id: penLocation,
-        status: status === 'active' ? 'healthy' : 'quarantine',
-        current_count: parseInt(totalHerdCount),
-        is_archived: false
-      }])
+      .insert([record])
       .select();
 
     if (error) throw error;
@@ -719,7 +780,7 @@ app.post('/api/pigs/batch', async (req, res) => {
       user_name: 'Caretaker',
       user_initials: 'CT',
       event_title: 'Batch Created',
-      event_desc: `Created piglet batch ${batchId} (${totalHerdCount} heads).`,
+      event_desc: `Created piglet batch ${resolvedTag} (${resolvedCount} heads).`,
       status: 'SUCCESS'
     });
 

@@ -95,13 +95,14 @@ export default function SwineManagement({ activeSubTab }) {
   const [selectedPig, setSelectedPig] = useState(null); // NEW
 
   const [openMenuId,   setOpenMenuId]   = useState(null);
-  const menuRef = useRef(null);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   useEffect(() => {
     const handler = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) setOpenMenuId(null);
+      if (!e.target.closest('.swine-action-container')) {
+        setOpenMenuId(null);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -445,7 +446,7 @@ export default function SwineManagement({ activeSubTab }) {
                     <td className="py-3 px-4">
                       <StatusBadge status={pig.status} />
                     </td>
-                    <td className="py-3 px-4" ref={menuRef}>
+                    <td className="py-3 px-4 swine-action-container">
                       <div className="relative inline-block">
                         <button
                           onClick={() => setOpenMenuId(prev => prev === (pig.id ?? idx) ? null : (pig.id ?? idx))}

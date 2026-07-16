@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, Venus, Mars, Users, Loader2 } from 'lucide-react';
+import { X, ChevronLeft, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import AddPigletBatchModal from './AddPigletBatchModal';
 
@@ -140,51 +140,62 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
     }
   };
 
-  const title = step === 'select' ? 'Add New Swine' : `Add New ${gender} Swine`;
+  const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs pl-10 pr-4";
+  const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
+  const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 text-rose-955 bg-rose-50/10";
 
   return createPortal(
     <>
       {shouldRender && (
         <div
-          className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
+          className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) resetAndClose();
           }}
         >
           <div
             style={{ willChange: 'transform, opacity, max-width' }}
-            className={`w-full overflow-hidden bg-white shadow-2xl rounded-2xl transition-[max-width] duration-300 ease-in-out ${
-              step === 'select' ? 'max-w-lg' : 'max-w-2xl'
+            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 transition-[max-width] duration-300 ease-in-out ${
+              step === 'select' ? 'max-w-md' : 'max-w-2xl'
             } ${panelClassName}`}
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <div className="flex items-center gap-2">
-                {step === 'form' && (
-                  <button type="button" onClick={() => setStep('select')} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+            <div className="px-8 pt-8 pb-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {step === 'form' ? (
+                  <button type="button" onClick={() => setStep('select')} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
                     <ChevronLeft size={18} />
                   </button>
+                ) : (
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                    <PlusCircle size={20} />
+                  </div>
                 )}
-                <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">{title}</h2>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Add New Swine</h3>
+                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                    {step === 'select' ? 'Select Record Type' : `${gender} Swine`}
+                  </p>
+                </div>
               </div>
-              <button type="button" onClick={resetAndClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors">
                 <X size={18} />
               </button>
             </div>
 
-            <div className="transition-opacity duration-300">
+            <div>
               {step === 'select' && (
-                <div className="px-6 py-8">
-                  <p className="mb-6 text-center text-sm text-slate-500">
-                    Select the type of record you want to add to the herd
+                <div className="px-8 pb-8 pt-2 text-left">
+                  <p className="mb-6 text-xs text-slate-400 font-medium uppercase tracking-wider">
+                    Select the type of record to add to the herd
                   </p>
-                  <div className="grid grid-cols-3 gap-4">
-                    <TypeCard icon={<Venus size={28} />} label="Sow" onClick={() => handleTypeSelect('sow')} />
-                    <TypeCard icon={<Mars size={28} />} label="Boar" onClick={() => handleTypeSelect('boar')} />
-                    <TypeCard icon={<Users size={28} />} label="Batch" onClick={() => handleTypeSelect('batch')} />
+                  <div className="grid grid-cols-3 gap-3">
+                    <TypeCard icon={<Venus size={22} />} label="Sow" onClick={() => handleTypeSelect('sow')} />
+                    <TypeCard icon={<Mars size={22} />} label="Boar" onClick={() => handleTypeSelect('boar')} />
+                    <TypeCard icon={<Users size={22} />} label="Batch" onClick={() => handleTypeSelect('batch')} />
                   </div>
-                  <div className="mt-8 flex justify-end border-t border-slate-100 pt-4 px-2">
-                    <button type="button" onClick={resetAndClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                  <div className="mt-6">
+                    <button type="button" onClick={resetAndClose} className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors">
                       Cancel
                     </button>
                   </div>
@@ -192,113 +203,89 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
               )}
 
               {step === 'form' && (
-                <form onSubmit={handleSubmit} className="px-6 py-6">
-                  <div className="mb-5 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+                <form onSubmit={handleSubmit} className="p-8 pt-2 space-y-4 text-left">
+                  <div className="p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-2">
                     {gender === 'Female' ? <Venus size={14} /> : <Mars size={14} />}
-                    Gender is automatically recorded as {gender}
+                    <span>Gender is automatically recorded as {gender}</span>
                   </div>
 
                   {submitError && (
-                    <div className="mb-5 flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">
-                      {submitError}
+                    <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+                      <AlertCircle size={14} className="text-rose-500" />
+                      <span>{submitError}</span>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4 text-left">
-                    <Field label="Tag Number" error={errors.tagNumber}>
-                      <input type="text" value={form.tagNumber} onChange={handleChange('tagNumber')} placeholder="e.g. SW-29401" className={inputClass(errors.tagNumber)} />
+                  {/* Tag and DOB */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Tag Number" error={errors.tagNumber} icon={<Tag />}>
+                      <input type="text" value={form.tagNumber} onChange={handleChange('tagNumber')} placeholder="e.g. SW-29401" className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
                     </Field>
-
-                    <Field label="Date of Birth" error={errors.dateOfBirth}>
-                      <input type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} className={inputClass(errors.dateOfBirth)} />
+                    <Field label="Date of Birth" error={errors.dateOfBirth} icon={<Calendar />}>
+                      <input type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${errors.dateOfBirth ? inputErr : inputOk}`} />
                     </Field>
+                  </div>
 
+                  {/* Breed and Weight */}
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="relative" ref={breedWrapRef}>
-                      <Field
-                        label="Breed"
-                        error={errors.breed}
-                        hint={
-                          !errors.breed && form.breed.trim() && !breeds.some(b => b.name.toLowerCase() === form.breed.trim().toLowerCase())
-                            ? 'New breed — will be added when you save'
-                            : undefined
-                        }
-                      >
+                      <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
                         <input
                           type="text"
                           value={form.breed}
                           onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
                           onFocus={() => setBreedOpen(true)}
-                          placeholder={isLoadingData ? 'Loading Breeds...' : 'Select or type a breed'}
+                          placeholder={isLoadingData ? 'Loading...' : 'Select or type'}
                           disabled={isLoadingData}
-                          className={inputClass(errors.breed)}
+                          className={`${inputBase} ${errors.breed ? inputErr : inputOk}`}
                           autoComplete="off"
                         />
                       </Field>
-                      {breedOpen && !isLoadingData && (() => {
-                        const filtered = breeds.filter(b =>
-                          b.name.toLowerCase().includes(form.breed.trim().toLowerCase())
-                        );
-                        if (filtered.length === 0) return null;
-                        return (
-                          <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                            {filtered.map(b => (
-                              <li
-                                key={b.breed_id}
-                                onClick={() => {
-                                  setForm((prev) => ({ ...prev, breed: b.name }));
-                                  if (errors.breed) setErrors((prev) => ({ ...prev, breed: undefined }));
-                                  setBreedOpen(false);
-                                }}
-                                className="cursor-pointer px-4 py-2 text-sm font-medium text-slate-700 hover:bg-emerald-50 hover:text-emerald-700"
-                              >
-                                {b.name}
-                              </li>
-                            ))}
-                          </ul>
-                        );
-                      })()}
+                      {breedOpen && !isLoadingData && (
+                        <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                          {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
+                            <li key={b.breed_id} onClick={() => { setForm(p => ({...p, breed: b.name})); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
+                          ))}
+                        </ul>
+                      )}
                     </div>
-
-                    <Field label="Weight (kg)" error={errors.weight}>
-                      <input type="number" step="0.1" value={form.weight} onChange={handleChange('weight')} placeholder="0.0" className={inputClass(errors.weight)} />
+                    <Field label="Weight (kg)" error={errors.weight} icon={<Weight />}>
+                      <input type="number" step="0.1" value={form.weight} onChange={handleChange('weight')} placeholder="0.0" className={`${inputBase} ${errors.weight ? inputErr : inputOk}`} />
                     </Field>
+                  </div>
 
-                    <Field label="Pen Code" error={errors.penId}>
-                      <select 
-                        value={form.penId} 
-                        onChange={handleChange('penId')} 
-                        className={inputClass(errors.penId)}
-                        disabled={isLoadingData}
-                      >
-                        <option value="">{isLoadingData ? 'Loading Pens...' : 'Select Pen Code'}</option>
+                  {/* Pen and Status */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Pen Code" error={errors.penId} icon={<Home />}>
+                      <select value={form.penId} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`} disabled={isLoadingData}>
+                        <option value="">{isLoadingData ? 'Loading...' : 'Select Pen'}</option>
                         {pens.map(p => (
                           <option key={p.id} value={p.id}>
-                            {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slot${p.remaining === 1 ? '' : 's'} left)` : ''}
+                            {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
                           </option>
                         ))}
                       </select>
                     </Field>
-
-                    <Field label="Status">
-                      <select value={form.status} onChange={handleChange('status')} className={inputClass(false)}>
-                        {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    <Field label="Status" icon={<Activity />}>
+                      <select value={form.status} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
+                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </Field>
-
-                    {gender === 'Female' && (
-                      <Field label="Parity Count" hint="Times farrowed">
-                        <input type="number" value={form.parityCount} onChange={handleChange('parityCount')} placeholder="0" className={inputClass(false)} />
-                      </Field>
-                    )}
                   </div>
 
-                  <div className="mt-8 flex justify-end gap-3 border-t border-slate-100 pt-5">
-                    <button type="button" onClick={resetAndClose} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                  {gender === 'Female' && (
+                    <Field label="Parity Count" icon={<Ruler />}>
+                      <input type="number" value={form.parityCount} onChange={handleChange('parityCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
+                    </Field>
+                  )}
+
+                  <div className="pt-4 flex gap-3">
+                    <button type="button" onClick={resetAndClose} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
                       Cancel
                     </button>
-                    <button type="submit" disabled={isSaving || isLoadingData} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+                    <button type="submit" disabled={isSaving || isLoadingData} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50">
                       {isSaving && <Loader2 size={16} className="animate-spin" />}
-                      Save
+                      Save Swine
                     </button>
                   </div>
                 </form>
@@ -322,26 +309,28 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
 
 function TypeCard({ icon, label, onClick }) {
   return (
-    <button type="button" onClick={onClick} className="group flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-8 transition-all hover:border-emerald-300 hover:bg-emerald-50/50 hover:shadow-md">
-      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100">{icon}</span>
-      <span className="text-sm font-bold text-slate-700">{label}</span>
+    <button type="button" onClick={onClick} className="group flex flex-col items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-2 py-6 transition-all hover:border-emerald-300 hover:bg-emerald-50/50 hover:shadow-md cursor-pointer">
+      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 transition-colors">{icon}</span>
+      <span className="text-xs font-bold text-slate-700">{label}</span>
     </button>
   );
 }
 
-function Field({ label, error, hint, children }) {
+function Field({ label, error, icon, children }) {
   return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
-      {children}
-      {hint && !error && <span className="text-[10px] text-slate-400">{hint}</span>}
-      {error && <span className="text-[10px] font-semibold text-rose-500">{error}</span>}
-    </label>
+    <div className="space-y-1.5">
+      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{label}</label>
+      <div className="relative">
+        <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
+          {icon && React.cloneElement(icon, { size: 14 })}
+        </span>
+        {children}
+      </div>
+      {error && (
+        <p className="flex items-center gap-1 text-[10px] text-rose-600 font-semibold mt-1">
+          <AlertCircle size={10} /> {error}
+        </p>
+      )}
+    </div>
   );
-}
-
-function inputClass(hasError) {
-  return `w-full rounded-xl border px-4 py-2.5 text-sm text-slate-700 outline-none transition-all focus:ring-4 ${
-    hasError ? 'border-rose-200 focus:ring-rose-50' : 'border-slate-200 focus:border-emerald-400 focus:ring-emerald-50'
-  }`;
 }
