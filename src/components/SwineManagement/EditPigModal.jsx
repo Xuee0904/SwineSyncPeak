@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Tag, Calendar, Weight, Home, Activity, Ruler, Loader2, AlertCircle, PlusCircle } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
@@ -6,9 +6,23 @@ import useModalAnimation from '../../hooks/useModalAnimation';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Inactive'];
 
+function toFormState(fullPig) {
+  return {
+    tagNumber: fullPig.pig_tag || '',
+    dateOfBirth: fullPig.date_of_birth ? String(fullPig.date_of_birth).slice(0, 10) : '',
+    breed: fullPig.breed || '',
+    weight: fullPig.current_weight ?? '',
+    penId: fullPig.pen_id || '',
+    status: fullPig.status ? (fullPig.status.charAt(0).toUpperCase() + fullPig.status.slice(1)) : 'Healthy',
+    parityCount: fullPig.parity_count ?? '',
+  };
+}
+
 export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
+
+  const isBatch = pigData?.category === 'Piglet Batch';
 
   const [form, setForm] = useState({});
   const [errors, setErrors] = useState({});
@@ -20,26 +34,41 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
   const [breeds, setBreeds] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
+  // Full record detail (the table row only carries a slimmed-down shape,
+  // so we fetch the real record — pen, DOB, etc. — once the modal opens)
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState(null);
+
   // Breed dropdown logic
   const [breedOpen, setBreedOpen] = useState(false);
   const breedWrapRef = useRef(null);
 
-  // 1. Initialize form with existing pig data
+  // 1. Fetch the full pig record and initialize the form from it
   useEffect(() => {
-    if (isOpen && pigData) {
-      setForm({
-        tagNumber: pigData.pig_tag || '',
-        dateOfBirth: pigData.date_of_birth || '',
-        breed: pigData.breed || '',
-        weight: pigData.current_weight || '',
-        penId: pigData.pen_id || '',
-        status: pigData.status ? (pigData.status.charAt(0).toUpperCase() + pigData.status.slice(1)) : 'Healthy',
-        parityCount: pigData.parity_count || '',
-      });
-      setErrors({});
-      setSubmitError(null);
-    }
-  }, [isOpen, pigData]);
+    if (!isOpen || !pigData || isBatch) return;
+
+    let cancelled = false;
+    const loadDetail = async () => {
+      setIsLoadingDetail(true);
+      setDetailError(null);
+      try {
+        const res = await fetch(`${API_BASE}/api/pigs/${pigData.id}`);
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || `Failed to load record (status ${res.status})`);
+        if (cancelled) return;
+        setForm(toFormState(body.data || {}));
+        setErrors({});
+        setSubmitError(null);
+      } catch (err) {
+        if (!cancelled) setDetailError(err.message || 'Failed to load this record.');
+      } finally {
+        if (!cancelled) setIsLoadingDetail(false);
+      }
+    };
+
+    loadDetail();
+    return () => { cancelled = true; };
+  }, [isOpen, pigData, isBatch]);
 
   // 2. Fetch dependencies (Pens/Breeds)
   useEffect(() => {
@@ -138,6 +167,32 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
           </button>
         </div>
 
+        {isBatch ? (
+          <div className="p-8 pt-2 space-y-4 text-left">
+            <div className="p-4 text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-xl flex items-start gap-2">
+              <AlertCircle size={14} className="text-slate-400 mt-0.5" />
+              <span>Editing piglet batches isn't supported from this form yet — this record is a batch, not an individual pig.</span>
+            </div>
+            <button type="button" onClick={() => requestClose()} className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors">
+              Close
+            </button>
+          </div>
+        ) : isLoadingDetail ? (
+          <div className="p-8 pt-2 flex flex-col items-center justify-center gap-3 text-slate-400">
+            <Loader2 size={22} className="animate-spin" />
+            <p className="text-xs font-semibold">Loading record…</p>
+          </div>
+        ) : detailError ? (
+          <div className="p-8 pt-2 space-y-4 text-left">
+            <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+              <AlertCircle size={14} className="text-rose-500" />
+              <span>{detailError}</span>
+            </div>
+            <button type="button" onClick={() => requestClose()} className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors">
+              Close
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-8 pt-2 space-y-4 text-left">
           {submitError && (
             <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
@@ -171,7 +226,7 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
               </Field>
               {breedOpen && !isLoadingData && (
                 <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                  {breeds.filter(b => b.name.toLowerCase().includes(form.breed.toLowerCase())).map(b => (
+                  {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
                     <li key={b.breed_id} onClick={() => { setForm(p => ({...p, breed: b.name})); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
                   ))}
                 </ul>
@@ -216,6 +271,7 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>,
     document.body

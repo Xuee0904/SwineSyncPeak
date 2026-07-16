@@ -778,6 +778,137 @@ app.get('/api/vaccination-records', async (req, res) => {
   }
 });
 
+// GET /api/pigs/:id – single pig record with full detail, for the Edit modal.
+// The list endpoint above (`/api/pigs`) only returns a slimmed-down shape for
+// the table, so the Edit modal fetches this instead of trying to reuse the
+// row data (which is missing pen_id, date_of_birth, etc.).
+app.get('/api/pigs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('pigs')
+      .select('*, breeds(name)')
+      .eq('pig_id', id)
+      .eq('is_archived', false)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Pig not found.' });
+
+    res.json({
+      data: {
+        id: data.pig_id,
+        pig_tag: data.pig_tag,
+        date_of_birth: data.date_of_birth,
+        breed: data.breeds?.name || '',
+        breed_id: data.breed_id,
+        current_weight: data.weight,
+        pen_id: data.pen_id,
+        status: data.status || 'healthy',
+        gender: data.gender,
+        category: (data.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
+        parity_count: data.parity_count ?? '',
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching pig detail:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /api/pigs/:id – update an existing pig record (used by EditPigModal).
+app.put('/api/pigs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tagNumber, dateOfBirth, breed, weight, penId, status, parityCount } = req.body;
+
+    if (!tagNumber || !breed || !penId) {
+      return res.status(400).json({ error: 'Tag number, breed, and pen are required.' });
+    }
+
+    // Resolve breed name → UUID, same logic as POST /api/pigs so typing a
+    // brand-new breed name in the combo box still works when editing.
+    let finalBreedId = breed;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(breed);
+
+    if (!isUuid) {
+      const { data: existingBreed } = await supabaseAdmin
+        .from('breeds')
+        .select('breed_id')
+        .eq('name', breed)
+        .maybeSingle();
+
+      if (existingBreed) {
+        finalBreedId = existingBreed.breed_id;
+      } else {
+        const { data: newBreed, error: breedError } = await supabaseAdmin
+          .from('breeds')
+          .insert([{ name: breed }])
+          .select()
+          .single();
+        if (breedError) throw breedError;
+        finalBreedId = newBreed.breed_id;
+      }
+    }
+
+    // If the pen is changing, confirm the new pen actually has room
+    // (excluding the slot this pig already occupies there today).
+    const { data: currentPig, error: currentPigError } = await supabase
+      .from('pigs')
+      .select('pen_id')
+      .eq('pig_id', id)
+      .single();
+
+    if (currentPigError) throw currentPigError;
+
+    if (currentPig && String(currentPig.pen_id) !== String(penId)) {
+      const { data: pen, error: penError } = await supabase
+        .from('pens')
+        .select('pen_code, max_capacity')
+        .eq('pen_id', penId)
+        .single();
+
+      if (penError) throw penError;
+
+      const occupied = await getPenOccupancy(penId);
+      if (occupied >= (pen.max_capacity ?? 0)) {
+        return res.status(400).json({
+          error: `Pen ${pen.pen_code} is already at full capacity (${pen.max_capacity}). Please choose another pen.`,
+        });
+      }
+    }
+
+    const updatePayload = {
+      pig_tag: tagNumber,
+      date_of_birth: dateOfBirth || null,
+      breed_id: finalBreedId,
+      weight: parseFloat(weight),
+      pen_id: penId,
+      status: (status || '').toLowerCase(),
+    };
+
+    if (parityCount !== undefined && parityCount !== '' && !Number.isNaN(Number(parityCount))) {
+      updatePayload.parity_count = Number(parityCount);
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('pigs')
+      .update(updatePayload)
+      .eq('pig_id', id)
+      .select();
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: 'Pig not found.' });
+    }
+
+    res.json({ message: 'Pig updated successfully', data });
+  } catch (error) {
+    console.error('Error updating pig:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT}`);
