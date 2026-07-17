@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import LoginModal from './components/LoginModal';
 import UpdatePasswordModal from './components/UpdatePasswordModal';
@@ -8,22 +8,24 @@ import News from './landing-page/News';
 import Catalog from './landing-page/Catalog';
 import FAQs from './landing-page/FAQs';
 import Contact from './landing-page/Contact';
-import { ShieldCheck, Heart, CheckCircle2, X, ArrowUp } from 'lucide-react';
+import { ArrowUp } from 'lucide-react';
 import { supabase } from './supabaseClient';
+import ToastContainer from './components/ToastContainer';
+import { toast as globalToast } from './utils/toast';
 import './App.css';
 
 export default function App() {
-  const [isLoginOpen, setIsLoginOpen]                   = useState(false);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isUpdatePasswordOpen, setIsUpdatePasswordOpen] = useState(false);
-  const [updatePasswordView, setUpdatePasswordView]     = useState('send-email');
-  
-  // Cache to prevent reuse of temporary first-time log in password
-  const [tempPasswordUsed, setTempPasswordUsed]         = useState('');
+  const [updatePasswordView, setUpdatePasswordView] = useState('send-email');
 
-  const [loggedInUser, setLoggedInUser]                 = useState(null);
-  const [toast, setToast]                               = useState(null);
-  const [activeSection, setActiveSection]               = useState('home');
-  const [showBackToTop, setShowBackToTop]               = useState(false);
+  // Cache to prevent reuse of temporary first-time log in password
+  const [tempPasswordUsed, setTempPasswordUsed] = useState('');
+
+  const [loggedInUser, setLoggedInUser] = useState(null);
+
+  const [activeSection, setActiveSection] = useState('home');
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const observerRef = useRef(null);
 
   // ─── Supabase PASSWORD_RECOVERY handler ─────────────────────────────────────
@@ -45,9 +47,9 @@ export default function App() {
     };
 
     const href = window.location.href.toLowerCase();
-    const hasRecoveryToken = 
-      href.includes('type=recovery') || 
-      href.includes('recovery') || 
+    const hasRecoveryToken =
+      href.includes('type=recovery') ||
+      href.includes('recovery') ||
       href.includes('access_token');
 
     if (hasRecoveryToken) {
@@ -63,7 +65,6 @@ export default function App() {
     });
 
     return () => subscription.unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -126,8 +127,7 @@ export default function App() {
   };
 
   const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
+    globalToast.show(type, message);
   };
 
   const scrollToSection = (id) => {
@@ -138,8 +138,8 @@ export default function App() {
   };
 
   return (
-  <div className="min-h-screen bg-[#eef2f6] flex flex-col font-sans text-slate-800 antialiased" id="swinesync-app-root">
-    
+    <div className="min-h-screen bg-[#eef2f6] flex flex-col font-sans text-slate-800 antialiased" id="swinesync-app-root">
+
       {/* Navigation Header — hidden when staff is logged in */}
       {!loggedInUser && (
         <Navbar
@@ -152,23 +152,8 @@ export default function App() {
         />
       )}
 
-      {/* Toast Alert notification — z-[60] prevents clipping behind active backdrops */}
-      {toast && (
-        <div
-          className="fixed bottom-6 right-6 z-[60] flex items-center gap-3 px-5 py-3.5 bg-slate-900 border border-slate-850 text-white rounded-2xl shadow-xl animate-slide-in max-w-sm"
-          id="toast-notification"
-        >
-          <CheckCircle2 className={`w-5 h-5 shrink-0 ${toast.type === 'success' ? 'text-primary-500' : 'text-indigo-400'}`} />
-          <p className="text-xs font-semibold leading-relaxed text-left">{toast.message}</p>
-          <button
-            onClick={() => setToast(null)}
-            className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
-            aria-label="Dismiss notification"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+      {/* Global Toast Container */}
+      <ToastContainer />
 
       {/* Back to Top button */}
       {!loggedInUser && (

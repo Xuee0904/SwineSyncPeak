@@ -5,7 +5,7 @@ import useModalAnimation from '../../hooks/useModalAnimation';
 import useFormDraft, { fetchDraftPayload } from '../../hooks/useFormDraft';
 import DraftBanner from '../DraftBanner';
 import { formatTimestamp } from '../../utils/formatTimestamp';
-import AddPigletBatchModal from './AddPigletBatchModal';
+import AddPigletBatchModal, { AddPigletBatchForm } from './AddPigletBatchModal';
 import { supabase } from '../../supabaseClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
@@ -139,12 +139,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
   };
 
   const handleRestoreBatchDraft = () => {
-    requestClose(() => {
-      setStep('select');
-      setGender(null);
-      resetForm(EMPTY_FORM);
-      setBatchModalOpen(true);
-    });
+    setStep('batch');
   };
 
   const handleDiscardBatchDraft = () => {
@@ -168,12 +163,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
 
   const handleTypeSelect = (type) => {
     if (type === 'batch') {
-      requestClose(() => {
-        setStep('select');
-        setGender(null);
-        setForm(EMPTY_FORM);
-        setBatchModalOpen(true);
-      });
+      setStep('batch');
       return;
     }
     setGender(type === 'sow' ? 'Female' : 'Male');
@@ -242,34 +232,37 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
           <div
             style={{ willChange: 'transform, opacity, max-width' }}
             className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 transition-[max-width] duration-300 ease-in-out ${
-              step === 'select' ? 'max-w-md' : 'max-w-2xl'
+              step === 'select' ? 'max-w-md' : step === 'batch' ? 'max-w-4xl' : 'max-w-2xl'
             } ${panelClassName}`}
           >
             {/* Header */}
-            <div className="px-8 pt-8 pb-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {step === 'form' ? (
-                  <button type="button" onClick={() => setStep('select')} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
-                    <ChevronLeft size={18} />
-                  </button>
-                ) : (
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-                    <PlusCircle size={20} />
+            {step !== 'batch' && (
+              <div className="px-8 pt-8 pb-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {step === 'form' ? (
+                    <button type="button" onClick={() => setStep('select')} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+                      <ChevronLeft size={18} />
+                    </button>
+                  ) : (
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                      <PlusCircle size={20} />
+                    </div>
+                  )}
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">Add New Swine</h3>
+                    <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                      {step === 'select' ? 'Select Record Type' : `${gender} Swine`}
+                    </p>
                   </div>
-                )}
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Add New Swine</h3>
-                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                    {step === 'select' ? 'Select Record Type' : `${gender} Swine`}
-                  </p>
                 </div>
+                <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors">
+                  <X size={18} />
+                </button>
               </div>
-              <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors">
-                <X size={18} />
-              </button>
-            </div>
+            )}
 
-            <div className="px-8 pt-2 space-y-2">
+            {step !== 'batch' && (
+              <div className="px-8 pt-2 space-y-2">
               <DraftBanner
                 hasDraft={hasDraft}
                 draftInfo={draftInfo}
@@ -291,16 +284,17 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                 />
               )}
             </div>
+            )}
             <div>
               {step === 'select' && (
                 <div className="px-8 pb-8 pt-2 text-left">
                   <p className="mb-6 text-xs text-slate-400 font-medium uppercase tracking-wider">
                     Select the type of record to add to the herd
                   </p>
-                  <div className="grid grid-cols-3 gap-3">
-                    <TypeCard icon={<Venus size={22} />} label="Sow" onClick={() => handleTypeSelect('sow')} />
-                    <TypeCard icon={<Mars size={22} />} label="Boar" onClick={() => handleTypeSelect('boar')} />
-                    <TypeCard icon={<Users size={22} />} label="Batch" onClick={() => handleTypeSelect('batch')} />
+                  <div className="grid grid-cols-3 gap-3.5">
+                    <TypeCard icon={<Venus size={22} />} label="Sow" onClick={() => handleTypeSelect('sow')} hasDraftBadge={hasDraft && (!draftInfo?.extraMeta?.gender || draftInfo.extraMeta.gender === 'Female')} />
+                    <TypeCard icon={<Mars size={22} />} label="Boar" onClick={() => handleTypeSelect('boar')} hasDraftBadge={hasDraft && draftInfo?.extraMeta?.gender === 'Male'} />
+                    <TypeCard icon={<Users size={22} />} label="Batch" onClick={() => handleTypeSelect('batch')} hasDraftBadge={Boolean(batchDraftInfo)} />
                   </div>
                   <div className="mt-6">
                     <button type="button" onClick={resetAndClose} className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors">
@@ -410,6 +404,17 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                   </div>
                 </form>
               )}
+
+              {step === 'batch' && (
+                <AddPigletBatchForm
+                  isOpen={isOpen && step === 'batch'}
+                  onBack={() => setStep('select')}
+                  onClose={resetAndClose}
+                  onSave={onSaveBatch}
+                  pens={pens}
+                  breeds={breeds}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -427,11 +432,35 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
   );
 }
 
-function TypeCard({ icon, label, onClick }) {
+function TypeCard({ icon, label, onClick, hasDraftBadge }) {
   return (
-    <button type="button" onClick={onClick} className="group flex flex-col items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-2 py-6 transition-all hover:border-emerald-300 hover:bg-emerald-50/50 hover:shadow-md cursor-pointer">
-      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 transition-colors">{icon}</span>
-      <span className="text-xs font-bold text-slate-700">{label}</span>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group relative flex flex-col items-center gap-3 rounded-2xl border px-3 py-6 transition-all duration-200 cursor-pointer ${
+        hasDraftBadge
+          ? 'border-emerald-300 bg-emerald-50/30 shadow-xs hover:border-emerald-400 hover:bg-emerald-50/70 hover:shadow-md'
+          : 'border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/60 hover:shadow-sm'
+      }`}
+    >
+      {hasDraftBadge && (
+        <span className="absolute top-2.5 right-2.5 flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase tracking-wide">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          Draft
+        </span>
+      )}
+      <span
+        className={`flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-200 ${
+          hasDraftBadge
+            ? 'bg-emerald-500/15 text-emerald-600 group-hover:scale-105 group-hover:bg-emerald-500/20'
+            : 'bg-slate-100/80 text-slate-600 group-hover:scale-105 group-hover:bg-emerald-50 group-hover:text-emerald-600'
+        }`}
+      >
+        {icon}
+      </span>
+      <span className="text-xs font-bold text-slate-800 tracking-tight group-hover:text-emerald-950 transition-colors">
+        {label}
+      </span>
     </button>
   );
 }

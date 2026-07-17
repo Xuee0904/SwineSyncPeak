@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { toast } from '../utils/toast';
 
 /**
  * Fetch local and cloud draft payload for a given key, picking the latest.
@@ -134,7 +135,7 @@ export default function useFormDraft(draftKey, initialFormState) {
   }, [checkDraft]);
 
   // Save current or provided form state as draft (local + cloud)
-  const saveDraft = useCallback((formDataOverride = null, extraMeta = {}) => {
+  const saveDraft = useCallback((formDataOverride = null, extraMeta = {}, notify = true) => {
     if (!draftKey) return false;
     const dataToSave = formDataOverride || formRef.current;
     extraMetaRef.current = extraMeta;
@@ -177,11 +178,15 @@ export default function useFormDraft(draftKey, initialFormState) {
       }).catch(err => console.error('Error getting session for cloud draft:', err));
     }
 
+    if (notify) {
+      toast.draft('Record saved as draft', 'Your form entries have been saved locally and backed up to the cloud.');
+    }
+
     return true;
   }, [draftKey, isFormDirty]);
 
   // Restore draft into form state
-  const restoreDraft = useCallback((onRestoreExtraMeta = null) => {
+  const restoreDraft = useCallback((onRestoreExtraMeta = null, notify = true) => {
     if (!draftInfo || !draftInfo.data) {
       // If sync read hasn't settled or state is empty, read from local synchronously
       try {
@@ -192,6 +197,9 @@ export default function useFormDraft(draftKey, initialFormState) {
             setForm(parsed.data);
             if (typeof onRestoreExtraMeta === 'function' && parsed.extraMeta) {
               onRestoreExtraMeta(parsed.extraMeta);
+            }
+            if (notify) {
+              toast.success('Draft restored', 'We loaded your previously saved form entries.');
             }
             return true;
           }
@@ -207,13 +215,16 @@ export default function useFormDraft(draftKey, initialFormState) {
       if (typeof onRestoreExtraMeta === 'function' && draftInfo.extraMeta) {
         onRestoreExtraMeta(draftInfo.extraMeta);
       }
+      if (notify) {
+        toast.success('Draft restored', 'We loaded your previously saved form entries.');
+      }
       return true;
     }
     return false;
   }, [draftInfo, draftKey]);
 
   // Clear draft from localStorage, cloud, and state
-  const clearDraft = useCallback(() => {
+  const clearDraft = useCallback((notify = false) => {
     if (!draftKey) return;
     try {
       localStorage.removeItem(draftKey);
@@ -235,6 +246,10 @@ export default function useFormDraft(draftKey, initialFormState) {
         }
       }).catch(err => console.error('Error clearing cloud draft:', err));
     }
+
+    if (notify) {
+      toast.info('Draft discarded', 'Saved form entries have been cleared.');
+    }
   }, [draftKey]);
 
   // Offline/Online status detection & auto-save on network drop
@@ -243,7 +258,7 @@ export default function useFormDraft(draftKey, initialFormState) {
       setIsOffline(true);
       // Auto-save immediately when network drops if form is dirty
       if (isFormDirty(formRef.current)) {
-        saveDraft(formRef.current, extraMetaRef.current);
+        saveDraft(formRef.current, extraMetaRef.current, false);
       }
     };
 

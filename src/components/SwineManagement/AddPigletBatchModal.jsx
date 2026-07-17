@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   X, PackagePlus, Loader2, Tag, Calendar, Home, Heart,
   AlertCircle, Baby, Weight, Activity, PlusCircle, Hash,
-  Shuffle, BarChart2, Users, Bookmark,
+  Shuffle, BarChart2, Users, Bookmark, ChevronLeft,
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import useFormDraft from '../../hooks/useFormDraft';
@@ -41,10 +41,14 @@ function generateBatchTag() {
   return `BTC-${now.getFullYear()}-${month}-${suffix}`;
 }
 
-export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
-  const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
-    useModalAnimation(isOpen, onClose);
-
+export function AddPigletBatchForm({
+  isOpen = true,
+  onClose,
+  onBack,
+  onSave,
+  pens: propPens,
+  breeds: propBreeds,
+}) {
   const {
     form,
     setForm,
@@ -62,10 +66,13 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
   const [submitError, setSubmitError] = useState(null);
 
   // Dropdown data
-  const [pens, setPens]   = useState([]);
-  const [sows, setSows]   = useState([]);
-  const [breeds, setBreeds] = useState([]);
+  const [pensState, setPens]   = useState([]);
+  const [sows, setSows]        = useState([]);
+  const [breedsState, setBreeds] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
+
+  const pens = propPens || pensState;
+  const breeds = propBreeds || breedsState;
 
   // Breed combo-box
   const [breedOpen, setBreedOpen] = useState(false);
@@ -111,7 +118,7 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
     fetchData();
   }, [isOpen, checkDraft, resetForm]);
 
-  if (!shouldRender) return null;
+  if (!isOpen) return null;
 
   const handleChange = (field) => (e) => {
     const value = e.target.value;
@@ -144,13 +151,12 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
   };
 
   const resetAndClose = () => {
-    requestClose(() => {
-      resetForm(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
-      setErrors({});
-      setIsSaving(false);
-      setSubmitError(null);
-      setBreedOpen(false);
-    });
+    resetForm(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
+    setErrors({});
+    setIsSaving(false);
+    setSubmitError(null);
+    setBreedOpen(false);
+    onClose?.();
   };
 
   const handleRestoreDraft = () => {
@@ -204,29 +210,33 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
   const inputOk  = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
   const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 bg-rose-50/10 text-slate-900";
 
-  return createPortal(
-    <div
-      className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) resetAndClose(); }}
-    >
-      <div
-        className={`flex max-h-[92vh] w-full max-w-4xl flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden ${panelClassName}`}
-      >
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-              <PackagePlus size={20} />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Add Piglet Batch</h3>
-              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">New Batch Record</p>
-            </div>
+  return (
+    <div className="flex max-h-[90vh] w-full flex-col bg-white overflow-hidden">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100 shrink-0">
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="mr-1 -ml-2 p-2 rounded-full hover:bg-slate-50 transition-colors text-slate-400 cursor-pointer"
+              title="Back to record type selection"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          )}
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+            <PackagePlus size={20} />
           </div>
-          <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer">
-            <X size={18} />
-          </button>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Add Piglet Batch</h3>
+            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">New Batch Record</p>
+          </div>
         </div>
+        <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer">
+          <X size={18} />
+        </button>
+      </div>
 
         {/* ── Body ── */}
         <form
@@ -439,6 +449,33 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
             Save Batch
           </button>
         </div>
+      </div>
+  );
+}
+
+export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, breeds }) {
+  const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
+    useModalAnimation(isOpen, onClose);
+
+  if (!shouldRender) return null;
+
+  const handleModalClose = () => {
+    requestClose(onClose);
+  };
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) handleModalClose(); }}
+    >
+      <div className={`flex max-h-[92vh] w-full max-w-4xl flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden ${panelClassName}`}>
+        <AddPigletBatchForm
+          isOpen={isOpen}
+          onClose={handleModalClose}
+          onSave={onSave}
+          pens={pens}
+          breeds={breeds}
+        />
       </div>
     </div>,
     document.body
