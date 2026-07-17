@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import AddStaffModal from '../components/admin/AddStaffModal';
 import EditStaffModal from '../components/admin/EditStaffModal';
 import ArchiveStaffModal from '../components/admin/ArchiveStaffModal';
-import SuccessArchiveStaffModal from '../components/admin/SuccessArchiveStaffModal';
 import StaffDetailModal from '../components/admin/StaffDetailModal';
+import Pagination from '../components/common/Pagination';
 import { supabase } from '../supabaseClient';
 import { 
   Users, Download, Plus, Edit2, MoreVertical, 
@@ -114,9 +114,6 @@ export default function Admin({ loggedInUser }) {
   
   // Dynamic Archiving / Restoring States
   const [selectedArchiveStaff, setSelectedArchiveStaff] = useState(null);
-  const [recentlyArchivedStaff, setRecentlyArchivedStaff] = useState(null);
-  const [showArchiveSuccess, setShowArchiveSuccess] = useState(false);
-  const [archiveSuccessType, setArchiveSuccessType] = useState(false); 
 
   // Pagination states
   const [logCurrentPage, setLogCurrentPage] = useState(1);
@@ -507,50 +504,15 @@ export default function Admin({ loggedInUser }) {
         </div>
 
         {/* Fully Functional Account Management Pagination Footer */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 font-medium">
-          <span>
-            Showing <strong>{totalStaff > 0 ? staffStartIndex + 1 : 0} to {staffEndIndex}</strong> of {totalStaff} caretakers
-          </span>
-          <div className="flex items-center gap-1.5">
-            <button 
-              disabled={safeStaffPage === 1}
-              onClick={() => setStaffCurrentPage(prev => Math.max(1, prev - 1))}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 rounded-xl transition-all cursor-pointer active:scale-95"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              Prev
-            </button>
-
-            <div className="flex items-center gap-1.5">
-              {Array.from({ length: totalStaffPages }).map((_, i) => {
-                const pageNum = i + 1;
-                const isCurrent = pageNum === safeStaffPage;
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setStaffCurrentPage(pageNum)}
-                    className={`w-[32px] h-[32px] flex items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 ${
-                      isCurrent
-                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10'
-                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
-
-            <button 
-              disabled={safeStaffPage === totalStaffPages}
-              onClick={() => setStaffCurrentPage(prev => Math.min(totalStaffPages, prev + 1))}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 rounded-xl transition-all cursor-pointer active:scale-95"
-            >
-              Next
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+        <Pagination
+          currentPage={safeStaffPage}
+          totalPages={totalStaffPages}
+          onPageChange={(p) => setStaffCurrentPage(p)}
+          disabled={loading}
+          totalItems={totalStaff}
+          itemsPerPage={STAFF_PER_PAGE}
+          itemName="caretakers"
+        />
       </section>
 
       {/* ─── CARD 2: REAL-TIME ACTIVITY LOG (Consistent spacing & hover shadow) ─── */}
@@ -728,48 +690,15 @@ export default function Admin({ loggedInUser }) {
         </div>
 
         {/* Table Footer */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 font-medium">
-          <span>Showing <strong>{filteredLogs.length > 0 ? logStartIndex + 1 : 0} to {logEndIndex}</strong> of {filteredLogs.length} log transactions</span>
-          <div className="flex items-center gap-1.5">
-            <button 
-              disabled={safeLogPage === 1}
-              onClick={() => setLogCurrentPage(prev => Math.max(1, prev - 1))}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 rounded-xl transition-all cursor-pointer active:scale-95"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              Previous
-            </button>
-
-            <div className="flex items-center gap-1.5">
-              {Array.from({ length: totalLogPages }).map((_, i) => {
-                const pageNum = i + 1;
-                const isCurrent = pageNum === safeLogPage;
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setLogCurrentPage(pageNum)}
-                    className={`w-[32px] h-[32px] flex items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 ${
-                      isCurrent
-                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10'
-                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
-            </div>
-
-            <button 
-              disabled={safeLogPage === totalLogPages}
-              onClick={() => setLogCurrentPage(prev => Math.min(totalLogPages, prev + 1))}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 rounded-xl transition-all cursor-pointer active:scale-95"
-            >
-              Next
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+        <Pagination
+          currentPage={safeLogPage}
+          totalPages={totalLogPages}
+          onPageChange={(p) => setLogCurrentPage(p)}
+          disabled={logsLoading}
+          totalItems={filteredLogs.length}
+          itemsPerPage={LOGS_PER_PAGE}
+          itemName="log transactions"
+        />
       </section>
 
       {/* Dialogue Modal Component: Add Staff */}
@@ -806,25 +735,11 @@ export default function Admin({ loggedInUser }) {
         staff={selectedArchiveStaff}
         loggedInUser={loggedInUser}
         apiBaseUrl={API_BASE_URL}
-        onArchiveConfirm={(wasArchived) => {
-          setRecentlyArchivedStaff(selectedArchiveStaff);
-          setArchiveSuccessType(wasArchived);
+        onArchiveConfirm={() => {
           setSelectedArchiveStaff(null);
-          setShowArchiveSuccess(true);
-        }}
-      />
-
-      {/* Dialogue Modal Component: Success Archive Staff */}
-      <SuccessArchiveStaffModal
-        isOpen={showArchiveSuccess}
-        onClose={() => {
-          setShowArchiveSuccess(false);
-          setRecentlyArchivedStaff(null);
           loadStaffAccounts();
-          loadActivityLogs(); 
+          loadActivityLogs();
         }}
-        staff={recentlyArchivedStaff}
-        wasArchived={archiveSuccessType}
       />
 
       {/* Interactive Staff Profile & Activity Log Audit Drawer */}

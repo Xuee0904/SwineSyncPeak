@@ -14,6 +14,23 @@ import StatusBadge from '../components/StatusBadge.jsx';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const PAGE_SIZE = 5;
 
+/**
+ * Returns a page number array with windowed ellipsis for clean UX navigation.
+ * e.g. [1, '...', 4, 5, 6, '...', 20]
+ */
+function getPageNumbers(current, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = [];
+  const addPage = (p) => { if (!pages.includes(p)) pages.push(p); };
+  addPage(1);
+  if (current > 3) pages.push('...');
+  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) addPage(p);
+  if (current < total - 2) pages.push('...');
+  addPage(total);
+  return pages;
+}
+
+
 function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
   return (
     <div className={`relative overflow-hidden rounded-2xl border border-slate-100 shadow-sm ${bg || 'bg-white'} p-5 flex items-center gap-4`}>
@@ -597,7 +614,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
           </table>
         </div>
 
-        <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-50">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-5 py-3.5 border-t border-slate-50 text-xs text-slate-400 font-medium">
           <p className="text-[11px] font-semibold text-slate-400">
             {(viewArchived ? archivedLoading : listLoading)
               ? 'Loading…'
@@ -605,47 +622,52 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                 ? `Showing ${archivedTotal === 0 ? 0 : Math.min((archivedPage - 1) * PAGE_SIZE + 1, archivedTotal)}–${Math.min(archivedPage * PAGE_SIZE, archivedTotal)} of ${archivedTotal.toLocaleString()} Archived`
                 : `Showing ${totalCount === 0 ? 0 : Math.min((page - 1) * PAGE_SIZE + 1, totalCount)}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount.toLocaleString()} Swine`}
           </p>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
+              type="button"
               onClick={() => viewArchived ? setArchivedPage(p => Math.max(1, p - 1)) : setPage(p => Math.max(1, p - 1))}
               disabled={(viewArchived ? archivedPage <= 1 : page <= 1) || (viewArchived ? archivedLoading : listLoading)}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer active:scale-95"
               id="swine-prev-page-btn"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
 
-            {Array.from({ length: Math.min(viewArchived ? archivedTotalPages : totalPages, 5) }, (_, i) => {
-              const activePage = viewArchived ? archivedPage : page;
-              const activeTotal = viewArchived ? archivedTotalPages : totalPages;
-              let pg;
-              if (activeTotal <= 5)               pg = i + 1;
-              else if (activePage <= 3)           pg = i + 1;
-              else if (activePage >= activeTotal - 2) pg = activeTotal - 4 + i;
-              else                               pg = activePage - 2 + i;
-              return (
-                <button
-                  key={pg}
-                  onClick={() => viewArchived ? setArchivedPage(pg) : setPage(pg)}
-                  disabled={viewArchived ? archivedLoading : listLoading}
-                  className={[
-                    'w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer',
-                    pg === (viewArchived ? archivedPage : page)
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'border border-slate-200 text-slate-600 hover:bg-slate-50',
-                    (viewArchived ? archivedLoading : listLoading) ? 'opacity-60 cursor-not-allowed' : '',
-                  ].join(' ')}
-                  id={`swine-page-${pg}-btn`}
-                >
-                  {pg}
-                </button>
-              );
-            })}
+            <div className="flex items-center gap-1">
+              {getPageNumbers(
+                viewArchived ? archivedPage : page,
+                viewArchived ? archivedTotalPages : totalPages
+              ).map((pg, i) =>
+                pg === '...' ? (
+                  <span key={`ellipsis-${i}`} className="w-7 text-center text-slate-400 select-none font-bold text-xs">
+                    &hellip;
+                  </span>
+                ) : (
+                  <button
+                    key={pg}
+                    type="button"
+                    onClick={() => viewArchived ? setArchivedPage(pg) : setPage(pg)}
+                    disabled={viewArchived ? archivedLoading : listLoading}
+                    className={[
+                      'w-7 h-7 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 flex items-center justify-center',
+                      pg === (viewArchived ? archivedPage : page)
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50',
+                      (viewArchived ? archivedLoading : listLoading) ? 'opacity-60 cursor-not-allowed' : '',
+                    ].join(' ')}
+                    id={`swine-page-${pg}-btn`}
+                  >
+                    {pg}
+                  </button>
+                )
+              )}
+            </div>
 
             <button
+              type="button"
               onClick={() => viewArchived ? setArchivedPage(p => Math.min(archivedTotalPages, p + 1)) : setPage(p => Math.min(totalPages, p + 1))}
               disabled={(viewArchived ? archivedPage >= archivedTotalPages : page >= totalPages) || (viewArchived ? archivedLoading : listLoading)}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer active:scale-95"
               id="swine-next-page-btn"
             >
               <ChevronRight className="w-3.5 h-3.5" />

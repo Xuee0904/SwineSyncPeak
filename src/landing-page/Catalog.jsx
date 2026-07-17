@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../supabaseClient';
+import Pagination from '../components/common/Pagination';
 import {
   Search, RefreshCw, WifiOff, Syringe, Weight, Calendar,
   ChevronLeft, ChevronRight, Baby, ShieldCheck, CheckCircle2,
@@ -664,45 +665,16 @@ export default function Catalog() {
           </section>
 
           {totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-slate-100 pt-6">
-              <button
-                disabled={safeCurrentPage === 1}
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                className="inline-flex items-center gap-1 px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 rounded-xl transition-all cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Prev
-              </button>
-
-              <div className="flex items-center gap-1.5">
-                {Array.from({ length: totalPages }).map((_, i) => {
-                  const pageNum = i + 1;
-                  const isCurrent = pageNum === safeCurrentPage;
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`w-[34px] h-[34px] flex items-center justify-center rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        isCurrent
-                          ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10'
-                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                disabled={safeCurrentPage === totalPages}
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                className="inline-flex items-center gap-1 px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 rounded-xl transition-all cursor-pointer"
-              >
-                Next
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+            <Pagination
+              currentPage={safeCurrentPage}
+              totalPages={totalPages}
+              onPageChange={(p) => setCurrentPage(p)}
+              totalItems={totalItems}
+              itemsPerPage={ITEMS_PER_PAGE}
+              itemName="livestock cards"
+              buttonSize="md"
+              className="flex flex-col sm:flex-row items-center justify-between border-t border-slate-100 pt-6 gap-4"
+            />
           )}
         </div>
       ) : (
