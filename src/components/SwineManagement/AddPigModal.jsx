@@ -1,8 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle } from 'lucide-react';
+import { X, ChevronLeft, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle, Bookmark } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
+import useFormDraft, { fetchDraftPayload } from '../../hooks/useFormDraft';
+import DraftBanner from '../DraftBanner';
+import { formatTimestamp } from '../../utils/formatTimestamp';
 import AddPigletBatchModal from './AddPigletBatchModal';
+import { supabase } from '../../supabaseClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
@@ -25,11 +29,37 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
 
   const [step, setStep] = useState('select');
   const [gender, setGender] = useState(null);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const {
+    form,
+    setForm,
+    resetForm,
+    hasDraft,
+    draftInfo,
+    saveDraft,
+    restoreDraft,
+    clearDraft,
+    checkDraft,
+    isOffline,
+  } = useFormDraft('swinesync_draft_add_pig', EMPTY_FORM);
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [batchDraftInfo, setBatchDraftInfo] = useState(null);
+
+  const checkBatchDraft = useCallback(async () => {
+    try {
+      const payload = await fetchDraftPayload('swinesync_draft_add_piglet_batch');
+      if (payload && payload.data) {
+        setBatchDraftInfo(payload);
+      } else {
+        setBatchDraftInfo(null);
+      }
+    } catch (err) {
+      console.error('Error checking batch draft inside AddPigModal:', err);
+      setBatchDraftInfo(null);
+    }
+  }, []);
 
   const [pens, setPens] = useState([]);
   const [breeds, setBreeds] = useState([]);
@@ -48,6 +78,10 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
 
   useEffect(() => {
     if (isOpen) {
+      Promise.resolve().then(() => {
+        checkDraft();
+        checkBatchDraft();
+      });
       const fetchData = async () => {
         setIsLoadingData(true);
         try {
@@ -68,7 +102,15 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
       };
       fetchData();
     }
-  }, [isOpen]);
+  }, [isOpen, checkDraft, checkBatchDraft]);
+
+  useEffect(() => {
+    if (!batchModalOpen && isOpen) {
+      Promise.resolve().then(() => {
+        checkBatchDraft();
+      });
+    }
+  }, [batchModalOpen, isOpen, checkBatchDraft]);
 
   if (!shouldRender && !batchModalOpen) return null;
 
@@ -76,12 +118,52 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
     requestClose(() => {
       setStep('select');
       setGender(null);
-      setForm(EMPTY_FORM);
+      resetForm(EMPTY_FORM);
       setErrors({});
       setIsSaving(false);
       setSubmitError(null);
       setBreedOpen(false);
     });
+  };
+
+  const handleRestoreDraft = () => {
+    restoreDraft((extraMeta) => {
+      if (extraMeta?.gender) setGender(extraMeta.gender);
+      if (extraMeta?.step) setStep(extraMeta.step);
+    });
+  };
+
+  const handleDiscardDraft = () => {
+    clearDraft();
+    resetForm(EMPTY_FORM);
+  };
+
+  const handleRestoreBatchDraft = () => {
+    requestClose(() => {
+      setStep('select');
+      setGender(null);
+      resetForm(EMPTY_FORM);
+      setBatchModalOpen(true);
+    });
+  };
+
+  const handleDiscardBatchDraft = () => {
+    try {
+      localStorage.removeItem('swinesync_draft_add_piglet_batch');
+    } catch (err) {
+      console.error('Error clearing batch draft local:', err);
+    }
+    setBatchDraftInfo(null);
+    if (navigator.onLine) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user?.id) {
+          supabase.from('form_drafts').delete()
+            .eq('user_id', session.user.id)
+            .eq('draft_key', 'swinesync_draft_add_piglet_batch')
+            .then(() => {});
+        }
+      }).catch(() => {});
+    }
   };
 
   const handleTypeSelect = (type) => {
@@ -132,8 +214,12 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
         gender,
         type: gender === 'Female' ? 'Sow' : 'Boar',
       });
+      clearDraft();
       resetAndClose();
     } catch (err) {
+      if (isOffline || err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network')) {
+        saveDraft(form, { step, gender });
+      }
       setSubmitError(err.message || 'Something went wrong while saving. Please try again.');
     } finally {
       setIsSaving(false);
@@ -183,6 +269,28 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
               </button>
             </div>
 
+            <div className="px-8 pt-2 space-y-2">
+              <DraftBanner
+                hasDraft={hasDraft}
+                draftInfo={draftInfo}
+                onRestore={handleRestoreDraft}
+                onDiscard={handleDiscardDraft}
+                isOffline={isOffline}
+                label={step === 'select' ? "Unsaved Sow/Boar Draft Available" : "Unsaved Draft Available"}
+                description={step === 'select' ? `We found a Sow/Boar draft saved on ${formatTimestamp(draftInfo?.timestamp)}. Would you like to restore your previous entries?` : undefined}
+              />
+              {step === 'select' && batchDraftInfo && (
+                <DraftBanner
+                  hasDraft={true}
+                  draftInfo={batchDraftInfo}
+                  onRestore={handleRestoreBatchDraft}
+                  onDiscard={handleDiscardBatchDraft}
+                  isOffline={isOffline && !hasDraft}
+                  label="Unsaved Piglet Batch Draft Available"
+                  description={`We found a Piglet Batch draft saved on ${formatTimestamp(batchDraftInfo?.timestamp)}. Would you like to open the Batch record form and restore it?`}
+                />
+              )}
+            </div>
             <div>
               {step === 'select' && (
                 <div className="px-8 pb-8 pt-2 text-left">
@@ -279,9 +387,21 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                     </Field>
                   )}
 
-                  <div className="pt-4 flex gap-3">
+                  <div className="pt-4 flex gap-2">
                     <button type="button" onClick={resetAndClose} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
                       Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        saveDraft(form, { step, gender });
+                        resetAndClose();
+                      }}
+                      className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                      title="Save current inputs as a draft and close"
+                    >
+                      <Bookmark size={15} className="text-emerald-600" />
+                      Save Draft
                     </button>
                     <button type="submit" disabled={isSaving || isLoadingData} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50">
                       {isSaving && <Loader2 size={16} className="animate-spin" />}

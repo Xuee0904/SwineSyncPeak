@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, PackagePlus, Loader2, Tag, Calendar, Home, Heart,
   AlertCircle, Baby, Weight, Activity, PlusCircle, Hash,
-  Shuffle, BarChart2, Users,
+  Shuffle, BarChart2, Users, Bookmark,
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
+import useFormDraft from '../../hooks/useFormDraft';
+import DraftBanner from '../DraftBanner';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
@@ -43,7 +45,18 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
-  const [form, setForm] = useState(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
+  const {
+    form,
+    setForm,
+    resetForm,
+    hasDraft,
+    draftInfo,
+    saveDraft,
+    restoreDraft,
+    clearDraft,
+    checkDraft,
+    isOffline,
+  } = useFormDraft('swinesync_draft_add_piglet_batch', () => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState(null);
@@ -68,9 +81,12 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
 
   useEffect(() => {
     if (!isOpen) return;
-    setErrors({});
-    setSubmitError(null);
-    setForm({ ...EMPTY_FORM, batchTag: generateBatchTag() });
+    Promise.resolve().then(() => {
+      checkDraft();
+      setErrors({});
+      setSubmitError(null);
+      resetForm(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
+    });
 
     const fetchData = async () => {
       setIsLoadingData(true);
@@ -93,7 +109,7 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
       }
     };
     fetchData();
-  }, [isOpen]);
+  }, [isOpen, checkDraft, resetForm]);
 
   if (!shouldRender) return null;
 
@@ -129,12 +145,21 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
 
   const resetAndClose = () => {
     requestClose(() => {
-      setForm({ ...EMPTY_FORM, batchTag: generateBatchTag() });
+      resetForm(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
       setErrors({});
       setIsSaving(false);
       setSubmitError(null);
       setBreedOpen(false);
     });
+  };
+
+  const handleRestoreDraft = () => {
+    restoreDraft();
+  };
+
+  const handleDiscardDraft = () => {
+    clearDraft();
+    resetForm(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
   };
 
   const handleSubmit = async (e) => {
@@ -157,8 +182,12 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
         averageWeight:  form.averageWeight ? Number(form.averageWeight) : null,
         status:         form.status,
       });
+      clearDraft();
       resetAndClose();
     } catch (err) {
+      if (isOffline || err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network')) {
+        saveDraft(form);
+      }
       setSubmitError(err.message || 'Something went wrong. Please try again.');
     } finally {
       setIsSaving(false);
@@ -172,7 +201,6 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
     : 0;
 
   const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs pl-10 pr-4";
-  const inputBaseNoIcon = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs px-4";
   const inputOk  = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
   const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 bg-rose-50/10 text-slate-900";
 
@@ -208,6 +236,13 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
         >
           {/* Left: main form */}
           <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+            <DraftBanner
+              hasDraft={hasDraft}
+              draftInfo={draftInfo}
+              onRestore={handleRestoreDraft}
+              onDiscard={handleDiscardDraft}
+              isOffline={isOffline}
+            />
 
             {submitError && (
               <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
@@ -377,9 +412,23 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave }) {
 
         {/* ── Footer ── */}
         <div className="px-8 py-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
-          <button type="button" onClick={resetAndClose} className="px-5 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
-            Cancel
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={resetAndClose} className="px-5 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                saveDraft(form);
+                resetAndClose();
+              }}
+              className="flex items-center gap-1.5 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              title="Save current inputs as a draft and close"
+            >
+              <Bookmark size={15} className="text-emerald-600" />
+              Save Draft
+            </button>
+          </div>
           <button
             type="submit"
             form="batch-form"

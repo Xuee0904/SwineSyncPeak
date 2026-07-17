@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, AlertCircle, Loader2, Lock, Eye, EyeOff, User, Mail, UserPlus, Shield } from 'lucide-react';
+import { X, AlertCircle, Loader2, Lock, Eye, EyeOff, User, Mail, UserPlus, Shield, Bookmark } from 'lucide-react';
 import AddStaffSuccessModal from './SuccessAddStaffModal';
 import { supabase } from '../../supabaseClient';
 import useModalAnimation from '../../hooks/useModalAnimation';
+import useFormDraft from '../../hooks/useFormDraft';
+import DraftBanner from '../DraftBanner';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -26,7 +28,18 @@ function validate(name, email, password) {
 }
 
 export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUrl, loggedInUser }) {
-  const [newStaff, setNewStaff] = useState({ name: '', email: '', password: '', role: 'Staff' });
+  const {
+    form: newStaff,
+    setForm: setNewStaff,
+    resetForm: resetNewStaff,
+    hasDraft,
+    draftInfo,
+    saveDraft,
+    restoreDraft,
+    clearDraft,
+    checkDraft,
+    isOffline,
+  } = useFormDraft('swinesync_draft_add_staff', { name: '', email: '', password: '', role: 'Staff' });
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState(null);
   const [createdStaff, setCreatedStaff] = useState(null);
@@ -39,12 +52,24 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
 
   useEffect(() => {
     if (isOpen) {
-      setNewStaff({ name: '', email: '', password: '', role: 'Staff' });
-      setTouched({ name: false, email: false, password: false });
-      setFormError(null);
-      setShowPassword(false);
+      Promise.resolve().then(() => {
+        checkDraft();
+        resetNewStaff({ name: '', email: '', password: '', role: 'Staff' });
+        setTouched({ name: false, email: false, password: false });
+        setFormError(null);
+        setShowPassword(false);
+      });
     }
-  }, [isOpen]);
+  }, [isOpen, checkDraft, resetNewStaff]);
+
+  const handleRestoreDraft = () => {
+    restoreDraft();
+  };
+
+  const handleDiscardDraft = () => {
+    clearDraft();
+    resetNewStaff({ name: '', email: '', password: '', role: 'Staff' });
+  };
 
   if (!shouldRender) return null;
 
@@ -93,11 +118,15 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
         throw new Error(body.error || 'Failed to register account.');
       }
 
+      clearDraft();
       setCreatedStaff(newStaff);
-      setNewStaff({ name: '', email: '', password: '', role: 'Staff' });
+      resetNewStaff({ name: '', email: '', password: '', role: 'Staff' });
       setTouched({ name: false, email: false, password: false });
       setShowSuccess(true);
     } catch (err) {
+      if (isOffline || err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network')) {
+        saveDraft(newStaff);
+      }
       setFormError(err.message);
     } finally {
       setLoading(false);
@@ -117,7 +146,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
+      className={`fixed inset-0 lg:left-60 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
       role="dialog"
       aria-modal="true"
       onClick={(e) => e.target === e.currentTarget && requestClose()}
@@ -165,6 +194,13 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 pt-6 space-y-4" noValidate>
+          <DraftBanner
+            hasDraft={hasDraft}
+            draftInfo={draftInfo}
+            onRestore={handleRestoreDraft}
+            onDiscard={handleDiscardDraft}
+            isOffline={isOffline}
+          />
           {formError && (
             <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2.5 animate-fade-in">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
@@ -280,13 +316,25 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
             </div>
           </div>
 
-          <div className="pt-4 flex gap-3">
+          <div className="pt-4 flex gap-2">
             <button
               type="button"
               onClick={() => requestClose()}
               className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95"
             >
               Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                saveDraft(newStaff);
+                requestClose();
+              }}
+              className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              title="Save current inputs as a draft and close"
+            >
+              <Bookmark size={15} className="text-emerald-600" />
+              Save Draft
             </button>
             <button
               type="submit"
