@@ -2,36 +2,16 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   PiggyBank, AlertTriangle, Activity, Download, Plus,
   Search, ChevronLeft, ChevronRight, MoreVertical, RefreshCw,
-  X, Grid3X3, AlertCircle, Edit2, Archive,
+  X, Grid3X3, AlertCircle, Edit2, Archive, Eye,
 } from 'lucide-react';
 import AddPigModal from '../components/SwineManagement/AddPigModal.jsx';
 import EditPigModal from '../components/SwineManagement/EditPigModal.jsx';
+import ViewPigModal from '../components/SwineManagement/ViewPigModal.jsx';
 import toast from '../utils/toast';
+import StatusBadge from '../components/StatusBadge.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const PAGE_SIZE = 5;
-
-function StatusBadge({ status }) {
-  const s = (status || '').toLowerCase();
-  const map = {
-    healthy:     'bg-emerald-100 text-emerald-700 border-emerald-200',
-    sick:        'bg-rose-100 text-rose-700 border-rose-200',
-    medical:     'bg-rose-100 text-rose-700 border-rose-200',
-    quarantine:  'bg-amber-100 text-amber-700 border-amber-200',
-    reserved:    'bg-slate-100 text-slate-600 border-slate-200',
-    stable:      'bg-teal-100  text-teal-700  border-teal-200',
-    active:      'bg-emerald-100 text-emerald-700 border-emerald-200',
-    suckling:    'bg-sky-100 text-sky-700 border-sky-200',
-    weaned:      'bg-indigo-100 text-indigo-700 border-indigo-200',
-    transferred: 'bg-slate-100 text-slate-700 border-slate-200',
-  };
-  const cls = map[s] || 'bg-slate-100 text-slate-600 border-slate-200';
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wide ${cls}`}>
-      {status || '—'}
-    </span>
-  );
-}
 
 function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
   return (
@@ -86,14 +66,18 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
   const [pens,         setPens]         = useState([]);
   const [pensLoading,  setPensLoading]  = useState(true);
 
+  const [breeds,       setBreeds]       = useState([]);
+
   const [filterPen,    setFilterPen]    = useState('all');
   const [filterCat,    setFilterCat]    = useState('all');
+  const [filterBreed,  setFilterBreed]  = useState('all');
   const [searchInput,  setSearchInput]  = useState('');
   const [search,       setSearch]       = useState('');
   const [page,         setPage]         = useState(1);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedPig, setSelectedPig] = useState(null);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -125,14 +109,25 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     }
   }, []);
 
+  const fetchBreeds = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API_BASE}/api/breeds`);
+      const data = await res.json();
+      setBreeds(data.data ?? []);
+    } catch {
+      // Fail silently
+    }
+  }, []);
+
   const fetchSwine = useCallback(async () => {
     setListLoading(true);
     setListError(null);
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
-      if (search    && search    !== '')    params.set('search',   search);
-      if (filterPen && filterPen !== 'all') params.set('pen',      filterPen);
-      if (filterCat && filterCat !== 'all') params.set('category', filterCat);
+      if (search      && search      !== '')    params.set('search',   search);
+      if (filterPen   && filterPen   !== 'all') params.set('pen',      filterPen);
+      if (filterCat   && filterCat   !== 'all') params.set('category', filterCat);
+      if (filterBreed && filterBreed !== 'all') params.set('breed',    filterBreed);
 
       const res = await fetch(`${API_BASE}/api/pigs?${params}`);
       if (!res.ok) throw new Error(`Server error ${res.status}`);
@@ -144,7 +139,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     } finally {
       setListLoading(false);
     }
-  }, [page, search, filterPen, filterCat]);
+  }, [page, search, filterPen, filterCat, filterBreed]);
 
   const handleSavePig = async (pigData) => {
     const payload = { ...pigData, creator: loggedInUser };
@@ -192,10 +187,14 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     fetchStats();
   };
 
-  useEffect(() => { fetchStats(); fetchPens(); }, [fetchStats, fetchPens]);
+  useEffect(() => {
+    fetchStats();
+    fetchPens();
+    fetchBreeds();
+  }, [fetchStats, fetchPens, fetchBreeds]);
   useEffect(() => { fetchSwine(); }, [fetchSwine]);
 
-  useEffect(() => { setPage(1); }, [search, filterPen, filterCat]);
+  useEffect(() => { setPage(1); }, [search, filterPen, filterCat, filterBreed]);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 400);
@@ -332,6 +331,21 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
               </select>
             </div>
 
+            <div className="flex flex-col gap-0.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Breed</label>
+              <select
+                value={filterBreed}
+                onChange={e => setFilterBreed(e.target.value)}
+                className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
+                id="breed-filter-select"
+              >
+                <option value="all">All Breeds</option>
+                {breeds.map(b => (
+                  <option key={b.breed_id || b.name} value={b.name}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex flex-col gap-0.5 ml-auto">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Search</label>
               <div className="relative">
@@ -397,7 +411,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                       </div>
                       <p className="text-xs font-semibold text-slate-400">No swine match your filters</p>
                       <button
-                        onClick={() => { setFilterPen('all'); setFilterCat('all'); setSearchInput(''); }}
+                        onClick={() => { setFilterPen('all'); setFilterCat('all'); setFilterBreed('all'); setSearchInput(''); }}
                         className="text-xs font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer"
                       >
                         Clear filters
@@ -409,7 +423,8 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                 swineList.map((pig, idx) => (
                   <tr
                     key={pig.id ?? idx}
-                    className="border-b border-slate-50 hover:bg-slate-50/70 transition-colors group"
+                    onClick={() => { setSelectedPig(pig); setIsViewModalOpen(true); }}
+                    className="border-b border-slate-50 hover:bg-slate-50/70 transition-colors group cursor-pointer"
                   >
                     <td className="py-3 px-4">
                       <span className="text-xs font-bold text-emerald-600 group-hover:text-emerald-700 transition-colors">
@@ -441,6 +456,15 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                     </td>
                     <td className="py-3 px-4 text-right pr-6 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedPig(pig); setIsViewModalOpen(true); }}
+                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
+                          title="View Details"
+                          id={`swine-view-${pig.id ?? idx}`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => { setSelectedPig(pig); setIsEditModalOpen(true); }}
@@ -529,11 +553,22 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
         pens={pens}
       />
 
-      {/* RENDER: Edit Modal */}
+      {/* RENDER: Edit Modal (standalone, for direct edit button in table) */}
       <EditPigModal
         isOpen={isEditModalOpen}
         onClose={() => { setIsEditModalOpen(false); setSelectedPig(null); }}
         onSave={handleUpdatePig}
+        pigData={selectedPig}
+      />
+
+      {/* RENDER: View Details Modal (with built-in edit form & smooth transition) */}
+      <ViewPigModal
+        isOpen={isViewModalOpen}
+        onClose={() => { setIsViewModalOpen(false); setSelectedPig(null); }}
+        onSave={handleUpdatePig}
+        onArchive={(pig) => {
+          toast.info('Archiving record feature will be available soon.');
+        }}
         pigData={selectedPig}
       />
     </div>

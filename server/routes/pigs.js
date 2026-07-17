@@ -83,7 +83,7 @@ router.get('/api/pigs/stats', async (req, res) => {
 // GET /api/pigs
 router.get('/api/pigs', async (req, res) => {
   try {
-    const { search, status, pen, category, page, limit } = req.query;
+    const { search, status, pen, category, breed, page, limit } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
     const pageSize = parseInt(limit) || 10;
     const from = (pageNum - 1) * pageSize;
@@ -116,6 +116,7 @@ router.get('/api/pigs', async (req, res) => {
       id: pig.pig_id, 
       pig_tag: pig.pig_tag, 
       breed: pig.breeds?.name || '—',
+      breed_id: pig.breed_id,
       age_weeks: pig.date_of_birth ? Math.floor((Date.now() - new Date(pig.date_of_birth)) / 604800000) : '—',
       current_weight: pig.weight,
       category: (pig.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
@@ -126,6 +127,7 @@ router.get('/api/pigs', async (req, res) => {
       id: batch.batch_id,
       pig_tag: batch.batch_tag,
       breed: batch.breeds?.name || '—',
+      breed_id: batch.breed_id,
       age_weeks: batch.date_of_birth
         ? Math.floor((Date.now() - new Date(batch.date_of_birth)) / 604800000)
         : '—',
@@ -138,6 +140,9 @@ router.get('/api/pigs', async (req, res) => {
     if (category && category !== 'all') {
       const map = { sow: 'Sow', boar: 'Boar', piglet_batch: 'Piglet Batch' };
       merged = merged.filter(i => i.category === map[category]);
+    }
+    if (breed && breed !== 'all') {
+      merged = merged.filter(i => (i.breed_id && i.breed_id === breed) || (i.breed && i.breed.toLowerCase() === breed.toLowerCase()));
     }
 
     res.json({ data: merged.slice(from, to + 1), count: merged.length });
@@ -152,7 +157,7 @@ router.get('/api/pigs/:id', async (req, res) => {
     const { id } = req.params;
     const { data, error } = await supabase
       .from('pigs')
-      .select('*, breeds(name)')
+      .select('*, breeds(name), pens(pen_code)')
       .eq('pig_id', id)
       .eq('is_archived', false)
       .maybeSingle();
@@ -168,6 +173,7 @@ router.get('/api/pigs/:id', async (req, res) => {
           breed_id: data.breed_id,
           current_weight: data.weight,
           pen_id: data.pen_id,
+          pen_code: data.pens?.pen_code || '',
           status: data.status || 'healthy',
           gender: data.gender,
           category: (data.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
@@ -179,7 +185,7 @@ router.get('/api/pigs/:id', async (req, res) => {
     // Check piglet_batches if not found in pigs
     const { data: batchData, error: batchError } = await supabase
       .from('piglet_batches')
-      .select('*, breeds(name)')
+      .select('*, breeds(name), pens(pen_code)')
       .eq('batch_id', id)
       .eq('is_archived', false)
       .maybeSingle();
@@ -198,6 +204,7 @@ router.get('/api/pigs/:id', async (req, res) => {
         current_weight: batchData.average_weight,
         average_weight: batchData.average_weight,
         pen_id: batchData.pen_id,
+        pen_code: batchData.pens?.pen_code || '',
         status: batchData.status || 'suckling',
         source_origin: batchData.source_origin,
         total_born_alive: batchData.total_born_alive,
