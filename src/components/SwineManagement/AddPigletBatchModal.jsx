@@ -1,13 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, cloneElement } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, PackagePlus, Loader2, Tag, Calendar, Home, Heart,
   AlertCircle, Baby, Weight, Activity, PlusCircle, Hash,
-  Shuffle, BarChart2, Users, Bookmark, ChevronLeft,
+  Shuffle, BarChart2, Bookmark, ChevronLeft, CheckCircle2,
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import useFormDraft from '../../hooks/useFormDraft';
 import DraftBanner from '../DraftBanner';
+import toast from '../../utils/toast';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
@@ -46,6 +47,7 @@ export function AddPigletBatchForm({
   onClose,
   onBack,
   onSave,
+  onSuccess,
   pens: propPens,
   breeds: propBreeds,
 }) {
@@ -126,13 +128,13 @@ export function AddPigletBatchForm({
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }));
   };
 
-  // Auto-sync currentCount from totalBornAlive if not yet manually set
+  // Auto-sync currentCount from totalBornAlive right at batch creation
   const handleBornAliveChange = (e) => {
     const val = e.target.value;
     setForm(prev => ({
       ...prev,
       totalBornAlive: val,
-      currentCount: prev.currentCount === '' || prev.currentCount === prev.totalBornAlive ? val : prev.currentCount,
+      currentCount: val,
     }));
     if (errors.totalBornAlive) setErrors(prev => ({ ...prev, totalBornAlive: undefined }));
   };
@@ -144,8 +146,6 @@ export function AddPigletBatchForm({
     if (!form.dateOfBirth)        next.dateOfBirth = 'Date of birth is required';
     if (!form.totalBornAlive || Number(form.totalBornAlive) <= 0)
       next.totalBornAlive = 'Enter at least 1 piglet born alive';
-    if (!form.currentCount || Number(form.currentCount) <= 0)
-      next.currentCount = 'Current count is required';
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -182,14 +182,23 @@ export function AddPigletBatchForm({
         breed:          form.breed.trim() || null,
         sourceOrigin:   form.sourceOrigin,
         totalBornAlive: Number(form.totalBornAlive) || 0,
-        currentCount:   Number(form.currentCount)   || 0,
+        currentCount:   Number(form.totalBornAlive) || 0,
         stillbornCount: Number(form.stillbornCount) || 0,
         mummyCount:     Number(form.mummyCount)     || 0,
         averageWeight:  form.averageWeight ? Number(form.averageWeight) : null,
         status:         form.status,
       });
       clearDraft();
-      resetAndClose();
+      toast.success('Batch Created', `Batch #${form.batchTag.trim()} created with ${Number(form.totalBornAlive) || 0} born alive.`);
+      if (onSuccess) {
+        onSuccess({
+          type: 'Piglet Batch',
+          tag: form.batchTag.trim(),
+          message: `Piglet Batch #${form.batchTag.trim()} created with ${Number(form.totalBornAlive) || 0} born alive.`
+        });
+      } else {
+        resetAndClose();
+      }
     } catch (err) {
       if (isOffline || err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network')) {
         saveDraft(form);
@@ -202,8 +211,9 @@ export function AddPigletBatchForm({
 
   // Snapshot totals
   const totalLoss = (Number(form.stillbornCount) || 0) + (Number(form.mummyCount) || 0);
-  const survivability = form.totalBornAlive
-    ? Math.round((Number(form.currentCount || 0) / Number(form.totalBornAlive)) * 100)
+  const totalFarrowed = (Number(form.totalBornAlive) || 0) + totalLoss;
+  const survivability = totalFarrowed > 0
+    ? Math.round(((Number(form.totalBornAlive) || 0) / totalFarrowed) * 100)
     : 0;
 
   const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs pl-10 pr-4";
@@ -346,10 +356,6 @@ export function AddPigletBatchForm({
                   <input type="number" min="0" value={form.totalBornAlive} onChange={handleBornAliveChange} placeholder="0" className={`${inputBase} ${errors.totalBornAlive ? inputErr : inputOk}`} />
                 </Field>
 
-                <Field label="Current Count" error={errors.currentCount} icon={<Users />}>
-                  <input type="number" min="0" value={form.currentCount} onChange={handleChange('currentCount')} placeholder="0" className={`${inputBase} ${errors.currentCount ? inputErr : inputOk}`} />
-                </Field>
-
                 <Field label="Stillborn Count" icon={<Hash />}>
                   <input type="number" min="0" value={form.stillbornCount} onChange={handleChange('stillbornCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
                 </Field>
@@ -372,8 +378,8 @@ export function AddPigletBatchForm({
             {/* Big count display */}
             <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-4 text-center">
               <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Current Count</p>
-              <p className="text-4xl font-black text-slate-900 mt-1">{Number(form.currentCount) || 0}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">of {Number(form.totalBornAlive) || 0} born alive</p>
+              <p className="text-4xl font-black text-slate-900 mt-1">{Number(form.totalBornAlive) || 0}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">of {((Number(form.totalBornAlive) || 0) + totalLoss) || 0} total farrowed</p>
             </div>
 
             <div className="space-y-2">
@@ -457,6 +463,16 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
+  const [step, setStep] = useState('form');
+  const [successInfo, setSuccessInfo] = useState(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setStep('form');
+      setSuccessInfo(null);
+    }
+  }, [isOpen]);
+
   if (!shouldRender) return null;
 
   const handleModalClose = () => {
@@ -468,14 +484,58 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
       className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
       onMouseDown={(e) => { if (e.target === e.currentTarget) handleModalClose(); }}
     >
-      <div className={`flex max-h-[92vh] w-full max-w-4xl flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden ${panelClassName}`}>
-        <AddPigletBatchForm
-          isOpen={isOpen}
-          onClose={handleModalClose}
-          onSave={onSave}
-          pens={pens}
-          breeds={breeds}
-        />
+      <div
+        style={{ willChange: 'transform, opacity, max-width' }}
+        className={`flex max-h-[92vh] w-full ${step === 'success' ? 'max-w-md' : 'max-w-4xl'} flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden transition-[max-width] duration-300 ease-in-out ${panelClassName}`}
+      >
+        {step === 'success' ? (
+          <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
+              <CheckCircle2 size={32} className="animate-bounce" />
+            </div>
+            <div>
+              <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
+                Piglet Batch Added
+              </span>
+              <h4 className="text-xl font-black text-slate-900">
+                Piglet Batch #{successInfo?.tag} Saved!
+              </h4>
+              <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
+                {successInfo?.message || 'The new piglet batch has been saved and synced to your database.'}
+              </p>
+            </div>
+
+            <div className="pt-2 w-full flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => setStep('form')}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <PlusCircle size={16} />
+                Add Another Batch
+              </button>
+              <button
+                type="button"
+                onClick={handleModalClose}
+                className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                Done & Close
+              </button>
+            </div>
+          </div>
+        ) : (
+          <AddPigletBatchForm
+            isOpen={isOpen}
+            onClose={handleModalClose}
+            onSave={onSave}
+            onSuccess={(info) => {
+              setSuccessInfo(info);
+              setStep('success');
+            }}
+            pens={pens}
+            breeds={breeds}
+          />
+        )}
       </div>
     </div>,
     document.body
@@ -517,7 +577,7 @@ function Field({ label, error, icon, children }) {
       <div className="relative">
         {icon && (
           <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
-            {React.cloneElement(icon, { size: 14 })}
+            {cloneElement(icon, { size: 14 })}
           </span>
         )}
         {children}

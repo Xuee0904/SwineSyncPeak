@@ -158,21 +158,53 @@ router.get('/api/pigs/:id', async (req, res) => {
       .maybeSingle();
 
     if (error) throw error;
-    if (!data) return res.status(404).json({ error: 'Pig not found.' });
+    if (data) {
+      return res.json({
+        data: {
+          id: data.pig_id,
+          pig_tag: data.pig_tag,
+          date_of_birth: data.date_of_birth,
+          breed: data.breeds?.name || '',
+          breed_id: data.breed_id,
+          current_weight: data.weight,
+          pen_id: data.pen_id,
+          status: data.status || 'healthy',
+          gender: data.gender,
+          category: (data.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
+          parity_count: data.parity_count ?? '',
+        },
+      });
+    }
 
-    res.json({
+    // Check piglet_batches if not found in pigs
+    const { data: batchData, error: batchError } = await supabase
+      .from('piglet_batches')
+      .select('*, breeds(name)')
+      .eq('batch_id', id)
+      .eq('is_archived', false)
+      .maybeSingle();
+
+    if (batchError) throw batchError;
+    if (!batchData) return res.status(404).json({ error: 'Record not found.' });
+
+    return res.json({
       data: {
-        id: data.pig_id,
-        pig_tag: data.pig_tag,
-        date_of_birth: data.date_of_birth,
-        breed: data.breeds?.name || '',
-        breed_id: data.breed_id,
-        current_weight: data.weight,
-        pen_id: data.pen_id,
-        status: data.status || 'healthy',
-        gender: data.gender,
-        category: (data.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
-        parity_count: data.parity_count ?? '',
+        id: batchData.batch_id,
+        pig_tag: batchData.batch_tag,
+        batch_tag: batchData.batch_tag,
+        date_of_birth: batchData.date_of_birth,
+        breed: batchData.breeds?.name || '',
+        breed_id: batchData.breed_id,
+        current_weight: batchData.average_weight,
+        average_weight: batchData.average_weight,
+        pen_id: batchData.pen_id,
+        status: batchData.status || 'suckling',
+        source_origin: batchData.source_origin,
+        total_born_alive: batchData.total_born_alive,
+        current_count: batchData.current_count,
+        stillborn_count: batchData.stillborn_count,
+        mummy_count: batchData.mummy_count,
+        category: 'Piglet Batch',
       },
     });
   } catch (error) {
@@ -366,13 +398,14 @@ router.post('/api/pigs/batch', async (req, res) => {
   }
 });
 
-// PUT /api/pigs/:id - Update pig details
+// PUT /api/pigs/:id - Update pig details or piglet batch
 router.put('/api/pigs/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { 
       tagNumber, dateOfBirth, breed, weight, 
-      penId, status, parityCount, creator 
+      penId, status, parityCount, creator,
+      totalBornAlive, stillbornCount, mummyCount, category, isBatch
     } = req.body;
     
     const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
@@ -380,6 +413,8 @@ router.put('/api/pigs/:id', async (req, res) => {
     if (!tagNumber || !breed || !penId) {
       return res.status(400).json({ error: 'Tag number, breed, and pen are required.' });
     }
+
+    const checkIsBatch = category === 'Piglet Batch' || isBatch === true;
 
     // Resolve breed name → UUID
     let finalBreedId = breed;
@@ -405,12 +440,58 @@ router.put('/api/pigs/:id', async (req, res) => {
       }
     }
 
+    if (checkIsBatch) {
+      const updatePayload = {
+        batch_tag: tagNumber,
+        date_of_birth: dateOfBirth || null,
+        breed_id: finalBreedId,
+        pen_id: penId,
+        status: (status || 'suckling').toLowerCase(),
+      };
+      if (weight !== undefined && weight !== null && weight !== '') {
+        updatePayload.average_weight = parseFloat(weight);
+      }
+      if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
+        updatePayload.total_born_alive = parseInt(totalBornAlive) || 0;
+      }
+      if (stillbornCount !== undefined && stillbornCount !== null && stillbornCount !== '') {
+        updatePayload.stillborn_count = parseInt(stillbornCount) || 0;
+      }
+      if (mummyCount !== undefined && mummyCount !== null && mummyCount !== '') {
+        updatePayload.mummy_count = parseInt(mummyCount) || 0;
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('piglet_batches')
+        .update(updatePayload)
+        .eq('batch_id', id)
+        .select();
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        return res.status(404).json({ error: 'Piglet batch not found.' });
+      }
+
+      const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
+        user_name: creatorName,
+        user_email: creatorEmail,
+        user_initials: creatorInitials,
+        user_bg_color: 'bg-emerald-100 text-emerald-700',
+        event_title: 'Batch Updated',
+        event_desc: `Updated piglet batch ${tagNumber}.`,
+        status: 'SUCCESS'
+      });
+      if (logError) console.error("Error inserting activity log:", logError);
+
+      return res.json({ message: 'Piglet batch updated successfully', data });
+    }
+
     // If the pen is changing, confirm the new pen actually has room
     const { data: currentPig, error: currentPigError } = await supabase
       .from('pigs')
       .select('pen_id')
       .eq('pig_id', id)
-      .single();
+      .maybeSingle();
 
     if (currentPigError) throw currentPigError;
 
@@ -469,6 +550,89 @@ router.put('/api/pigs/:id', async (req, res) => {
     res.json({ message: 'Pig updated successfully', data });
   } catch (error) {
     console.error('Error updating pig:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /api/pigs/batch/:id - Dedicated update endpoint for piglet batches
+router.put('/api/pigs/batch/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      batchTag, tagNumber, dateOfBirth, breed, averageWeight, weight,
+      penId, status, creator,
+      totalBornAlive, stillbornCount, mummyCount
+    } = req.body;
+    
+    const resolvedTag = batchTag || tagNumber;
+    const resolvedWeight = averageWeight ?? weight;
+    const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
+
+    if (!resolvedTag || !breed || !penId) {
+      return res.status(400).json({ error: 'Batch tag, breed, and pen are required.' });
+    }
+
+    let finalBreedId = breed;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(breed);
+
+    if (!isUuid) {
+      const { data: existingBreed } = await supabaseAdmin
+        .from('breeds').select('breed_id').eq('name', breed).maybeSingle();
+      if (existingBreed) {
+        finalBreedId = existingBreed.breed_id;
+      } else {
+        const { data: newBreed, error: breedError } = await supabaseAdmin
+          .from('breeds').insert([{ name: breed }]).select().single();
+        if (breedError) throw breedError;
+        finalBreedId = newBreed.breed_id;
+      }
+    }
+
+    const updatePayload = {
+      batch_tag: resolvedTag.trim(),
+      date_of_birth: dateOfBirth || null,
+      breed_id: finalBreedId,
+      pen_id: penId,
+      status: (status || 'suckling').toLowerCase(),
+    };
+    if (resolvedWeight !== undefined && resolvedWeight !== null && resolvedWeight !== '') {
+      updatePayload.average_weight = parseFloat(resolvedWeight);
+    }
+    if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
+      updatePayload.total_born_alive = parseInt(totalBornAlive) || 0;
+    }
+    if (stillbornCount !== undefined && stillbornCount !== null && stillbornCount !== '') {
+      updatePayload.stillborn_count = parseInt(stillbornCount) || 0;
+    }
+    if (mummyCount !== undefined && mummyCount !== null && mummyCount !== '') {
+      updatePayload.mummy_count = parseInt(mummyCount) || 0;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('piglet_batches')
+      .update(updatePayload)
+      .eq('batch_id', id)
+      .select();
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: 'Piglet batch not found.' });
+    }
+
+    const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
+      user_name: creatorName,
+      user_email: creatorEmail,
+      user_initials: creatorInitials,
+      user_bg_color: 'bg-emerald-100 text-emerald-700',
+      event_title: 'Batch Updated',
+      event_desc: `Updated piglet batch ${resolvedTag}.`,
+      status: 'SUCCESS'
+    });
+    if (logError) console.error("Error inserting activity log:", logError);
+
+    res.json({ message: 'Piglet batch updated successfully', data });
+  } catch (error) {
+    console.error('Error updating batch:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

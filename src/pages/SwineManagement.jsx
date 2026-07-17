@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   PiggyBank, AlertTriangle, Activity, Download, Plus,
   Search, ChevronLeft, ChevronRight, MoreVertical, RefreshCw,
-  X, Grid3X3, AlertCircle,
+  X, Grid3X3, AlertCircle, Edit2, Archive,
 } from 'lucide-react';
 import AddPigModal from '../components/SwineManagement/AddPigModal.jsx';
-import EditPigModal from '../components/SwineManagement/EditPigModal.jsx'; // NEW IMPORT
+import EditPigModal from '../components/SwineManagement/EditPigModal.jsx';
+import toast from '../utils/toast';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const PAGE_SIZE = 5;
@@ -38,19 +39,21 @@ function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, load
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${accentColor || 'bg-slate-50'}`}>
         {icon}
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
-        {loading ? (
-          <div className="h-7 w-16 bg-slate-100 rounded-lg animate-pulse mt-1" />
-        ) : (
-          <p className="text-2xl font-black text-slate-900 leading-tight">{value?.toLocaleString() ?? '—'}</p>
-        )}
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</p>
+        <div className="flex items-baseline gap-2 mt-0.5">
+          {loading ? (
+            <div className="h-7 w-16 bg-slate-100 animate-pulse rounded-md" />
+          ) : (
+            <h3 className="text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
+          )}
+          {badge && (
+            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeColor || 'bg-slate-100 text-slate-600'}`}>
+              {badge}
+            </span>
+          )}
+        </div>
       </div>
-      {badge && (
-        <span className={`absolute top-3 right-3 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest ${badgeColor || 'bg-slate-100 text-slate-500'}`}>
-          {badge}
-        </span>
-      )}
     </div>
   );
 }
@@ -58,55 +61,42 @@ function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, load
 function TableSkeleton({ rows = 5 }) {
   return (
     <>
-      {Array.from({ length: rows }).map((_, i) => (
-        <tr key={i} className="animate-pulse border-b border-slate-50">
-          <td className="py-3 px-4"><div className="h-4 w-24 bg-slate-100 rounded" /></td>
-          <td className="py-3 px-4"><div className="h-4 w-20 bg-slate-100 rounded" /></td>
-          <td className="py-3 px-4"><div className="h-4 w-10 bg-slate-100 rounded" /></td>
-          <td className="py-3 px-4"><div className="h-4 w-16 bg-slate-100 rounded" /></td>
-          <td className="py-3 px-4"><div className="h-4 w-12 bg-slate-100 rounded" /></td>
-          <td className="py-3 px-4"><div className="h-5 w-14 bg-slate-100 rounded-full" /></td>
-          <td className="py-3 px-4"><div className="h-4 w-6 bg-slate-100 rounded" /></td>
+      {Array.from({ length: rows }).map((_, idx) => (
+        <tr key={idx} className="border-b border-slate-50">
+          {Array.from({ length: 7 }).map((_, colIdx) => (
+            <td key={colIdx} className="py-4 px-4">
+              <div className="h-4 bg-slate-100 animate-pulse rounded w-3/4" />
+            </td>
+          ))}
         </tr>
       ))}
     </>
   );
 }
 
-export default function SwineManagement({ activeSubTab, loggedInUser }) {
-  const [stats,        setStats]        = useState({ total: 0, pregnant: 0, sick: 0 });
-  const [statsLoading, setStatsLoading] = useState(true);
-
+export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab = 'swine_list' }) {
   const [swineList,    setSwineList]    = useState([]);
   const [listLoading,  setListLoading]  = useState(true);
   const [listError,    setListError]    = useState(null);
   const [totalCount,   setTotalCount]   = useState(0);
 
+  const [stats,        setStats]        = useState({ total: 0, pregnant: 0, sick: 0 });
+  const [statsLoading, setStatsLoading] = useState(true);
+
   const [pens,         setPens]         = useState([]);
+  const [pensLoading,  setPensLoading]  = useState(true);
+
   const [filterPen,    setFilterPen]    = useState('all');
   const [filterCat,    setFilterCat]    = useState('all');
   const [searchInput,  setSearchInput]  = useState('');
   const [search,       setSearch]       = useState('');
   const [page,         setPage]         = useState(1);
 
-  // Modal States
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false); // NEW
-  const [selectedPig, setSelectedPig] = useState(null); // NEW
-
-  const [openMenuId,   setOpenMenuId]   = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedPig, setSelectedPig] = useState(null);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (!e.target.closest('.swine-action-container')) {
-        setOpenMenuId(null);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   const fetchStats = useCallback(async () => {
     setStatsLoading(true);
@@ -262,7 +252,7 @@ export default function SwineManagement({ activeSubTab, loggedInUser }) {
         <StatCard
           icon={<PiggyBank className="w-6 h-6 text-emerald-600" />}
           label="Total Swine"
-          value={stats.total}
+          value={stats?.total ?? 0}
           badge="SWINE"
           badgeColor="bg-emerald-100 text-emerald-700"
           accentColor="bg-emerald-50"
@@ -271,7 +261,7 @@ export default function SwineManagement({ activeSubTab, loggedInUser }) {
         <StatCard
           icon={<Activity className="w-6 h-6 text-amber-500" />}
           label="Sows"
-          value={stats.pregnant}
+          value={stats?.pregnant ?? 0}
           badge="FEMALE"
           badgeColor="bg-amber-100 text-amber-600"
           accentColor="bg-amber-50"
@@ -280,7 +270,7 @@ export default function SwineManagement({ activeSubTab, loggedInUser }) {
         <StatCard
           icon={<AlertTriangle className="w-6 h-6 text-rose-600" />}
           label="Sick Alert"
-          value={stats.sick}
+          value={stats?.sick ?? 0}
           badge="CRITICAL"
           badgeColor="bg-rose-500 text-white"
           accentColor="bg-rose-50"
@@ -372,7 +362,7 @@ export default function SwineManagement({ activeSubTab, loggedInUser }) {
             <thead>
               <tr className="border-b border-slate-50">
                 {['Swine ID', 'Breed', 'Age (Weeks)', 'Current Weight', 'Pig Category', 'Status', 'Actions'].map(h => (
-                  <th key={h} className="py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">
+                  <th key={h} className={`py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap ${h === 'Actions' ? 'text-right pr-6' : ''}`}>
                     {h}
                   </th>
                 ))}
@@ -449,30 +439,26 @@ export default function SwineManagement({ activeSubTab, loggedInUser }) {
                     <td className="py-3 px-4">
                       <StatusBadge status={pig.status} />
                     </td>
-                    <td className="py-3 px-4 swine-action-container">
-                      <div className="relative inline-block">
+                    <td className="py-3 px-4 text-right pr-6 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => setOpenMenuId(prev => prev === (pig.id ?? idx) ? null : (pig.id ?? idx))}
-                          className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
-                          id={`swine-action-${pig.id ?? idx}`}
+                          type="button"
+                          onClick={() => { setSelectedPig(pig); setIsEditModalOpen(true); }}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
+                          title="Edit Record"
+                          id={`swine-edit-${pig.id ?? idx}`}
                         >
-                          <MoreVertical className="w-4 h-4" />
+                          <Edit2 className="w-3.5 h-3.5" />
                         </button>
-                        {openMenuId === (pig.id ?? idx) && (
-                          <div className="absolute right-0 top-full mt-1 z-20 w-36 bg-white rounded-xl shadow-lg border border-slate-100 py-1 text-xs font-semibold text-slate-700 overflow-hidden">
-                            <button className="w-full text-left px-3.5 py-2 hover:bg-slate-50 transition-colors cursor-pointer">View Details</button>
-                            
-                            {/* CONNECTED: Edit Button */}
-                            <button 
-                              onClick={() => { setSelectedPig(pig); setIsEditModalOpen(true); setOpenMenuId(null); }}
-                              className="w-full text-left px-3.5 py-2 hover:bg-slate-50 transition-colors cursor-pointer"
-                            >
-                              Edit Record
-                            </button>
-
-                            <button className="w-full text-left px-3.5 py-2 hover:bg-rose-50 text-rose-600 transition-colors cursor-pointer">Archive</button>
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => toast.info('Archiving record feature will be available soon.')}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
+                          title="Archive Record"
+                          id={`swine-archive-${pig.id ?? idx}`}
+                        >
+                          <Archive className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>

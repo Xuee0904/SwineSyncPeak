@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle, Bookmark } from 'lucide-react';
+import { X, ChevronLeft, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle, Bookmark, CheckCircle2 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import useFormDraft, { fetchDraftPayload } from '../../hooks/useFormDraft';
 import DraftBanner from '../DraftBanner';
+import toast from '../../utils/toast';
 import { formatTimestamp } from '../../utils/formatTimestamp';
 import AddPigletBatchModal, { AddPigletBatchForm } from './AddPigletBatchModal';
 import { supabase } from '../../supabaseClient';
@@ -29,6 +30,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
 
   const [step, setStep] = useState('select');
   const [gender, setGender] = useState(null);
+  const [successInfo, setSuccessInfo] = useState(null);
   const {
     form,
     setForm,
@@ -123,6 +125,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
       setIsSaving(false);
       setSubmitError(null);
       setBreedOpen(false);
+      setSuccessInfo(null);
     });
   };
 
@@ -205,7 +208,13 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
         type: gender === 'Female' ? 'Sow' : 'Boar',
       });
       clearDraft();
-      resetAndClose();
+      setSuccessInfo({
+        type: gender === 'Female' ? 'Sow' : 'Boar',
+        tag: form.tagNumber.trim(),
+        message: `${gender === 'Female' ? 'Sow' : 'Boar'} #${form.tagNumber.trim()} added to your swine inventory.`
+      });
+      setStep('success');
+      toast.success(`${gender === 'Female' ? 'Sow' : 'Boar'} #${form.tagNumber.trim()} added successfully!`);
     } catch (err) {
       if (isOffline || err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network')) {
         saveDraft(form, { step, gender });
@@ -232,11 +241,11 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
           <div
             style={{ willChange: 'transform, opacity, max-width' }}
             className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 transition-[max-width] duration-300 ease-in-out ${
-              step === 'select' ? 'max-w-md' : step === 'batch' ? 'max-w-4xl' : 'max-w-2xl'
+              step === 'select' || step === 'success' ? 'max-w-md' : step === 'batch' ? 'max-w-4xl' : 'max-w-2xl'
             } ${panelClassName}`}
           >
             {/* Header */}
-            {step !== 'batch' && (
+            {step !== 'batch' && step !== 'success' && (
               <div className="px-8 pt-8 pb-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   {step === 'form' ? (
@@ -261,7 +270,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
               </div>
             )}
 
-            {step !== 'batch' && (
+            {step !== 'batch' && step !== 'success' && (
               <div className="px-8 pt-2 space-y-2">
               <DraftBanner
                 hasDraft={hasDraft}
@@ -411,9 +420,57 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                   onBack={() => setStep('select')}
                   onClose={resetAndClose}
                   onSave={onSaveBatch}
+                  onSuccess={(info) => {
+                    setSuccessInfo(info);
+                    setStep('success');
+                  }}
                   pens={pens}
                   breeds={breeds}
                 />
+              )}
+
+              {step === 'success' && (
+                <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">
+                  <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
+                    <CheckCircle2 size={32} className="animate-bounce" />
+                  </div>
+                  <div>
+                    <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
+                      {successInfo?.type || 'Record'} Added
+                    </span>
+                    <h4 className="text-xl font-black text-slate-900">
+                      {successInfo?.type || 'Swine'} #{successInfo?.tag} Saved!
+                    </h4>
+                    <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
+                      {successInfo?.message || 'The new record has been saved and synced to your database.'}
+                    </p>
+                  </div>
+
+                  <div className="pt-2 w-full flex flex-col gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (successInfo?.type === 'Piglet Batch') {
+                          setStep('batch');
+                        } else {
+                          setGender(successInfo?.type === 'Sow' ? 'Female' : 'Male');
+                          setStep('pig');
+                        }
+                      }}
+                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <PlusCircle size={16} />
+                      Add Another {successInfo?.type || 'Record'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetAndClose}
+                      className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                    >
+                      Done & Close
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>

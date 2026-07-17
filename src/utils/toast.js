@@ -23,3 +23,5 @@ export function subscribeToToasts(callback) {
     listeners = listeners.filter((l) => l !== callback);
   };
 }
+
+export default toast;
