@@ -19,17 +19,40 @@ import { Archive } from 'lucide-react';
  */
 export default function useConfirmDialog() {
   const [state, setState] = useState(null);
+  const [selectedReason, setSelectedReason] = useState('');
+  const [customReason, setCustomReason] = useState('');
+  const [reasonError, setReasonError] = useState('');
 
   const openConfirm = useCallback((options) => {
     setState({ ...options, isLoading: false });
+    setSelectedReason(options.reasonOptions?.[0] || '');
+    setCustomReason('');
+    setReasonError('');
   }, []);
 
   const close = useCallback(() => {
     setState(null);
+    setReasonError('');
   }, []);
 
   const handleConfirm = useCallback(async () => {
     if (!state?.onConfirm) return;
+    if (state.reasonOptions && state.reasonOptions.length > 0) {
+      const isOther = selectedReason.startsWith('Other');
+      if (isOther && !customReason.trim()) {
+        setReasonError('Please specify the custom archive reasoning.');
+        return;
+      }
+      const finalReason = isOther ? customReason.trim() : selectedReason;
+      setState(s => ({ ...s, isLoading: true }));
+      try {
+        await state.onConfirm(finalReason);
+        setState(null);
+      } catch {
+        setState(s => ({ ...s, isLoading: false }));
+      }
+      return;
+    }
     setState(s => ({ ...s, isLoading: true }));
     try {
       await state.onConfirm();
@@ -37,7 +60,7 @@ export default function useConfirmDialog() {
     } catch {
       setState(s => ({ ...s, isLoading: false }));
     }
-  }, [state]);
+  }, [state, selectedReason, customReason]);
 
   const confirmDialog = state
     ? createPortal(
@@ -67,6 +90,50 @@ export default function useConfirmDialog() {
             {/* Message */}
             {state.message && (
               <p className="text-xs text-slate-600 mb-5 leading-relaxed">{state.message}</p>
+            )}
+
+            {/* Optional Reason Dropdown & Custom Reason Field */}
+            {state.reasonOptions && state.reasonOptions.length > 0 && (
+              <div className="mb-5 space-y-2 text-left">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Select Archive Reason *
+                </label>
+                <select
+                  value={selectedReason}
+                  onChange={(e) => {
+                    setSelectedReason(e.target.value);
+                    setReasonError('');
+                  }}
+                  className="w-full bg-slate-50/80 border border-slate-200 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none transition-all cursor-pointer"
+                >
+                  {state.reasonOptions.map((opt, i) => (
+                    <option key={i} value={opt}>{opt}</option>
+                  ))}
+                </select>
+                {selectedReason.startsWith('Other') && (
+                  <div className="pt-1 animate-fade-in">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Specify Custom Reason *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Please enter exact details..."
+                      value={customReason}
+                      onChange={(e) => {
+                        setCustomReason(e.target.value);
+                        setReasonError('');
+                      }}
+                      required
+                      className="w-full bg-white border border-slate-200 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none transition-all"
+                    />
+                  </div>
+                )}
+                {reasonError && (
+                  <p className="text-[11px] font-semibold text-rose-600 flex items-center gap-1 animate-fade-in">
+                    <span>•</span> {reasonError}
+                  </p>
+                )}
+              </div>
             )}
 
             {/* Actions */}

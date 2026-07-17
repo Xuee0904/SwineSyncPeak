@@ -120,7 +120,10 @@ router.get('/api/pigs', async (req, res) => {
       age_weeks: pig.date_of_birth ? Math.floor((Date.now() - new Date(pig.date_of_birth)) / 604800000) : '—',
       current_weight: pig.weight,
       category: (pig.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
-      status: pig.status || 'healthy'
+      status: pig.status || 'healthy',
+      is_archived: pig.is_archived || false,
+      archived_at: pig.archived_at || null,
+      archive_reasoning: pig.archive_reasoning || null,
     }));
 
     const unifiedBatches = batchData.map(batch => ({
@@ -133,7 +136,10 @@ router.get('/api/pigs', async (req, res) => {
         : '—',
       current_weight: batch.average_weight,
       category: 'Piglet Batch',
-      status: batch.status || 'suckling'
+      status: batch.status || 'suckling',
+      is_archived: batch.is_archived || false,
+      archived_at: batch.archived_at || null,
+      archive_reasoning: batch.archive_reasoning || null,
     }));
 
     let merged = [...unifiedPigs, ...unifiedBatches];
@@ -188,6 +194,8 @@ router.get('/api/pigs/archived', async (req, res) => {
       category: (pig.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
       status: pig.status || 'healthy',
       is_archived: true,
+      archived_at: pig.archived_at || null,
+      archive_reasoning: pig.archive_reasoning || null,
     }));
 
     const unifiedBatches = batchData.map(batch => ({
@@ -200,6 +208,8 @@ router.get('/api/pigs/archived', async (req, res) => {
       category: 'Piglet Batch',
       status: batch.status || 'suckling',
       is_archived: true,
+      archived_at: batch.archived_at || null,
+      archive_reasoning: batch.archive_reasoning || null,
     }));
 
     let merged = [...unifiedPigs, ...unifiedBatches];
@@ -227,7 +237,6 @@ router.get('/api/pigs/:id', async (req, res) => {
       .from('pigs')
       .select('*, breeds(name), pens(pen_code)')
       .eq('pig_id', id)
-      .eq('is_archived', false)
       .maybeSingle();
 
     if (error) throw error;
@@ -246,6 +255,9 @@ router.get('/api/pigs/:id', async (req, res) => {
           gender: data.gender,
           category: (data.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
           parity_count: data.parity_count ?? '',
+          is_archived: data.is_archived || false,
+          archived_at: data.archived_at || null,
+          archive_reasoning: data.archive_reasoning || null,
         },
       });
     }
@@ -255,7 +267,6 @@ router.get('/api/pigs/:id', async (req, res) => {
       .from('piglet_batches')
       .select('*, breeds(name), pens(pen_code)')
       .eq('batch_id', id)
-      .eq('is_archived', false)
       .maybeSingle();
 
     if (batchError) throw batchError;
@@ -280,6 +291,9 @@ router.get('/api/pigs/:id', async (req, res) => {
         stillborn_count: batchData.stillborn_count,
         mummy_count: batchData.mummy_count,
         category: 'Piglet Batch',
+        is_archived: batchData.is_archived || false,
+        archived_at: batchData.archived_at || null,
+        archive_reasoning: batchData.archive_reasoning || null,
       },
     });
   } catch (error) {
@@ -633,13 +647,18 @@ router.put('/api/pigs/:id', async (req, res) => {
 router.patch('/api/pigs/:id/archive', async (req, res) => {
   try {
     const { id } = req.params;
-    const { creator } = req.body;
+    const { creator, archive_reasoning } = req.body;
     const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator || 'Admin');
+
+    const updatePayload = { is_archived: true, archived_at: new Date().toISOString() };
+    if (archive_reasoning !== undefined) {
+      updatePayload.archive_reasoning = archive_reasoning;
+    }
 
     // Try pigs table first
     const { data: pigData, error: pigError } = await supabaseAdmin
       .from('pigs')
-      .update({ is_archived: true })
+      .update(updatePayload)
       .eq('pig_id', id)
       .select();
 
@@ -653,7 +672,7 @@ router.patch('/api/pigs/:id/archive', async (req, res) => {
         user_initials: creatorInitials,
         user_bg_color: 'bg-rose-100 text-rose-700',
         event_title: 'Swine Record Archived',
-        event_desc: `Archived swine record with tag ${tag}.`,
+        event_desc: archive_reasoning ? `Archived swine record with tag ${tag}. Reason: ${archive_reasoning}` : `Archived swine record with tag ${tag}.`,
         status: 'SUCCESS'
       });
       return res.json({ message: 'Pig archived successfully', data: pigData });
@@ -662,7 +681,7 @@ router.patch('/api/pigs/:id/archive', async (req, res) => {
     // Fallback to piglet_batches
     const { data: batchData, error: batchError } = await supabaseAdmin
       .from('piglet_batches')
-      .update({ is_archived: true })
+      .update(updatePayload)
       .eq('batch_id', id)
       .select();
 
@@ -679,7 +698,7 @@ router.patch('/api/pigs/:id/archive', async (req, res) => {
       user_initials: creatorInitials,
       user_bg_color: 'bg-rose-100 text-rose-700',
       event_title: 'Batch Archived',
-      event_desc: `Archived piglet batch with tag ${tag}.`,
+      event_desc: archive_reasoning ? `Archived piglet batch with tag ${tag}. Reason: ${archive_reasoning}` : `Archived piglet batch with tag ${tag}.`,
       status: 'SUCCESS'
     });
 

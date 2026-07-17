@@ -217,11 +217,11 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
   };
 
   // Archive pig — called after the confirm dialog is accepted
-  const handleArchivePig = async (pig) => {
+  const handleArchivePig = async (pig, reason = null) => {
     const res = await fetch(`${API_BASE}/api/pigs/${pig.id}/archive`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ creator: loggedInUser }),
+      body: JSON.stringify({ creator: loggedInUser, archive_reasoning: reason }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Failed to archive record.');
@@ -234,12 +234,27 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
 
   // Open the confirm dialog for a given pig
   const promptArchive = (pig) => {
+    const isBatch = pig.category === 'Piglet Batch';
     openConfirm({
       title: 'Archive this record?',
       subtitle: `#${pig.pig_tag ?? pig.id}`,
       message: 'This swine will be moved to the Archived view and removed from the active list. You can still view it at any time.',
       confirmLabel: 'Yes, Archive',
-      onConfirm: () => handleArchivePig(pig),
+      reasonOptions: isBatch ? [
+        'Sold Out - Batch Fully Liquidated',
+        'Transitioned to Breeding Herd (Gilts/Boars)',
+        'Merged with Another Batch',
+        'Mortality - Total Batch Loss',
+        'Other (Specify below)'
+      ] : [
+        'Sold / Marketed',
+        'Culled - Age & Productivity',
+        'Culled - Health & Injury',
+        'Mortality - Natural / Medical',
+        'Transferred to Another Facility',
+        'Other (Specify below)'
+      ],
+      onConfirm: (reason) => handleArchivePig(pig, reason),
     });
   };
 
@@ -575,8 +590,9 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                     </td>
                     <td className="py-3 px-4">
                       {viewArchived
-                        ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
-                            <Archive className="w-3 h-3" /> Archived
+                        ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/60 shadow-sm" title={pig.archive_reasoning || 'Archived'}>
+                            <Archive className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span className="truncate max-w-[170px]">{pig.archive_reasoning || 'Archived'}</span>
                           </span>
                         : <StatusBadge status={pig.status} />
                       }

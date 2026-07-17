@@ -457,6 +457,12 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
                       {isBatch ? 'Piglet Batch' : (data.category || 'Swine Record')}
                     </span>
                     <StatusBadge status={status} />
+                    {data.is_archived && (
+                      <span className="text-xs font-bold uppercase tracking-wider text-amber-300 bg-amber-500/20 px-2.5 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1.5">
+                        <Archive className="w-3 h-3" />
+                        <span>{data.archive_reasoning || 'Archived'}</span>
+                      </span>
+                    )}
                   </div>
                   <h2 className="text-2xl font-black tracking-tight mt-1 text-white">#{tag}</h2>
                   {dob && (
@@ -484,6 +490,21 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
                     <div className="p-3 bg-amber-50 border border-amber-200/80 rounded-xl flex items-center gap-2 text-xs text-amber-800">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                       <span>{error}</span>
+                    </div>
+                  )}
+
+                  {data.is_archived && (
+                    <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-4 flex items-start gap-3.5 shadow-sm">
+                      <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center shrink-0 text-amber-700">
+                        <Archive className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-amber-900">Archived Swine Record</h4>
+                        <p className="text-xs text-amber-800/90 mt-0.5 leading-relaxed">
+                          Reason: <span className="font-bold">{data.archive_reasoning || 'Not specified'}</span>
+                          {data.archived_at && ` • Archived on ${new Date(data.archived_at).toLocaleDateString()}`}
+                        </p>
+                      </div>
                     </div>
                   )}
 
