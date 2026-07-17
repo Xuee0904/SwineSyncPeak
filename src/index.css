@@ -59,6 +59,12 @@
   }
 }
 
+/* Confirm dialog pop-in animation (used by useConfirmDialog hook) */
+@keyframes confirmIn {
+  from { opacity: 0; transform: scale(0.93) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 @utility font-display {
   font-family: var(--font-display);
 }

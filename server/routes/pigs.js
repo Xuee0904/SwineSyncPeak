@@ -151,6 +151,74 @@ router.get('/api/pigs', async (req, res) => {
   }
 });
 
+// GET /api/pigs/archived – fetch archived pig & batch records
+router.get('/api/pigs/archived', async (req, res) => {
+  try {
+    const { search, category, breed, page, limit } = req.query;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const pageSize = parseInt(limit) || 10;
+    const from = (pageNum - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    let pigData = [], batchData = [];
+    const queryPigs = !category || ['all', 'sow', 'boar'].includes(category);
+    const queryBatches = !category || ['all', 'piglet_batch'].includes(category);
+
+    if (queryPigs) {
+      let q = supabase.from('pigs').select('*, breeds(name)').eq('is_archived', true);
+      if (search) q = q.ilike('pig_tag', `%${search}%`);
+      const { data } = await q;
+      pigData = data || [];
+    }
+
+    if (queryBatches) {
+      let q = supabase.from('piglet_batches').select('*, breeds(name)').eq('is_archived', true);
+      if (search) q = q.ilike('batch_tag', `%${search}%`);
+      const { data } = await q;
+      batchData = data || [];
+    }
+
+    const unifiedPigs = pigData.map(pig => ({
+      id: pig.pig_id,
+      pig_tag: pig.pig_tag,
+      breed: pig.breeds?.name || '—',
+      breed_id: pig.breed_id,
+      age_weeks: pig.date_of_birth ? Math.floor((Date.now() - new Date(pig.date_of_birth)) / 604800000) : '—',
+      current_weight: pig.weight,
+      category: (pig.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
+      status: pig.status || 'healthy',
+      is_archived: true,
+    }));
+
+    const unifiedBatches = batchData.map(batch => ({
+      id: batch.batch_id,
+      pig_tag: batch.batch_tag,
+      breed: batch.breeds?.name || '—',
+      breed_id: batch.breed_id,
+      age_weeks: batch.date_of_birth ? Math.floor((Date.now() - new Date(batch.date_of_birth)) / 604800000) : '—',
+      current_weight: batch.average_weight,
+      category: 'Piglet Batch',
+      status: batch.status || 'suckling',
+      is_archived: true,
+    }));
+
+    let merged = [...unifiedPigs, ...unifiedBatches];
+    if (category && category !== 'all') {
+      const map = { sow: 'Sow', boar: 'Boar', piglet_batch: 'Piglet Batch' };
+      merged = merged.filter(i => i.category === map[category]);
+    }
+    if (breed && breed !== 'all') {
+      merged = merged.filter(i => (i.breed_id && i.breed_id === breed) || (i.breed && i.breed.toLowerCase() === breed.toLowerCase()));
+    }
+
+    res.json({ data: merged.slice(from, to + 1), count: merged.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+
 // GET /api/pigs/:id – single pig record with full detail, for the Edit modal.
 router.get('/api/pigs/:id', async (req, res) => {
   try {
@@ -557,6 +625,67 @@ router.put('/api/pigs/:id', async (req, res) => {
     res.json({ message: 'Pig updated successfully', data });
   } catch (error) {
     console.error('Error updating pig:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/pigs/:id/archive – soft-archive a pig or piglet batch
+router.patch('/api/pigs/:id/archive', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { creator } = req.body;
+    const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator || 'Admin');
+
+    // Try pigs table first
+    const { data: pigData, error: pigError } = await supabaseAdmin
+      .from('pigs')
+      .update({ is_archived: true })
+      .eq('pig_id', id)
+      .select();
+
+    if (pigError) throw pigError;
+
+    if (pigData && pigData.length > 0) {
+      const tag = pigData[0].pig_tag || id;
+      await supabaseAdmin.from('activity_logs').insert({
+        user_name: creatorName,
+        user_email: creatorEmail,
+        user_initials: creatorInitials,
+        user_bg_color: 'bg-rose-100 text-rose-700',
+        event_title: 'Swine Record Archived',
+        event_desc: `Archived swine record with tag ${tag}.`,
+        status: 'SUCCESS'
+      });
+      return res.json({ message: 'Pig archived successfully', data: pigData });
+    }
+
+    // Fallback to piglet_batches
+    const { data: batchData, error: batchError } = await supabaseAdmin
+      .from('piglet_batches')
+      .update({ is_archived: true })
+      .eq('batch_id', id)
+      .select();
+
+    if (batchError) throw batchError;
+
+    if (!batchData || batchData.length === 0) {
+      return res.status(404).json({ error: 'Record not found.' });
+    }
+
+    const tag = batchData[0].batch_tag || id;
+    await supabaseAdmin.from('activity_logs').insert({
+      user_name: creatorName,
+      user_email: creatorEmail,
+      user_initials: creatorInitials,
+      user_bg_color: 'bg-rose-100 text-rose-700',
+      event_title: 'Batch Archived',
+      event_desc: `Archived piglet batch with tag ${tag}.`,
+      status: 'SUCCESS'
+    });
+
+    return res.json({ message: 'Piglet batch archived successfully', data: batchData });
+  } catch (error) {
+    console.error('Error archiving record:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

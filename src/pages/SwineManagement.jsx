@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   PiggyBank, AlertTriangle, Activity, Download, Plus,
   Search, ChevronLeft, ChevronRight, MoreVertical, RefreshCw,
-  X, Grid3X3, AlertCircle, Edit2, Archive, Eye,
+  X, Grid3X3, AlertCircle, Edit2, Archive, ArchiveX,
 } from 'lucide-react';
 import AddPigModal from '../components/SwineManagement/AddPigModal.jsx';
 import EditPigModal from '../components/SwineManagement/EditPigModal.jsx';
 import ViewPigModal from '../components/SwineManagement/ViewPigModal.jsx';
+import useConfirmDialog from '../hooks/useConfirmDialog.jsx';
 import toast from '../utils/toast';
 import StatusBadge from '../components/StatusBadge.jsx';
 
@@ -80,7 +81,18 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedPig, setSelectedPig] = useState(null);
 
+  // Reusable confirm dialog hook (portal-based, blurs full page)
+  const { confirmDialog, openConfirm } = useConfirmDialog();
+
+  // Archived records view
+  const [viewArchived, setViewArchived] = useState(false);
+  const [archivedList, setArchivedList] = useState([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [archivedTotal, setArchivedTotal] = useState(0);
+  const [archivedPage, setArchivedPage] = useState(1);
+
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const archivedTotalPages = Math.max(1, Math.ceil(archivedTotal / PAGE_SIZE));
 
   const fetchStats = useCallback(async () => {
     setStatsLoading(true);
@@ -187,14 +199,62 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     fetchStats();
   };
 
+  // Archive pig — called after the confirm dialog is accepted
+  const handleArchivePig = async (pig) => {
+    const res = await fetch(`${API_BASE}/api/pigs/${pig.id}/archive`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ creator: loggedInUser }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Failed to archive record.');
+    toast.success(`#${pig.pig_tag ?? pig.id} has been archived.`);
+    setIsViewModalOpen(false);
+    setSelectedPig(null);
+    fetchSwine();
+    fetchStats();
+  };
+
+  // Open the confirm dialog for a given pig
+  const promptArchive = (pig) => {
+    openConfirm({
+      title: 'Archive this record?',
+      subtitle: `#${pig.pig_tag ?? pig.id}`,
+      message: 'This swine will be moved to the Archived view and removed from the active list. You can still view it at any time.',
+      confirmLabel: 'Yes, Archive',
+      onConfirm: () => handleArchivePig(pig),
+    });
+  };
+
+  // Fetch archived records
+  const fetchArchived = useCallback(async () => {
+    setArchivedLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(archivedPage), limit: String(PAGE_SIZE) });
+      if (search && search !== '') params.set('search', search);
+      const res = await fetch(`${API_BASE}/api/pigs/archived?${params}`);
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const data = await res.json();
+      setArchivedList(data.data ?? []);
+      setArchivedTotal(data.count ?? 0);
+    } catch {
+      setArchivedList([]);
+      setArchivedTotal(0);
+    } finally {
+      setArchivedLoading(false);
+    }
+  }, [archivedPage, search]);
+
   useEffect(() => {
     fetchStats();
     fetchPens();
     fetchBreeds();
   }, [fetchStats, fetchPens, fetchBreeds]);
   useEffect(() => { fetchSwine(); }, [fetchSwine]);
+  useEffect(() => { if (viewArchived) fetchArchived(); }, [fetchArchived, viewArchived]);
 
   useEffect(() => { setPage(1); }, [search, filterPen, filterCat, filterBreed]);
+  useEffect(() => { setArchivedPage(1); }, [search]);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 400);
@@ -281,7 +341,32 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="px-5 pt-5 pb-4 border-b border-slate-50">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <h3 className="text-sm font-bold text-slate-800">Swine List</h3>
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-bold text-slate-800">
+                {viewArchived ? 'Archived Records' : 'Swine List'}
+              </h3>
+              {/* Active / Archived tab toggle */}
+              <div className="flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
+                <button
+                  onClick={() => setViewArchived(false)}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                    !viewArchived ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                  id="swine-tab-active"
+                >
+                  Active
+                </button>
+                <button
+                  onClick={() => setViewArchived(true)}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
+                    viewArchived ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                  id="swine-tab-archived"
+                >
+                  <Archive className="w-3 h-3" /> Archived
+                </button>
+              </div>
+            </div>
             <div className="flex items-center gap-2">
               <button
                 className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
@@ -290,61 +375,67 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                 <Download className="w-3.5 h-3.5" /> Export
               </button>
               
-              <button
-                onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
-                id="add-swine-btn"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add new swine
-              </button>
+              {!viewArchived && (
+                <button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
+                  id="add-swine-btn"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add new swine
+                </button>
+              )}
             </div>
           </div>
 
           <div className="flex flex-wrap items-end gap-3 mt-4">
-            <div className="flex flex-col gap-0.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Pen</label>
-              <select
-                value={filterPen}
-                onChange={e => setFilterPen(e.target.value)}
-                className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
-                id="pen-filter-select"
-              >
-                <option value="all">All Pens</option>
-                {pens.map(p => (
-                  <option key={p.id} value={String(p.id)}>{p.name}</option>
-                ))}
-              </select>
-            </div>
+            {!viewArchived && (
+              <>
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Pen</label>
+                  <select
+                    value={filterPen}
+                    onChange={e => setFilterPen(e.target.value)}
+                    className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
+                    id="pen-filter-select"
+                  >
+                    <option value="all">All Pens</option>
+                    {pens.map(p => (
+                      <option key={p.id} value={String(p.id)}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
 
-            <div className="flex flex-col gap-0.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Category</label>
-              <select
-                value={filterCat}
-                onChange={e => setFilterCat(e.target.value)}
-                className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
-                id="category-filter-select"
-              >
-                <option value="all">All Categories</option>
-                <option value="sow">Sow</option>
-                <option value="boar">Boar</option>
-                <option value="piglet_batch">Piglet Batch</option>
-              </select>
-            </div>
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Category</label>
+                  <select
+                    value={filterCat}
+                    onChange={e => setFilterCat(e.target.value)}
+                    className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
+                    id="category-filter-select"
+                  >
+                    <option value="all">All Categories</option>
+                    <option value="sow">Sow</option>
+                    <option value="boar">Boar</option>
+                    <option value="piglet_batch">Piglet Batch</option>
+                  </select>
+                </div>
 
-            <div className="flex flex-col gap-0.5">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Breed</label>
-              <select
-                value={filterBreed}
-                onChange={e => setFilterBreed(e.target.value)}
-                className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
-                id="breed-filter-select"
-              >
-                <option value="all">All Breeds</option>
-                {breeds.map(b => (
-                  <option key={b.breed_id || b.name} value={b.name}>{b.name}</option>
-                ))}
-              </select>
-            </div>
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Breed</label>
+                  <select
+                    value={filterBreed}
+                    onChange={e => setFilterBreed(e.target.value)}
+                    className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
+                    id="breed-filter-select"
+                  >
+                    <option value="all">All Breeds</option>
+                    {breeds.map(b => (
+                      <option key={b.breed_id || b.name} value={b.name}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
 
             <div className="flex flex-col gap-0.5 ml-auto">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Search</label>
@@ -383,9 +474,9 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
               </tr>
             </thead>
             <tbody>
-              {listLoading ? (
+              {(viewArchived ? archivedLoading : listLoading) ? (
                 <TableSkeleton rows={PAGE_SIZE} />
-              ) : listError ? (
+              ) : !viewArchived && listError ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center">
                     <div className="flex flex-col items-center gap-3">
@@ -402,32 +493,46 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                     </div>
                   </td>
                 </tr>
-              ) : swineList.length === 0 ? (
+              ) : (viewArchived ? archivedList : swineList).length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center">
-                        <PiggyBank className="w-5 h-5 text-slate-300" />
+                        {viewArchived
+                          ? <ArchiveX className="w-5 h-5 text-slate-300" />
+                          : <PiggyBank className="w-5 h-5 text-slate-300" />}
                       </div>
-                      <p className="text-xs font-semibold text-slate-400">No swine match your filters</p>
-                      <button
-                        onClick={() => { setFilterPen('all'); setFilterCat('all'); setFilterBreed('all'); setSearchInput(''); }}
-                        className="text-xs font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer"
-                      >
-                        Clear filters
-                      </button>
+                      <p className="text-xs font-semibold text-slate-400">
+                        {viewArchived ? 'No archived records found' : 'No swine match your filters'}
+                      </p>
+                      {!viewArchived && (
+                        <button
+                          onClick={() => { setFilterPen('all'); setFilterCat('all'); setFilterBreed('all'); setSearchInput(''); }}
+                          className="text-xs font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                        >
+                          Clear filters
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
               ) : (
-                swineList.map((pig, idx) => (
+                (viewArchived ? archivedList : swineList).map((pig, idx) => (
                   <tr
                     key={pig.id ?? idx}
                     onClick={() => { setSelectedPig(pig); setIsViewModalOpen(true); }}
-                    className="border-b border-slate-50 hover:bg-slate-50/70 transition-colors group cursor-pointer"
+                    className={`border-b border-slate-50 transition-colors group cursor-pointer ${
+                      viewArchived
+                        ? 'opacity-70 hover:opacity-100 hover:bg-amber-50/40'
+                        : 'hover:bg-slate-50/70'
+                    }`}
                   >
                     <td className="py-3 px-4">
-                      <span className="text-xs font-bold text-emerald-600 group-hover:text-emerald-700 transition-colors">
+                      <span className={`text-xs font-bold transition-colors ${
+                        viewArchived
+                          ? 'text-slate-400 group-hover:text-slate-600'
+                          : 'text-emerald-600 group-hover:text-emerald-700'
+                      }`}>
                         #{pig.pig_tag ?? pig.id ?? '—'}
                       </span>
                     </td>
@@ -452,37 +557,37 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      <StatusBadge status={pig.status} />
+                      {viewArchived
+                        ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                            <Archive className="w-3 h-3" /> Archived
+                          </span>
+                        : <StatusBadge status={pig.status} />
+                      }
                     </td>
                     <td className="py-3 px-4 text-right pr-6 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => { setSelectedPig(pig); setIsViewModalOpen(true); }}
-                          className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
-                          title="View Details"
-                          id={`swine-view-${pig.id ?? idx}`}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { setSelectedPig(pig); setIsEditModalOpen(true); }}
-                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
-                          title="Edit Record"
-                          id={`swine-edit-${pig.id ?? idx}`}
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toast.info('Archiving record feature will be available soon.')}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
-                          title="Archive Record"
-                          id={`swine-archive-${pig.id ?? idx}`}
-                        >
-                          <Archive className="w-3.5 h-3.5" />
-                        </button>
+                        {!viewArchived && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => { setSelectedPig(pig); setIsEditModalOpen(true); }}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
+                              title="Edit Record"
+                              id={`swine-edit-${pig.id ?? idx}`}
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => promptArchive(pig)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
+                              title="Archive Record"
+                              id={`swine-archive-${pig.id ?? idx}`}
+                            >
+                              <Archive className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -494,37 +599,41 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
 
         <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-50">
           <p className="text-[11px] font-semibold text-slate-400">
-            {listLoading
+            {(viewArchived ? archivedLoading : listLoading)
               ? 'Loading…'
-              : `Showing ${totalCount === 0 ? 0 : Math.min((page - 1) * PAGE_SIZE + 1, totalCount)}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount.toLocaleString()} Swine`}
+              : viewArchived
+                ? `Showing ${archivedTotal === 0 ? 0 : Math.min((archivedPage - 1) * PAGE_SIZE + 1, archivedTotal)}–${Math.min(archivedPage * PAGE_SIZE, archivedTotal)} of ${archivedTotal.toLocaleString()} Archived`
+                : `Showing ${totalCount === 0 ? 0 : Math.min((page - 1) * PAGE_SIZE + 1, totalCount)}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount.toLocaleString()} Swine`}
           </p>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1 || listLoading}
+              onClick={() => viewArchived ? setArchivedPage(p => Math.max(1, p - 1)) : setPage(p => Math.max(1, p - 1))}
+              disabled={(viewArchived ? archivedPage <= 1 : page <= 1) || (viewArchived ? archivedLoading : listLoading)}
               className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
               id="swine-prev-page-btn"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
 
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+            {Array.from({ length: Math.min(viewArchived ? archivedTotalPages : totalPages, 5) }, (_, i) => {
+              const activePage = viewArchived ? archivedPage : page;
+              const activeTotal = viewArchived ? archivedTotalPages : totalPages;
               let pg;
-              if (totalPages <= 5)         pg = i + 1;
-              else if (page <= 3)          pg = i + 1;
-              else if (page >= totalPages - 2) pg = totalPages - 4 + i;
-              else                         pg = page - 2 + i;
+              if (activeTotal <= 5)               pg = i + 1;
+              else if (activePage <= 3)           pg = i + 1;
+              else if (activePage >= activeTotal - 2) pg = activeTotal - 4 + i;
+              else                               pg = activePage - 2 + i;
               return (
                 <button
                   key={pg}
-                  onClick={() => setPage(pg)}
-                  disabled={listLoading}
+                  onClick={() => viewArchived ? setArchivedPage(pg) : setPage(pg)}
+                  disabled={viewArchived ? archivedLoading : listLoading}
                   className={[
                     'w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer',
-                    pg === page
+                    pg === (viewArchived ? archivedPage : page)
                       ? 'bg-emerald-600 text-white shadow-sm'
                       : 'border border-slate-200 text-slate-600 hover:bg-slate-50',
-                    listLoading ? 'opacity-60 cursor-not-allowed' : '',
+                    (viewArchived ? archivedLoading : listLoading) ? 'opacity-60 cursor-not-allowed' : '',
                   ].join(' ')}
                   id={`swine-page-${pg}-btn`}
                 >
@@ -534,8 +643,8 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
             })}
 
             <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || listLoading}
+              onClick={() => viewArchived ? setArchivedPage(p => Math.min(archivedTotalPages, p + 1)) : setPage(p => Math.min(totalPages, p + 1))}
+              disabled={(viewArchived ? archivedPage >= archivedTotalPages : page >= totalPages) || (viewArchived ? archivedLoading : listLoading)}
               className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
               id="swine-next-page-btn"
             >
@@ -544,6 +653,9 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
           </div>
         </div>
       </div>
+
+      {/* Portal-based confirm dialog (from useConfirmDialog hook) */}
+      {confirmDialog}
 
       <AddPigModal 
         isOpen={isAddModalOpen}
@@ -566,9 +678,10 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
         isOpen={isViewModalOpen}
         onClose={() => { setIsViewModalOpen(false); setSelectedPig(null); }}
         onSave={handleUpdatePig}
-        onArchive={(pig) => {
-          toast.info('Archiving record feature will be available soon.');
-        }}
+        onArchive={!viewArchived ? (pig) => {
+          setIsViewModalOpen(false);
+          promptArchive(pig);
+        } : null}
         pigData={selectedPig}
       />
     </div>
