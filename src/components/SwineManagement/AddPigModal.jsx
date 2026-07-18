@@ -11,7 +11,7 @@ import { supabase } from '../../supabaseClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
-const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Inactive'];
+const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
 
 const EMPTY_FORM = {
   tagNumber: '',
@@ -47,6 +47,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [autoRestoreBatch, setAutoRestoreBatch] = useState(false);
   const [batchDraftInfo, setBatchDraftInfo] = useState(null);
 
   const checkBatchDraft = useCallback(async () => {
@@ -118,6 +119,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
 
   const resetAndClose = () => {
     requestClose(() => {
+      setAutoRestoreBatch(false);
       setStep('select');
       setGender(null);
       resetForm(EMPTY_FORM);
@@ -142,6 +144,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
   };
 
   const handleRestoreBatchDraft = () => {
+    setAutoRestoreBatch(true);
     setStep('batch');
   };
 
@@ -181,10 +184,28 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
 
   const validate = () => {
     const next = {};
+    const today = new Date().toISOString().split('T')[0];
+    const minDate = new Date();
+    minDate.setFullYear(minDate.getFullYear() - 15);
+    const minDobStr = minDate.toISOString().split('T')[0];
+
     if (!form.tagNumber.trim()) next.tagNumber = 'Tag number is required';
-    if (!form.dateOfBirth) next.dateOfBirth = 'Date of birth is required';
+    if (!form.dateOfBirth) {
+      next.dateOfBirth = 'Date of birth is required';
+    } else if (form.dateOfBirth > today) {
+      next.dateOfBirth = 'Date of birth cannot be in the future';
+    } else if (form.dateOfBirth < minDobStr) {
+      next.dateOfBirth = 'Date of birth is too far in the past (max 15 years)';
+    }
     if (!form.breed.trim()) next.breed = 'Breed is required';
-    if (!form.weight || Number(form.weight) <= 0) next.weight = 'Enter valid weight';
+    const w = Number(form.weight);
+    if (form.weight === '' || form.weight === undefined || form.weight === null || isNaN(w)) {
+      next.weight = 'Enter valid weight';
+    } else if (w < 0) {
+      next.weight = 'Weight cannot be negative';
+    } else if (w > 500) {
+      next.weight = 'Weight cannot exceed 500 kg';
+    }
     if (!form.penId) next.penId = 'Select a pen code';
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -228,6 +249,14 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
   const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs pl-10 pr-4";
   const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
   const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 text-rose-955 bg-rose-50/10";
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const minDate = new Date();
+  minDate.setFullYear(minDate.getFullYear() - 15);
+  const minDobStr = minDate.toISOString().split('T')[0];
+  const isFutureDob = Boolean(form.dateOfBirth && form.dateOfBirth > todayStr);
+  const isPastDob = Boolean(form.dateOfBirth && form.dateOfBirth < minDobStr);
+  const isInvalidWeight = Boolean(form.weight !== '' && form.weight !== undefined && form.weight !== null && (isNaN(Number(form.weight)) || Number(form.weight) < 0 || Number(form.weight) > 500));
 
   return createPortal(
     <>
@@ -273,7 +302,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
             {step !== 'batch' && step !== 'success' && (
               <div className="px-8 pt-2 space-y-2">
               <DraftBanner
-                hasDraft={hasDraft}
+                hasDraft={hasDraft && (step === 'select' || (step === 'form' && (!draftInfo?.extraMeta?.gender || draftInfo.extraMeta.gender === gender)))}
                 draftInfo={draftInfo}
                 onRestore={handleRestoreDraft}
                 onDiscard={handleDiscardDraft}
@@ -332,8 +361,8 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                     <Field label="Tag Number" error={errors.tagNumber} icon={<Tag />}>
                       <input type="text" value={form.tagNumber} onChange={handleChange('tagNumber')} placeholder="e.g. SW-29401" className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
                     </Field>
-                    <Field label="Date of Birth" error={errors.dateOfBirth} icon={<Calendar />}>
-                      <input type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${errors.dateOfBirth ? inputErr : inputOk}`} />
+                    <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
+                      <input type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} min={minDobStr} max={todayStr} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
                     </Field>
                   </div>
 
@@ -360,8 +389,8 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                         </ul>
                       )}
                     </div>
-                    <Field label="Weight (kg)" error={errors.weight} icon={<Weight />}>
-                      <input type="number" step="0.1" value={form.weight} onChange={handleChange('weight')} placeholder="0.0" className={`${inputBase} ${errors.weight ? inputErr : inputOk}`} />
+                    <Field label="Weight (kg)" error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
+                      <input type="number" step="0.1" min="0" max="500" value={form.weight} onChange={handleChange('weight')} placeholder="0.0" className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`} />
                     </Field>
                   </div>
 
@@ -417,10 +446,16 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
               {step === 'batch' && (
                 <AddPigletBatchForm
                   isOpen={isOpen && step === 'batch'}
-                  onBack={() => setStep('select')}
+                  autoRestore={autoRestoreBatch}
+                  onRestored={() => setAutoRestoreBatch(false)}
+                  onBack={() => {
+                    setAutoRestoreBatch(false);
+                    setStep('select');
+                  }}
                   onClose={resetAndClose}
                   onSave={onSaveBatch}
                   onSuccess={(info) => {
+                    setAutoRestoreBatch(false);
                     setSuccessInfo(info);
                     setStep('success');
                   }}

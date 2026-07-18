@@ -505,6 +505,26 @@ router.put('/api/pigs/:id', async (req, res) => {
 
     const checkIsBatch = category === 'Piglet Batch' || isBatch === true;
 
+    if (checkIsBatch) {
+      const { data: existingBatch } = await supabaseAdmin
+        .from('piglet_batches')
+        .select('is_archived')
+        .eq('batch_id', id)
+        .maybeSingle();
+      if (existingBatch && existingBatch.is_archived) {
+        return res.status(400).json({ error: 'Cannot modify details of an archived piglet batch.' });
+      }
+    } else {
+      const { data: existingPig } = await supabaseAdmin
+        .from('pigs')
+        .select('is_archived')
+        .eq('pig_id', id)
+        .maybeSingle();
+      if (existingPig && existingPig.is_archived) {
+        return res.status(400).json({ error: 'Cannot modify details of an archived swine record.' });
+      }
+    }
+
     // Resolve breed name → UUID
     let finalBreedId = breed;
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(breed);
@@ -725,6 +745,15 @@ router.put('/api/pigs/batch/:id', async (req, res) => {
 
     if (!resolvedTag || !breed || !penId) {
       return res.status(400).json({ error: 'Batch tag, breed, and pen are required.' });
+    }
+
+    const { data: existingBatch } = await supabaseAdmin
+      .from('piglet_batches')
+      .select('is_archived')
+      .eq('batch_id', id)
+      .maybeSingle();
+    if (existingBatch && existingBatch.is_archived) {
+      return res.status(400).json({ error: 'Cannot modify details of an archived piglet batch.' });
     }
 
     let finalBreedId = breed;

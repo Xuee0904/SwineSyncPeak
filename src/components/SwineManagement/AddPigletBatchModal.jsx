@@ -44,6 +44,8 @@ function generateBatchTag() {
 
 export function AddPigletBatchForm({
   isOpen = true,
+  autoRestore = false,
+  onRestored,
   onClose,
   onBack,
   onSave,
@@ -62,7 +64,7 @@ export function AddPigletBatchForm({
     clearDraft,
     checkDraft,
     isOffline,
-  } = useFormDraft('swinesync_draft_add_piglet_batch', () => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
+  } = useFormDraft('swinesync_draft_add_piglet_batch', () => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }), { autoRestore, onRestored });
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState(null);
@@ -90,12 +92,14 @@ export function AddPigletBatchForm({
 
   useEffect(() => {
     if (!isOpen) return;
-    Promise.resolve().then(() => {
-      checkDraft();
-      setErrors({});
-      setSubmitError(null);
-      resetForm(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
-    });
+    setErrors({});
+    setSubmitError(null);
+    if (!autoRestore) {
+      Promise.resolve().then(() => {
+        checkDraft();
+        resetForm(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
+      });
+    }
 
     const fetchData = async () => {
       setIsLoadingData(true);
@@ -141,11 +145,28 @@ export function AddPigletBatchForm({
 
   const validate = () => {
     const next = {};
+    const today = new Date().toISOString().split('T')[0];
+    const minDate = new Date();
+    minDate.setFullYear(minDate.getFullYear() - 15);
+    const minDobStr = minDate.toISOString().split('T')[0];
+
     if (!form.batchTag.trim())    next.batchTag    = 'Batch tag is required';
     if (!form.penId)              next.penId       = 'Select a pen';
-    if (!form.dateOfBirth)        next.dateOfBirth = 'Date of birth is required';
+    if (!form.dateOfBirth) {
+      next.dateOfBirth = 'Date of birth is required';
+    } else if (form.dateOfBirth > today) {
+      next.dateOfBirth = 'Date of birth cannot be in the future';
+    } else if (form.dateOfBirth < minDobStr) {
+      next.dateOfBirth = 'Date of birth is too far in the past (max 15 years)';
+    }
     if (!form.totalBornAlive || Number(form.totalBornAlive) <= 0)
       next.totalBornAlive = 'Enter at least 1 piglet born alive';
+    if (form.averageWeight) {
+      const w = Number(form.averageWeight);
+      if (isNaN(w)) next.averageWeight = 'Enter valid weight';
+      else if (w < 0) next.averageWeight = 'Weight cannot be negative';
+      else if (w > 500) next.averageWeight = 'Weight cannot exceed 500 kg';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -220,6 +241,15 @@ export function AddPigletBatchForm({
   const inputOk  = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
   const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 bg-rose-50/10 text-slate-900";
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const minDate = new Date();
+  minDate.setFullYear(minDate.getFullYear() - 15);
+  const minDobStr = minDate.toISOString().split('T')[0];
+  const isFutureDob = Boolean(form.dateOfBirth && form.dateOfBirth > todayStr);
+  const isPastDob = Boolean(form.dateOfBirth && form.dateOfBirth < minDobStr);
+  const isInvalidBornAlive = Boolean(form.totalBornAlive !== '' && form.totalBornAlive !== undefined && (isNaN(Number(form.totalBornAlive)) || Number(form.totalBornAlive) <= 0));
+  const isInvalidWeight = Boolean(form.averageWeight && (isNaN(Number(form.averageWeight)) || Number(form.averageWeight) < 0 || Number(form.averageWeight) > 500));
+
   return (
     <div className="flex max-h-[90vh] w-full flex-col bg-white overflow-hidden">
       {/* ── Header ── */}
@@ -289,8 +319,8 @@ export function AddPigletBatchForm({
                   </select>
                 </Field>
 
-                <Field label="Date of Birth" error={errors.dateOfBirth} icon={<Calendar />}>
-                  <input type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${errors.dateOfBirth ? inputErr : inputOk}`} />
+                <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
+                  <input type="date" min={minDobStr} max={todayStr} value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
                 </Field>
 
                 <Field label="Mother Sow (optional)" icon={<Heart />}>
@@ -352,8 +382,8 @@ export function AddPigletBatchForm({
             {/* ── Section 2: Count & Vitals ── */}
             <Section step="2" title="Count & Vitals">
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Total Born Alive" error={errors.totalBornAlive} icon={<Baby />}>
-                  <input type="number" min="0" value={form.totalBornAlive} onChange={handleBornAliveChange} placeholder="0" className={`${inputBase} ${errors.totalBornAlive ? inputErr : inputOk}`} />
+                <Field label="Total Born Alive" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet born alive' : undefined)} icon={<Baby />}>
+                  <input type="number" min="0" value={form.totalBornAlive} onChange={handleBornAliveChange} placeholder="0" className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`} />
                 </Field>
 
                 <Field label="Stillborn Count" icon={<Hash />}>
@@ -364,8 +394,8 @@ export function AddPigletBatchForm({
                   <input type="number" min="0" value={form.mummyCount} onChange={handleChange('mummyCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
                 </Field>
 
-                <Field label="Average Weight (kg)" icon={<Weight />}>
-                  <input type="number" min="0" step="0.01" value={form.averageWeight} onChange={handleChange('averageWeight')} placeholder="0.0" className={`${inputBase} ${inputOk}`} />
+                <Field label="Average Weight (kg)" error={errors.averageWeight || (isInvalidWeight ? (Number(form.averageWeight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
+                  <input type="number" min="0" max="500" step="0.1" value={form.averageWeight} onChange={handleChange('averageWeight')} placeholder="0.0" className={`${inputBase} ${errors.averageWeight || isInvalidWeight ? inputErr : inputOk}`} />
                 </Field>
               </div>
             </Section>

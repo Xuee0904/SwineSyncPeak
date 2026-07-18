@@ -58,9 +58,36 @@ export async function fetchDraftPayload(draftKey) {
  * @param {Object|Function} initialFormState - Initial state of the form.
  * @returns {Object} Draft utilities and form state management.
  */
-export default function useFormDraft(draftKey, initialFormState) {
-  const [form, setForm] = useState(initialFormState);
-  const [hasDraft, setHasDraft] = useState(false);
+export default function useFormDraft(draftKey, initialFormState, options = {}) {
+  const { autoRestore = false, onRestored = null } = typeof options === 'boolean' ? { autoRestore: options } : (options || {});
+
+  const [form, setForm] = useState(() => {
+    if (autoRestore && draftKey) {
+      try {
+        const saved = localStorage.getItem(draftKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.data) {
+            return parsed.data;
+          }
+        }
+      } catch (err) {
+        console.error('Error in synchronous autoRestore initial form:', err);
+      }
+    }
+    return typeof initialFormState === 'function' ? initialFormState() : initialFormState;
+  });
+
+  const [hasDraft, setHasDraft] = useState(() => {
+    if (autoRestore && draftKey) {
+      try {
+        const saved = localStorage.getItem(draftKey);
+        if (saved && JSON.parse(saved)?.data) return false;
+      } catch (err) {}
+    }
+    return false;
+  });
+
   const [draftInfo, setDraftInfo] = useState(null);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
@@ -89,6 +116,11 @@ export default function useFormDraft(draftKey, initialFormState) {
   // Check localStorage and cloud for existing draft
   const checkDraft = useCallback(async (syncOnly = false) => {
     if (!draftKey) return null;
+    if (autoRestore) {
+      setHasDraft(false);
+      setDraftInfo(null);
+      return null;
+    }
     let localPayload = null;
     try {
       const saved = localStorage.getItem(draftKey);
@@ -126,13 +158,32 @@ export default function useFormDraft(draftKey, initialFormState) {
     return localPayload;
   }, [draftKey]);
 
+  const hasAutoRestoredRef = useRef(false);
+
   useEffect(() => {
     let mounted = true;
+    if (autoRestore) {
+      if (hasAutoRestoredRef.current) return;
+      try {
+        const saved = draftKey ? localStorage.getItem(draftKey) : null;
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.data) {
+            hasAutoRestoredRef.current = true;
+            toast.success('Draft restored', 'We loaded your previously saved form entries.');
+            if (typeof onRestored === 'function') onRestored(parsed.extraMeta || {});
+            setHasDraft(false);
+            setDraftInfo(null);
+            return;
+          }
+        }
+      } catch (err) {}
+    }
     Promise.resolve().then(() => {
       if (mounted) checkDraft();
     });
     return () => { mounted = false; };
-  }, [checkDraft]);
+  }, [checkDraft, autoRestore, draftKey]);
 
   // Save current or provided form state as draft (local + cloud)
   const saveDraft = useCallback((formDataOverride = null, extraMeta = {}, notify = true) => {

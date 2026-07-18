@@ -9,28 +9,11 @@ import {
 import useModalAnimation from '../../hooks/useModalAnimation';
 import StatusBadge from '../../components/StatusBadge';
 import toast from '../../utils/toast';
+import { EditPigForm } from './EditPigModal';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
-const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Inactive'];
-const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Quarantine', 'Archived'];
-
-function toFormState(fullPig) {
-  const isBatch = fullPig.category === 'Piglet Batch' || Boolean(fullPig.batch_tag) || (typeof fullPig.pig_tag === 'string' && fullPig.pig_tag.startsWith('BATCH'));
-  return {
-    tagNumber: fullPig.batch_tag || fullPig.pig_tag || '',
-    dateOfBirth: fullPig.date_of_birth ? String(fullPig.date_of_birth).slice(0, 10) : '',
-    breed: fullPig.breed || '',
-    weight: fullPig.average_weight ?? fullPig.current_weight ?? fullPig.weight ?? '',
-    penId: fullPig.pen_id || '',
-    status: fullPig.status
-      ? (fullPig.status.charAt(0).toUpperCase() + fullPig.status.slice(1))
-      : (isBatch ? 'Suckling' : 'Healthy'),
-    parityCount: fullPig.parity_count ?? '',
-    totalBornAlive: fullPig.total_born_alive !== undefined && fullPig.total_born_alive !== null ? fullPig.total_born_alive : '',
-    stillbornCount: fullPig.stillborn_count !== undefined && fullPig.stillborn_count !== null ? fullPig.stillborn_count : 0,
-    mummyCount: fullPig.mummy_count !== undefined && fullPig.mummy_count !== null ? fullPig.mummy_count : 0,
-  };
-}
+const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
+const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Quarantine'];
 
 export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigData }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
@@ -43,19 +26,12 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Edit form state
-  const [form, setForm] = useState({});
-  const [errors, setErrors] = useState({});
-  const [isSaving, setIsSaving] = useState(false);
-  const [submitError, setSubmitError] = useState(null);
   const [successInfo, setSuccessInfo] = useState(null);
 
   // Edit dependencies
   const [pens, setPens] = useState([]);
   const [breeds, setBreeds] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
-  const [breedOpen, setBreedOpen] = useState(false);
-  const breedWrapRef = useRef(null);
 
   const isBatch = pigData?.category === 'Piglet Batch' || 
     Boolean(pigData?.batch_tag) || 
@@ -66,17 +42,10 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
     if (isOpen) {
       setMode('view');
       setSuccessInfo(null);
-      setSubmitError(null);
-      setErrors({});
     }
   }, [isOpen]);
 
-  const changeMode = useCallback((nextMode, dataToForm = null) => {
-    if (nextMode === 'edit' && dataToForm) {
-      setForm(toFormState(dataToForm));
-      setErrors({});
-      setSubmitError(null);
-    }
+  const changeMode = useCallback((nextMode) => {
     setMode(nextMode);
   }, []);
 
@@ -134,18 +103,11 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
     return () => { cancelled = true; };
   }, [mode]);
 
-  // Close breed dropdown on outside click
-  useEffect(() => {
-    if (!breedOpen) return;
-    const handler = (e) => { if (breedWrapRef.current && !breedWrapRef.current.contains(e.target)) setBreedOpen(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [breedOpen]);
-
   if (!shouldRender || !pigData) return null;
 
   // Derive display metrics
   const data = detail || pigData;
+  const isArchived = Boolean(data.is_archived || data.status?.toLowerCase() === 'archived' || onArchive === null);
   const tag = data.pig_tag || data.batch_tag || data.id || '—';
   const breed = data.breed || '—';
   const weight = data.current_weight ?? data.average_weight ?? data.weight ?? null;
@@ -165,58 +127,10 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
   const totalBorn = totalBornAlive + stillbornCount + mummyCount;
   const survivability = totalBorn > 0 ? ((totalBornAlive / totalBorn) * 100).toFixed(1) : null;
 
-  // Edit helpers
-  const handleChange = (field) => (e) => setForm(p => ({ ...p, [field]: e.target.value }));
-  
   const switchToEdit = () => {
-    changeMode('edit', data);
+    if (isArchived) return;
+    changeMode('edit');
   };
-
-  const validate = () => {
-    const next = {};
-    if (!form.tagNumber?.trim()) next.tagNumber = 'Required';
-    if (!form.breed?.trim()) next.breed = 'Required';
-    if (!form.penId) next.penId = 'Required';
-    setErrors(next);
-    return Object.keys(next).length === 0;
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validate()) return;
-    setIsSaving(true);
-    setSubmitError(null);
-    try {
-      await onSave?.(pigData.id, {
-        ...form,
-        weight: form.weight ? Number(form.weight) : null,
-        averageWeight: form.weight ? Number(form.weight) : null,
-        parityCount: data.category === 'Sow' ? Number(form.parityCount) : undefined,
-        totalBornAlive: isBatch ? Number(form.totalBornAlive) || 0 : undefined,
-        stillbornCount: isBatch ? Number(form.stillbornCount) || 0 : undefined,
-        mummyCount: isBatch ? Number(form.mummyCount) || 0 : undefined,
-        category: data.category || pigData.category,
-        isBatch,
-      });
-      setSuccessInfo({
-        type: isBatch ? 'Piglet Batch' : data.category || 'Swine',
-        tag: form.tagNumber || tag,
-        message: isBatch
-          ? `Piglet Batch #${form.tagNumber} has been successfully updated.`
-          : `Swine #${form.tagNumber} has been successfully updated.`
-      });
-      changeMode('success');
-      toast.success(isBatch ? `Batch #${form.tagNumber} updated!` : `Swine #${form.tagNumber} updated!`);
-    } catch (err) {
-      setSubmitError(err.message || 'Failed to update record.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs pl-10 pr-4";
-  const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
-  const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 text-rose-900 bg-rose-50/10";
 
   // Width class based on mode (view is max-w-xl so that edit at max-w-2xl/3xl smoothly widens out!)
   const maxWidthClass = mode === 'view' ? 'max-w-xl' : mode === 'edit' ? (isBatch ? 'max-w-3xl' : 'max-w-2xl') : 'max-w-md';
@@ -228,9 +142,9 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
     >
       <div
         style={{ willChange: 'transform, opacity, max-width' }}
-        className={`w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative transition-[max-width] duration-300 ease-in-out ${maxWidthClass} ${panelClassName}`}
+        className={`flex max-h-[92vh] flex-col w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative transition-[max-width] duration-300 ease-in-out ${maxWidthClass} ${panelClassName}`}
       >
-        <div className="flex flex-col w-full animate-in fade-in duration-300">
+        <div className="flex flex-col w-full animate-in fade-in duration-300 overflow-y-auto">
 
         {/* ──── SUCCESS VIEW ──── */}
         {mode === 'success' ? (
@@ -284,157 +198,33 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
               </button>
             </div>
 
+            {isArchived && (
+              <div className="mx-8 mt-4 p-3.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 font-medium">
+                <AlertCircle size={16} className="text-amber-600 shrink-0" />
+                <span>This record is archived and cannot be modified unless restored from archive.</span>
+              </div>
+            )}
+
             {isLoadingData ? (
               <div className="p-12 flex flex-col items-center justify-center gap-3 text-slate-400">
                 <Loader2 size={24} className="animate-spin text-emerald-600" />
                 <p className="text-xs font-semibold">Loading form data…</p>
               </div>
-            ) : isBatch ? (
-              /* Batch Edit Form */
-              <form onSubmit={handleSubmit} className="p-8 pt-6 space-y-5 text-left max-h-[70vh] overflow-y-auto animate-in fade-in duration-300">
-                {submitError && (
-                  <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
-                    <AlertCircle size={14} className="text-rose-500" />
-                    <span>{submitError}</span>
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Batch Tag ID" error={errors.tagNumber} icon={<Tag />}>
-                    <input type="text" value={form.tagNumber ?? ''} onChange={handleChange('tagNumber')} className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
-                  </Field>
-                  <Field label="Date of Birth" icon={<Calendar />}>
-                    <input type="date" value={form.dateOfBirth ?? ''} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${inputOk}`} />
-                  </Field>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="relative" ref={breedWrapRef}>
-                    <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
-                      <input type="text" value={form.breed ?? ''} onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }} onFocus={() => setBreedOpen(true)} className={`${inputBase} ${errors.breed ? inputErr : inputOk}`} autoComplete="off" />
-                    </Field>
-                    {breedOpen && breeds.length > 0 && (
-                      <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                        {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
-                          <li key={b.breed_id} onClick={() => { setForm(p => ({...p, breed: b.name})); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <Field label="Average Weight (kg)" icon={<Weight />}>
-                    <input type="number" step="0.1" value={form.weight ?? ''} onChange={handleChange('weight')} className={`${inputBase} ${inputOk}`} />
-                  </Field>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Pen Code" error={errors.penId} icon={<Home />}>
-                    <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
-                      <option value="">Select Pen</option>
-                      {pens.map(p => (<option key={p.id} value={p.id}>{p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}</option>))}
-                    </select>
-                  </Field>
-                  <Field label="Status" icon={<Activity />}>
-                    <select value={form.status ?? 'Suckling'} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
-                      {BATCH_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </Field>
-                </div>
-                {/* Batch Counts & Survivability */}
-                <div className="pt-2 border-t border-slate-100 space-y-4">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700"><Baby size={12} /></span>
-                    Batch Counts & Survivability
-                  </h4>
-                  <div className="grid grid-cols-3 gap-4">
-                    <Field label="Total Born Alive" icon={<Baby />}>
-                      <input type="number" min="0" value={form.totalBornAlive ?? ''} onChange={handleChange('totalBornAlive')} className={`${inputBase} ${inputOk}`} />
-                    </Field>
-                    <Field label="Stillborn Count" icon={<Hash />}>
-                      <input type="number" min="0" value={form.stillbornCount ?? ''} onChange={handleChange('stillbornCount')} className={`${inputBase} ${inputOk}`} />
-                    </Field>
-                    <Field label="Mummy Count" icon={<Shuffle />}>
-                      <input type="number" min="0" value={form.mummyCount ?? ''} onChange={handleChange('mummyCount')} className={`${inputBase} ${inputOk}`} />
-                    </Field>
-                  </div>
-                  {(() => {
-                    const bornAlive = Number(form.totalBornAlive) || 0;
-                    const totalLoss = (Number(form.stillbornCount) || 0) + (Number(form.mummyCount) || 0);
-                    const totalFarrowed = bornAlive + totalLoss;
-                    const surv = totalFarrowed > 0 ? Math.round((bornAlive / totalFarrowed) * 100) : 0;
-                    return (
-                      <div className="flex items-center justify-between p-3.5 bg-emerald-50/60 border border-emerald-100 rounded-2xl">
-                        <div>
-                          <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Survivability Rate</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{bornAlive} born alive of {totalFarrowed} total farrowed</p>
-                        </div>
-                        <span className="text-lg font-black text-emerald-600 bg-white px-3.5 py-1 rounded-xl shadow-sm border border-emerald-100">{surv}%</span>
-                      </div>
-                    );
-                  })()}
-                </div>
-                <div className="pt-4 flex gap-3">
-                  <button type="button" onClick={() => setMode('view')} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">Cancel</button>
-                  <button type="submit" disabled={isSaving} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer">
-                    {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'Update Batch Record'}
-                  </button>
-                </div>
-              </form>
             ) : (
-              /* Standard Pig Edit Form */
-              <form onSubmit={handleSubmit} className="p-8 pt-6 space-y-4 text-left max-h-[70vh] overflow-y-auto animate-in fade-in duration-300">
-                {submitError && (
-                  <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
-                    <AlertCircle size={14} className="text-rose-500" />
-                    <span>{submitError}</span>
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Tag Number" error={errors.tagNumber} icon={<Tag />}>
-                    <input type="text" value={form.tagNumber ?? ''} onChange={handleChange('tagNumber')} className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
-                  </Field>
-                  <Field label="Date of Birth" icon={<Calendar />}>
-                    <input type="date" value={form.dateOfBirth ?? ''} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${inputOk}`} />
-                  </Field>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="relative" ref={breedWrapRef}>
-                    <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
-                      <input type="text" value={form.breed ?? ''} onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }} onFocus={() => setBreedOpen(true)} className={`${inputBase} ${errors.breed ? inputErr : inputOk}`} autoComplete="off" />
-                    </Field>
-                    {breedOpen && breeds.length > 0 && (
-                      <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                        {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
-                          <li key={b.breed_id} onClick={() => { setForm(p => ({...p, breed: b.name})); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <Field label="Weight (kg)" icon={<Weight />}>
-                    <input type="number" step="0.1" value={form.weight ?? ''} onChange={handleChange('weight')} className={`${inputBase} ${inputOk}`} />
-                  </Field>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Pen Code" error={errors.penId} icon={<Home />}>
-                    <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
-                      <option value="">Select Pen</option>
-                      {pens.map(p => (<option key={p.id} value={p.id}>{p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}</option>))}
-                    </select>
-                  </Field>
-                  <Field label="Status" icon={<Activity />}>
-                    <select value={form.status ?? 'Healthy'} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
-                      {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </Field>
-                </div>
-                {data.category === 'Sow' && (
-                  <Field label="Parity Count" icon={<Ruler />}>
-                    <input type="number" value={form.parityCount ?? ''} onChange={handleChange('parityCount')} className={`${inputBase} ${inputOk}`} />
-                  </Field>
-                )}
-                <div className="pt-4 flex gap-3">
-                  <button type="button" onClick={() => setMode('view')} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">Cancel</button>
-                  <button type="submit" disabled={isSaving} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer">
-                    {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'Update Record'}
-                  </button>
-                </div>
-              </form>
+              <EditPigForm
+                pigData={data}
+                pens={pens}
+                breeds={breeds}
+                onSave={onSave}
+                onCancel={() => setMode('view')}
+                onSuccess={(updatedInfo) => {
+                  setSuccessInfo(updatedInfo);
+                  changeMode('success');
+                }}
+                isArchived={isArchived}
+                isLoadingData={isLoadingData}
+                maxHeightClass="max-h-[88vh]"
+              />
             )}
           </>
 
@@ -478,7 +268,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
             </div>
 
             {/* View Content */}
-            <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6 bg-slate-50/50 animate-in fade-in duration-300">
+            <div className="p-6 overflow-y-auto max-h-[88vh] space-y-6 bg-slate-50/50 animate-in fade-in duration-300">
               {isLoading ? (
                 <div className="py-12 flex flex-col items-center justify-center gap-3">
                   <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
@@ -598,8 +388,18 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
                     <Archive className="w-3.5 h-3.5" /> Archive
                   </button>
                 )}
-                <button type="button" onClick={switchToEdit} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer">
-                  <Edit2 className="w-3.5 h-3.5" /> Edit Record <ChevronRight className="w-3.5 h-3.5" />
+                <button
+                  type="button"
+                  onClick={!isArchived ? switchToEdit : undefined}
+                  disabled={isArchived}
+                  title={isArchived ? "Archived records cannot be modified unless unarchived" : "Edit Record"}
+                  className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                    isArchived
+                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 cursor-pointer"
+                  }`}
+                >
+                  <Edit2 className="w-3.5 h-3.5" /> Edit Record {!isArchived && <ChevronRight className="w-3.5 h-3.5" />}
                 </button>
               </div>
             </div>
@@ -610,24 +410,5 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, pigDa
       </div>
     </div>,
     document.body
-  );
-}
-
-function Field({ label, error, icon, children }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{label}</label>
-      <div className="relative">
-        <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
-          {icon && React.cloneElement(icon, { size: 14 })}
-        </span>
-        {children}
-      </div>
-      {error && (
-        <p className="flex items-center gap-1 text-[10px] text-rose-600 font-semibold mt-1">
-          <AlertCircle size={10} /> {error}
-        </p>
-      )}
-    </div>
   );
 }
