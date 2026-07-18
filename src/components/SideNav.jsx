@@ -144,6 +144,9 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
                       <button
                         onClick={() => {
                           onTabChange(id);
+                          if (!isExpanded) {
+                            setExpanded(prev => ({ ...prev, [id]: true }));
+                          }
                         }}
                         className={[
                           'flex-1 flex items-center gap-3 rounded-l-xl text-xs font-semibold py-2.5 text-left transition-all duration-150 cursor-pointer',
@@ -170,34 +173,44 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
                         title={isExpanded ? "Collapse sub-items" : "Expand sub-items"}
                         aria-label={isExpanded ? `Collapse ${label} menu` : `Expand ${label} menu`}
                       >
-                        <ChevronRight className={`w-4 h-4 shrink-0 transition-transform duration-200 stroke-[2.5px] ${isExpanded ? 'rotate-90 text-emerald-600' : 'text-slate-400'}`} />
+                        <ChevronRight className={`w-4 h-4 shrink-0 transition-transform duration-300 ease-in-out stroke-[2.5px] ${isExpanded ? 'rotate-90 text-emerald-600' : 'text-slate-400'}`} />
                       </button>
                     </div>
                   )}
 
-                  {/* Children */}
-                  {hasChildren && isExpanded && (
-                    <div className="ml-4 mt-0.5 space-y-0.5 border-l-2 border-slate-100 pl-2">
-                      {children.map(({ id: cid, label: clabel, icon: CIcon }) => {
-                        const childActive = activeTab === cid;
-                        return (
-                          <button
-                            key={cid}
-                            onClick={() => { onTabChange(cid); onClose?.(); }}
-                            className={[
-                              'w-full flex items-center gap-2.5 rounded-lg text-xs font-semibold',
-                              'transition-all duration-150 cursor-pointer text-left py-2 px-2.5',
-                              childActive
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50',
-                            ].join(' ')}
-                            aria-current={childActive ? 'page' : undefined}
-                          >
-                            <CIcon className={`w-3.5 h-3.5 shrink-0 ${childActive ? 'text-emerald-600' : 'text-slate-400'}`} />
-                            <span className="flex-1 truncate">{clabel}</span>
-                          </button>
-                        );
-                      })}
+                  {/* Children with smooth CSS grid accordion transition */}
+                  {hasChildren && (
+                    <div
+                      className={`grid transition-[grid-template-rows,opacity,margin] duration-300 cubic-bezier(0.16, 1, 0.3, 1) ${
+                        isExpanded
+                          ? 'grid-rows-[1fr] opacity-100 mt-1'
+                          : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+                      }`}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="ml-4 space-y-0.5 border-l-2 border-slate-100 pl-2 py-0.5">
+                          {children.map(({ id: cid, label: clabel, icon: CIcon }) => {
+                            const childActive = activeTab === cid;
+                            return (
+                              <button
+                                key={cid}
+                                onClick={() => { onTabChange(cid); onClose?.(); }}
+                                className={[
+                                  'w-full flex items-center gap-2.5 rounded-lg text-xs font-semibold',
+                                  'transition-all duration-150 cursor-pointer text-left py-2 px-2.5',
+                                  childActive
+                                    ? 'bg-emerald-50 text-emerald-700 font-bold'
+                                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50',
+                                ].join(' ')}
+                                aria-current={childActive ? 'page' : undefined}
+                              >
+                                <CIcon className={`w-3.5 h-3.5 shrink-0 ${childActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+                                <span className="flex-1 truncate">{clabel}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

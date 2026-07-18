@@ -185,6 +185,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     }
     fetchSwine();
     fetchStats();
+    fetchArchived();
   };
 
   const handleSaveBatch = async (batchData) => {
@@ -200,6 +201,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     }
     fetchSwine();
     fetchStats();
+    fetchArchived();
   };
 
   // NEW: Update Pig Logic
@@ -216,6 +218,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     }
     fetchSwine();
     fetchStats();
+    fetchArchived();
     const rawData = Array.isArray(data.data) ? data.data[0] : (data.data || payload);
     return {
       ...payload,

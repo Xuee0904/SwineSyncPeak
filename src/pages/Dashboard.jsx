@@ -3,6 +3,7 @@ import Catalog from '../landing-page/Catalog';
 import SideNav, { NAV_ITEMS } from '../components/SideNav';
 import Admin from './Admin';
 import SwineManagement from './SwineManagement';
+import PenManagement from './PenManagement';
 import {
   Sparkles, Database, ArrowUpRight, ChevronRight,
   AlertTriangle, CheckSquare, Square,
@@ -185,7 +186,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </button>
             <h1 className="text-sm font-extrabold text-slate-900 tracking-tight">
               {activeTab === 'pen_management'
-                ? 'Swine Management'
+                ? 'Pen Management'
                 : NAV_ITEMS.find(n => n.id === activeTab)?.label ?? 'Dashboard'}
             </h1>
           </div>
@@ -389,12 +390,15 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {(activeTab === 'swine_management' || activeTab === 'pen_management') && (
+          {activeTab === 'swine_management' && (
             <main>
-              <SwineManagement
-                loggedInUser={loggedInUser}
-                activeSubTab={activeTab === 'pen_management' ? 'pen_management' : undefined}
-              />
+              <SwineManagement loggedInUser={loggedInUser} />
+            </main>
+          )}
+
+          {activeTab === 'pen_management' && (
+            <main>
+              <PenManagement loggedInUser={loggedInUser} />
             </main>
           )}
 
