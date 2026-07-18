@@ -195,6 +195,9 @@ export default function useFormDraft(draftKey, initialFormState) {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.data) {
             setForm(parsed.data);
+            // Dismiss the banner after restore (draft stays in storage for recovery)
+            setHasDraft(false);
+            setDraftInfo(null);
             if (typeof onRestoreExtraMeta === 'function' && parsed.extraMeta) {
               onRestoreExtraMeta(parsed.extraMeta);
             }
@@ -212,6 +215,9 @@ export default function useFormDraft(draftKey, initialFormState) {
 
     if (draftInfo && draftInfo.data) {
       setForm(draftInfo.data);
+      // Dismiss the banner after restore (draft stays in storage for recovery)
+      setHasDraft(false);
+      setDraftInfo(null);
       if (typeof onRestoreExtraMeta === 'function' && draftInfo.extraMeta) {
         onRestoreExtraMeta(draftInfo.extraMeta);
       }

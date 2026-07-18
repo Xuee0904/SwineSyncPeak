@@ -1,14 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Activity, User, Mail, Shield, Clock, Calendar, CheckCircle2, AlertCircle, FileText, ChevronRight, Search } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
+import Pagination from '../common/Pagination';
+
+const LOGS_PER_PAGE = 5;
 
 export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [actionFilter, setActionFilter] = useState('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const { shouldRender, requestClose, overlayClassName, panelClassName } = 
     useModalAnimation(isOpen, onClose);
+
+  // Reset to page 1 whenever filters change or modal is reopened
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, actionFilter, isOpen]);
 
   if (!shouldRender || !staff) return null;
 
@@ -52,6 +61,13 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
     return true;
   });
 
+  // Pagination calculations
+  const totalLogs = staffLogs.length;
+  const totalPages = Math.ceil(totalLogs / LOGS_PER_PAGE) || 1;
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * LOGS_PER_PAGE;
+  const paginatedLogs = staffLogs.slice(startIndex, startIndex + LOGS_PER_PAGE);
+
   const isTargetAdmin = (staff.role || '').toLowerCase() === 'admin';
 
   return createPortal(
@@ -72,6 +88,8 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
         }
         .animate-modal-in  { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
         .animate-modal-out { animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
       <div 
@@ -129,10 +147,18 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
           {/* Activity Logs Section */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2 shrink-0">
-                <FileText className="w-4 h-4 text-emerald-600" />
-                Staff Activity Audit Trail
-              </h4>
+              <div className="flex items-center gap-2 shrink-0">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-emerald-600" />
+                  Staff Activity Audit Trail
+                </h4>
+                {/* Total count badge */}
+                {totalLogs > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold">
+                    {totalLogs} {totalLogs === 1 ? 'record' : 'records'}
+                  </span>
+                )}
+              </div>
 
               {/* Filter Controls */}
               <div className="flex items-center gap-2 flex-wrap">
@@ -176,9 +202,9 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
               </div>
             </div>
 
-            {staffLogs.length > 0 ? (
+            {paginatedLogs.length > 0 ? (
               <div className="space-y-2">
-                {staffLogs.map((log) => {
+                {paginatedLogs.map((log) => {
                   const dateObj = new Date(log.timestamp);
                   const dateFormatted = dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
                   const timeFormatted = dateObj.toLocaleTimeString(undefined, { 
@@ -214,14 +240,29 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
                 <Activity className="w-8 h-8 text-slate-300 mx-auto" />
                 <p className="text-xs font-bold text-slate-600">No Activity Logs Found</p>
                 <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                  This account has not yet triggered any recorded database actions or system transactions.
+                  {searchQuery || actionFilter !== 'ALL'
+                    ? 'No logs match your current filters. Try adjusting your search or category.'
+                    : 'This account has not yet triggered any recorded database actions or system transactions.'}
                 </p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Modal Footer */}
+        {/* Pagination Footer — only shown when there are multiple pages */}
+        {totalPages > 1 && (
+          <Pagination
+            currentPage={safePage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={totalLogs}
+            itemsPerPage={LOGS_PER_PAGE}
+            itemName="logs"
+            showPrevNextText={true}
+          />
+        )}
+
+        {/* Modal Close Footer */}
         <div className="px-8 py-4 bg-slate-50/60 border-t border-slate-100 flex justify-end shrink-0">
           <button 
             type="button" 

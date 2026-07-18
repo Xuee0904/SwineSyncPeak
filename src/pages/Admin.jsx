@@ -176,26 +176,23 @@ export default function Admin({ loggedInUser }) {
     alert(`Exporting ${tableName} dataset as CSV…`);
   };
 
-  // ─── Chronological priorities sorting ───
-  const getUsernameSafe = () => {
+  // ─── Exact email match for "YOU" detection (email is the unique identifier) ───
+  const getLoggedInEmail = () => {
     if (!loggedInUser) return '';
     if (typeof loggedInUser === 'string') return loggedInUser.toLowerCase();
     if (typeof loggedInUser === 'object') {
-      if (loggedInUser.name) return loggedInUser.name.toLowerCase();
-      return (loggedInUser.user_metadata?.full_name || loggedInUser.email || '').toLowerCase();
+      return (loggedInUser.email || loggedInUser.user_metadata?.email || '').toLowerCase();
     }
     return '';
   };
 
   const processedStaff = [...staffList].sort((a, b) => {
-    const currentUser = getUsernameSafe();
-    const aName = (a.name || '').toLowerCase();
-    const bName = (b.name || '').toLowerCase();
+    const myEmail = getLoggedInEmail();
     const aEmail = (a.email || '').toLowerCase();
     const bEmail = (b.email || '').toLowerCase();
 
-    const aIsYou = currentUser && (aName === currentUser || aEmail.includes(currentUser));
-    const bIsYou = currentUser && (bName === currentUser || bEmail.includes(currentUser));
+    const aIsYou = myEmail && aEmail === myEmail;
+    const bIsYou = myEmail && bEmail === myEmail;
 
     if (aIsYou && !bIsYou) return -1;
     if (!aIsYou && bIsYou) return 1;
@@ -375,10 +372,10 @@ export default function Admin({ loggedInUser }) {
                 <TableSkeleton rows={4} />
               ) : (
                 paginatedStaff.map((staff, index) => {
-                  const currentUser = getUsernameSafe();
+                  const myEmail = getLoggedInEmail();
                   const staffName = staff.name || '';
-                  const staffEmail = staff.email || '';
-                  const isYou = currentUser && (staffName.toLowerCase().includes(currentUser) || staffEmail.toLowerCase().includes(currentUser));
+                  const staffEmail = (staff.email || '').toLowerCase();
+                  const isYou = myEmail && staffEmail === myEmail;
                   const isTargetAdmin = (staff.role || '').toLowerCase() === 'admin';
                   
                   // Detects if the current item is the last row in the pagination slice
@@ -581,7 +578,7 @@ export default function Admin({ loggedInUser }) {
           {/* Collapsible Custom Date Picker Drawer */}
           <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
             logDateFilter === 'custom' 
-              ? 'max-h-32 opacity-100 mt-1' 
+              ? 'max-h-40 opacity-100 mt-1' 
               : 'max-h-0 opacity-0 mt-0 pointer-events-none'
           }`}>
             <div className="flex flex-wrap items-center gap-4 bg-slate-50 border border-slate-100 p-3 rounded-xl text-[11px] text-slate-500">
@@ -590,7 +587,15 @@ export default function Admin({ loggedInUser }) {
                 <input 
                   type="date" 
                   value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => {
+                    const newStart = e.target.value;
+                    setCustomStartDate(newStart);
+                    // Auto-clear TO if it is now before the new FROM
+                    if (customEndDate && customEndDate < newStart) {
+                      setCustomEndDate('');
+                    }
+                  }}
                   className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 outline-none focus:border-emerald-500 transition-colors"
                 />
               </div>
@@ -599,6 +604,8 @@ export default function Admin({ loggedInUser }) {
                 <input 
                   type="date" 
                   value={customEndDate}
+                  min={customStartDate || undefined}
+                  max={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setCustomEndDate(e.target.value)}
                   className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 outline-none focus:border-emerald-500 transition-colors"
                 />
@@ -613,6 +620,19 @@ export default function Admin({ loggedInUser }) {
                 </button>
               )}
             </div>
+            {/* Inline validation hint */}
+            {customStartDate > new Date().toISOString().split('T')[0] && (
+              <p className="text-[10px] text-amber-600 font-semibold mt-1.5 px-1 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3 shrink-0" />
+                "From" date cannot be in the future.
+              </p>
+            )}
+            {customStartDate && customEndDate && customEndDate < customStartDate && (
+              <p className="text-[10px] text-amber-600 font-semibold mt-1.5 px-1 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3 shrink-0" />
+                "To" date cannot be before "From" date.
+              </p>
+            )}
           </div>
         </div>
 

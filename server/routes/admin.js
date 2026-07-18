@@ -30,11 +30,11 @@ router.get('/api/admin/users', verifyAdmin, async (req, res) => {
         isArchived,
         // Shows as Archived first, otherwise falls back to active tracking status
         status: isArchived ? 'Archived' : (user.last_sign_in_at ? 'Active' : 'Inactive'),
-        lastSignInAt: user.last_sign_in_at || null, 
-        lastLogin: user.last_sign_in_at 
+        lastSignInAt: user.last_sign_in_at || null,
+        lastLogin: user.last_sign_in_at
           ? new Date(user.last_sign_in_at).toLocaleDateString(undefined, {
-              month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
-            })
+            month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+          })
           : 'Never Signed In',
         avatar: user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`
       };
@@ -147,18 +147,28 @@ router.put('/api/admin/users/:id', verifyAdmin, async (req, res) => {
 
     const initials = creatorName.split(' ').map(w => w ? w[0] : '').join('').toUpperCase().slice(0, 2);
 
-    // Determine event details dynamically
-    const eventTitle = is_archived ? 'Account Archived' : 'Account Restored';
-    const eventDesc = is_archived 
-      ? `Temporarily suspended access credentials for ${name} (${user.email}).`
-      : `Restored login capabilities and credentials for ${name} (${user.email}).`;
+    // Determine event details dynamically based on operation type
+    let eventTitle, eventDesc, bgColor;
+    if (is_archived === true) {
+      eventTitle = 'Account Archived';
+      eventDesc = `Temporarily suspended access credentials for ${name} (${user.email}).`;
+      bgColor = 'bg-rose-100 text-rose-700';
+    } else if (is_archived === false) {
+      eventTitle = 'Account Restored';
+      eventDesc = `Restored login capabilities and credentials for ${name} (${user.email}).`;
+      bgColor = 'bg-emerald-100 text-emerald-700';
+    } else {
+      // Plain edit — no archive/restore flag provided
+      eventTitle = 'Account Updated';
+      eventDesc = `Updated account profile for ${name} (${user.email}).`;
+      bgColor = 'bg-amber-100 text-amber-700';
+    }
 
     await supabaseAdmin.from('activity_logs').insert({
       user_name: creatorName,
       user_email: 'admin@gmail.com',
       user_initials: initials || 'AD',
-      // Color: rose for archiving, emerald for restoring, amber for plain edits
-      user_bg_color: is_archived ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700',
+      user_bg_color: bgColor,
       event_title: eventTitle,
       event_desc: eventDesc,
       status: 'SUCCESS'
@@ -174,7 +184,7 @@ router.put('/api/admin/users/:id', verifyAdmin, async (req, res) => {
 router.get('/api/admin/activity-logs', verifyAdmin, async (req, res) => {
   try {
     if (!supabaseAdmin) {
-      return res.status(500).json({ 
+      return res.status(500).json({
         error: 'Administrative client (service role key) is not configured on this server.',
         hint: 'Verify that SUPABASE_SERVICE_ROLE_KEY is defined in your server/.env file and that you restarted your terminal.'
       });

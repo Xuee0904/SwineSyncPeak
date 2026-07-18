@@ -301,18 +301,52 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">System Access Role</label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
-                    <Shield className="w-3.5 h-3.5" />
-                  </span>
-                  <select
-                    value={newStaff.role}
-                    onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })}
-                    className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-700 outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
-                  >
-                    <option value="Staff">Staff (View & Update Telemetry/Logs)</option>
-                    <option value="Admin">Admin (Full System & Account Management Privilege)</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    {
+                      value: 'Staff',
+                      icon: <User className="w-4 h-4" />,
+                      title: 'Staff',
+                      desc: 'View & update telemetry and logs',
+                    },
+                    {
+                      value: 'Admin',
+                      icon: <Shield className="w-4 h-4" />,
+                      title: 'Admin',
+                      desc: 'Full system & account management',
+                    },
+                  ].map((opt) => {
+                    const selected = newStaff.role === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setNewStaff({ ...newStaff, role: opt.value })}
+                        className={[
+                          'flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer',
+                          selected
+                            ? 'border-emerald-500 bg-emerald-50/70 ring-2 ring-emerald-500/20 shadow-sm'
+                            : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60',
+                        ].join(' ')}
+                      >
+                        {/* Radio circle */}
+                        <span className={[
+                          'mt-0.5 w-4 h-4 shrink-0 rounded-full border-2 flex items-center justify-center transition-all',
+                          selected ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 bg-white',
+                        ].join(' ')}>
+                          {selected && <span className="w-1.5 h-1.5 rounded-full bg-white block" />}
+                        </span>
+                        {/* Icon + text */}
+                        <div>
+                          <span className={`flex items-center gap-1.5 text-xs font-bold ${selected ? 'text-emerald-800' : 'text-slate-700'}`}>
+                            <span className={selected ? 'text-emerald-600' : 'text-slate-400'}>{opt.icon}</span>
+                            {opt.title}
+                          </span>
+                          <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">{opt.desc}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
