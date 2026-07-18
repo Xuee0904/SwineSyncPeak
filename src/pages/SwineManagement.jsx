@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   PiggyBank, AlertTriangle, Activity, Download, Plus,
   Search, ChevronLeft, ChevronRight, MoreVertical, RefreshCw,
-  X, Grid3X3, AlertCircle, Edit2, Archive, ArchiveX,
+  X, Grid3X3, AlertCircle, Edit2, Archive, ArchiveX, RotateCcw, Unlock,
 } from 'lucide-react';
 import AddPigModal from '../components/SwineManagement/AddPigModal.jsx';
 import EditPigModal from '../components/SwineManagement/EditPigModal.jsx';
 import ViewPigModal from '../components/SwineManagement/ViewPigModal.jsx';
+import ArchiveSwineModal from '../components/SwineManagement/ArchiveSwineModal.jsx';
 import useConfirmDialog from '../hooks/useConfirmDialog.jsx';
 import toast from '../utils/toast';
 import StatusBadge from '../components/StatusBadge.jsx';
@@ -97,6 +98,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedPig, setSelectedPig] = useState(null);
+  const [selectedArchiveSwine, setSelectedArchiveSwine] = useState(null);
 
   // Reusable confirm dialog hook (portal-based, blurs full page)
   const { confirmDialog, openConfirm } = useConfirmDialog();
@@ -214,48 +216,31 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     }
     fetchSwine();
     fetchStats();
+    const rawData = Array.isArray(data.data) ? data.data[0] : (data.data || payload);
+    return {
+      ...payload,
+      ...rawData,
+      id: rawData?.id || rawData?.pig_id || rawData?.batch_id || id,
+      pig_tag: rawData?.pig_tag || rawData?.batch_tag || payload.pig_tag || payload.tagNumber,
+    };
   };
 
-  // Archive pig — called after the confirm dialog is accepted
-  const handleArchivePig = async (pig, reason = null) => {
-    const res = await fetch(`${API_BASE}/api/pigs/${pig.id}/archive`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ creator: loggedInUser, archive_reasoning: reason }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Failed to archive record.');
-    toast.success(`#${pig.pig_tag ?? pig.id} has been archived.`);
+  // Open the archive or restore modal (which handles both warning and success with smooth transition)
+  const promptArchive = (pig) => {
+    setSelectedArchiveSwine({ pig, isArchiving: true });
+  };
+
+  const promptUnarchive = (pig) => {
+    setSelectedArchiveSwine({ pig, isArchiving: false });
+  };
+
+  const handleArchiveModalSuccess = () => {
+    setSelectedArchiveSwine(null);
     setIsViewModalOpen(false);
     setSelectedPig(null);
     fetchSwine();
     fetchStats();
-  };
-
-  // Open the confirm dialog for a given pig
-  const promptArchive = (pig) => {
-    const isBatch = pig.category === 'Piglet Batch';
-    openConfirm({
-      title: 'Archive this record?',
-      subtitle: `#${pig.pig_tag ?? pig.id}`,
-      message: 'This swine will be moved to the Archived view and removed from the active list. You can still view it at any time.',
-      confirmLabel: 'Yes, Archive',
-      reasonOptions: isBatch ? [
-        'Sold Out - Batch Fully Liquidated',
-        'Transitioned to Breeding Herd (Gilts/Boars)',
-        'Merged with Another Batch',
-        'Mortality - Total Batch Loss',
-        'Other (Specify below)'
-      ] : [
-        'Sold / Marketed',
-        'Culled - Age & Productivity',
-        'Culled - Health & Injury',
-        'Mortality - Natural / Medical',
-        'Transferred to Another Facility',
-        'Other (Specify below)'
-      ],
-      onConfirm: (reason) => handleArchivePig(pig, reason),
-    });
+    fetchArchived();
   };
 
   // Fetch archived records
@@ -599,7 +584,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                     </td>
                     <td className="py-3 px-4 text-right pr-6 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
-                        {!viewArchived && (
+                        {!viewArchived ? (
                           <>
                             <button
                               type="button"
@@ -620,6 +605,16 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                               <Archive className="w-3.5 h-3.5" />
                             </button>
                           </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => promptUnarchive(pig)}
+                            className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
+                            title="Unarchive / Restore Record"
+                            id={`swine-unarchive-${pig.id ?? idx}`}
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
                         )}
                       </div>
                     </td>
@@ -631,18 +626,19 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-5 py-3.5 border-t border-slate-50 text-xs text-slate-400 font-medium">
-          <p className="text-[11px] font-semibold text-slate-400">
-            {(viewArchived ? archivedLoading : listLoading)
-              ? 'Loading…'
-              : viewArchived
-                ? `Showing ${archivedTotal === 0 ? 0 : Math.min((archivedPage - 1) * PAGE_SIZE + 1, archivedTotal)}–${Math.min(archivedPage * PAGE_SIZE, archivedTotal)} of ${archivedTotal.toLocaleString()} Archived`
-                : `Showing ${totalCount === 0 ? 0 : Math.min((page - 1) * PAGE_SIZE + 1, totalCount)}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount.toLocaleString()} Swine`}
-          </p>
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div>
+            Showing <span className="font-bold text-slate-700">
+              {(viewArchived ? archivedTotal : totalCount) === 0 ? 0 : ((viewArchived ? archivedPage : page) - 1) * PAGE_SIZE + 1}
+            </span> to <span className="font-bold text-slate-700">
+              {Math.min((viewArchived ? archivedPage : page) * PAGE_SIZE, viewArchived ? archivedTotal : totalCount)}
+            </span> of <span className="font-bold text-slate-700">{viewArchived ? archivedTotal : totalCount}</span> records
+          </div>
+
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => viewArchived ? setArchivedPage(p => Math.max(1, p - 1)) : setPage(p => Math.max(1, p - 1))}
-              disabled={(viewArchived ? archivedPage <= 1 : page <= 1) || (viewArchived ? archivedLoading : listLoading)}
+              disabled={(viewArchived ? archivedPage : page) === 1 || (viewArchived ? archivedLoading : listLoading)}
               className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer active:scale-95"
               id="swine-prev-page-btn"
             >
@@ -650,14 +646,9 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
             </button>
 
             <div className="flex items-center gap-1">
-              {getPageNumbers(
-                viewArchived ? archivedPage : page,
-                viewArchived ? archivedTotalPages : totalPages
-              ).map((pg, i) =>
+              {getPageNumbers(viewArchived ? archivedPage : page, Math.max(1, Math.ceil((viewArchived ? archivedTotal : totalCount) / PAGE_SIZE))).map((pg, idx) =>
                 pg === '...' ? (
-                  <span key={`ellipsis-${i}`} className="w-7 text-center text-slate-400 select-none font-bold text-xs">
-                    &hellip;
-                  </span>
+                  <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 select-none">...</span>
                 ) : (
                   <button
                     key={pg}
@@ -681,8 +672,8 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
 
             <button
               type="button"
-              onClick={() => viewArchived ? setArchivedPage(p => Math.min(archivedTotalPages, p + 1)) : setPage(p => Math.min(totalPages, p + 1))}
-              disabled={(viewArchived ? archivedPage >= archivedTotalPages : page >= totalPages) || (viewArchived ? archivedLoading : listLoading)}
+              onClick={() => viewArchived ? setArchivedPage(p => Math.min(Math.max(1, Math.ceil(archivedTotal / PAGE_SIZE)), p + 1)) : setPage(p => Math.min(Math.max(1, Math.ceil(totalCount / PAGE_SIZE)), p + 1))}
+              disabled={(viewArchived ? archivedPage >= Math.ceil(archivedTotal / PAGE_SIZE) : page >= Math.ceil(totalCount / PAGE_SIZE)) || (viewArchived ? archivedLoading : listLoading)}
               className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer active:scale-95"
               id="swine-next-page-btn"
             >
@@ -716,11 +707,17 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
         isOpen={isViewModalOpen}
         onClose={() => { setIsViewModalOpen(false); setSelectedPig(null); }}
         onSave={handleUpdatePig}
-        onArchive={!viewArchived ? (pig) => {
-          setIsViewModalOpen(false);
-          promptArchive(pig);
-        } : null}
+        onArchive={!viewArchived ? (pig) => promptArchive(pig) : null}
+        onUnarchive={viewArchived ? (pig) => promptUnarchive(pig) : null}
         pigData={selectedPig}
+      />
+
+      <ArchiveSwineModal
+        isOpen={!!selectedArchiveSwine}
+        onClose={() => setSelectedArchiveSwine(null)}
+        archiveData={selectedArchiveSwine}
+        onConfirmSuccess={handleArchiveModalSuccess}
+        loggedInUser={loggedInUser}
       />
     </div>
   );

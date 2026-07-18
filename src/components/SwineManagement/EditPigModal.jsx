@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, cloneElement } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Tag, Calendar, Weight, Home, Activity, Ruler, Loader2, AlertCircle, PlusCircle, Baby, Hash, Shuffle, CheckCircle2 } from 'lucide-react';
+import { X, Tag, Calendar, Weight, Home, Activity, Ruler, Loader2, AlertCircle, PlusCircle, Baby, Hash, Shuffle, CheckCircle2, ArrowLeft } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import toast from '../../utils/toast';
 
@@ -105,7 +105,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
     setIsSaving(true);
     setSubmitError(null);
     try {
-      await onSave?.(pigData.id, {
+      const savedRecord = await onSave?.(pigData.id, {
         ...form,
         weight: form.weight ? Number(form.weight) : null,
         averageWeight: form.weight ? Number(form.weight) : null,
@@ -124,7 +124,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
           : `Swine #${form.tagNumber} has been successfully updated.`
       };
       toast.success(isBatch ? `Batch #${form.tagNumber} updated successfully!` : `Swine #${form.tagNumber} updated successfully!`);
-      if (typeof onSuccess === 'function') onSuccess(updatedInfo);
+      if (typeof onSuccess === 'function') onSuccess(savedRecord || { ...pigData, ...form }, updatedInfo);
     } catch (err) {
       setSubmitError(err.message || 'Failed to update record.');
     } finally {
@@ -361,10 +361,16 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
   );
 }
 
-export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
-  const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
-    useModalAnimation(isOpen, onClose);
-
+export function PigEditView({
+  pigData,
+  onSave,
+  onCancel,
+  onClose,
+  onSuccess,
+  showBackBtn = false,
+  onBack,
+  fetchDetailOnMount = false,
+}) {
   const isBatch = pigData?.category === 'Piglet Batch' || Boolean(pigData?.batch_tag) || (pigData && typeof pigData.pig_tag === 'string' && pigData.pig_tag.startsWith('BATCH'));
 
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -375,18 +381,30 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
   const [breeds, setBreeds] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
-  // Full record detail
-  const [detail, setDetail] = useState(null);
+  // Full record detail if requested
+  const [detail, setDetail] = useState(pigData || null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState(null);
 
-  // 1. Fetch the full pig record and initialize the form from it
-  useEffect(() => {
-    if (!isOpen || !pigData) {
-      setDetail(null);
-      return;
-    }
+  const getId = (item) => item?.id || item?.pig_id || item?.batch_id;
+  const prevIdRef = useRef(getId(pigData));
 
+  useEffect(() => {
+    if (pigData) {
+      setDetail(pigData);
+      const currentId = getId(pigData);
+      if (currentId && prevIdRef.current && currentId !== prevIdRef.current) {
+        prevIdRef.current = currentId;
+        setSaveSuccess(false);
+        setSuccessInfo(null);
+      } else if (currentId && !prevIdRef.current) {
+        prevIdRef.current = currentId;
+      }
+    }
+  }, [pigData]);
+
+  useEffect(() => {
+    if (!fetchDetailOnMount || !pigData?.id) return;
     let cancelled = false;
     const loadDetail = async () => {
       setIsLoadingDetail(true);
@@ -395,158 +413,168 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
         const res = await fetch(`${API_BASE}/api/pigs/${pigData.id}`);
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.error || `Failed to load record (status ${res.status})`);
-        if (cancelled) return;
-        setDetail(body.data || pigData);
+        if (!cancelled) setDetail(body.data || pigData);
       } catch (err) {
         if (!cancelled) setDetailError(err.message || 'Failed to load this record.');
       } finally {
         if (!cancelled) setIsLoadingDetail(false);
       }
     };
-
     loadDetail();
     return () => { cancelled = true; };
-  }, [isOpen, pigData]);
+  }, [fetchDetailOnMount, pigData?.id]);
 
   useEffect(() => {
-    if (!isOpen) {
-      setSaveSuccess(false);
-      setSuccessInfo(null);
-    }
-  }, [isOpen]);
-
-  // 2. Fetch dependencies (Pens/Breeds)
-  useEffect(() => {
-    if (isOpen) {
-      const fetchData = async () => {
-        setIsLoadingData(true);
-        try {
-          const [pensRes, breedsRes] = await Promise.all([
-            fetch(`${API_BASE}/api/pens`),
-            fetch(`${API_BASE}/api/breeds`)
-          ]);
-          const p = await pensRes.json();
-          const b = await breedsRes.json();
+    let cancelled = false;
+    const fetchData = async () => {
+      setIsLoadingData(true);
+      try {
+        const [pensRes, breedsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/pens`),
+          fetch(`${API_BASE}/api/breeds`)
+        ]);
+        const p = await pensRes.json();
+        const b = await breedsRes.json();
+        if (!cancelled) {
           setPens(p.data || []);
           setBreeds(b.data || []);
-        } catch (err) {
-          console.error("Error loading edit form data:", err);
-        } finally {
-          setIsLoadingData(false);
         }
-      };
-      fetchData();
-    }
-  }, [isOpen]);
-
-  if (!shouldRender) return null;
+      } catch (err) {
+        console.error("Error loading edit form data:", err);
+      } finally {
+        if (!cancelled) setIsLoadingData(false);
+      }
+    };
+    fetchData();
+    return () => { cancelled = true; };
+  }, []);
 
   const data = detail || pigData || {};
   const isArchived = Boolean(data.is_archived || data.status?.toLowerCase() === 'archived' || pigData?.is_archived || pigData?.status?.toLowerCase() === 'archived');
+  const tag = data.pig_tag || data.batch_tag || data.id || '—';
+
+  if (saveSuccess) {
+    return (
+      <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">
+        <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
+          <CheckCircle2 size={32} className="animate-bounce" />
+        </div>
+        <div>
+          <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
+            {successInfo?.type || 'Record'} Updated
+          </span>
+          <h4 className="text-xl font-black text-slate-900">
+            {successInfo?.type || 'Record'} #{successInfo?.tag} Saved!
+          </h4>
+          <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
+            {successInfo?.message || 'The record has been updated and synced to your database.'}
+          </p>
+        </div>
+        <div className="pt-2 w-full flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={() => onClose?.()}
+            className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+          >
+            Done & Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col w-full">
+      <div className="px-8 pt-8 pb-4 flex items-center justify-between border-b border-slate-100/60">
+        <div className="flex items-center gap-3">
+          {showBackBtn ? (
+            <button
+              type="button"
+              onClick={() => onBack ? onBack() : onCancel?.()}
+              className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors cursor-pointer"
+              title="Back to details"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          ) : (
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <PlusCircle size={20} />
+            </div>
+          )}
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Edit {isBatch ? 'Piglet Batch' : 'Swine Record'}</h3>
+            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">#{tag}</p>
+          </div>
+        </div>
+        <button onClick={() => onClose?.()} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer">
+          <X size={18} />
+        </button>
+      </div>
+
+      {isLoadingDetail ? (
+        <div className="p-12 flex flex-col items-center justify-center gap-3 text-slate-400">
+          <Loader2 size={24} className="animate-spin text-emerald-600" />
+          <p className="text-xs font-semibold">Loading record details…</p>
+        </div>
+      ) : detailError ? (
+        <div className="p-8 pt-6 space-y-4 text-left">
+          <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+            <AlertCircle size={14} className="text-rose-500" />
+            <span>{detailError}</span>
+          </div>
+          <button type="button" onClick={() => onClose?.()} className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
+            Close
+          </button>
+        </div>
+      ) : (
+        <EditPigForm
+          pigData={data}
+          pens={pens}
+          breeds={breeds}
+          onSave={onSave}
+          onCancel={onCancel}
+          onSuccess={(savedRecord, info) => {
+            setSuccessInfo(info);
+            setSaveSuccess(true);
+            if (typeof onSuccess === 'function') {
+              onSuccess(savedRecord, info);
+            }
+          }}
+          isArchived={isArchived}
+          isLoadingData={isLoadingData}
+          maxHeightClass="max-h-[88vh]"
+        />
+      )}
+    </div>
+  );
+}
+
+export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
+  const { shouldRender, requestClose, overlayClassName, panelClassName } =
+    useModalAnimation(isOpen, onClose);
+
+  const isBatch = pigData?.category === 'Piglet Batch' || Boolean(pigData?.batch_tag) || (pigData && typeof pigData.pig_tag === 'string' && pigData.pig_tag.startsWith('BATCH'));
+
+  if (!shouldRender || !pigData) return null;
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName}`}
+      className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md transition-opacity duration-300 ${overlayClassName}`}
       onMouseDown={(e) => e.target === e.currentTarget && requestClose()}
     >
       <div
         style={{ willChange: 'transform, opacity, max-width' }}
         className={`flex max-h-[92vh] flex-col w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative transition-[max-width] duration-300 ease-in-out ${
-          saveSuccess ? 'max-w-md' : isBatch ? 'max-w-3xl' : 'max-w-2xl'
+          isBatch ? 'max-w-3xl' : 'max-w-2xl'
         } ${panelClassName}`}
       >
-        
-        {/* Header */}
-        {!saveSuccess && (
-          <div className="px-8 pt-8 pb-4 flex items-center justify-between border-b border-slate-100/60">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-                <PlusCircle size={20} />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Edit {isBatch ? 'Piglet Batch' : 'Swine Record'}</h3>
-                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">#{pigData.pig_tag || pigData.batch_tag || pigData.id}</p>
-              </div>
-            </div>
-            <button onClick={() => requestClose()} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors">
-              <X size={18} />
-            </button>
-          </div>
-        )}
-
-        {saveSuccess ? (
-          <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
-              <CheckCircle2 size={32} className="animate-bounce" />
-            </div>
-            <div>
-              <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                {successInfo?.type || 'Record'} Updated
-              </span>
-              <h4 className="text-xl font-black text-slate-900">
-                {successInfo?.type || 'Record'} #{successInfo?.tag} Saved!
-              </h4>
-              <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
-                {successInfo?.message || 'The record has been updated and synced to your database.'}
-              </p>
-            </div>
-
-            <div className="pt-2 w-full flex flex-col gap-2.5">
-              <button
-                type="button"
-                onClick={() => requestClose()}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                Done & Close
-              </button>
-            </div>
-          </div>
-        ) : isLoadingDetail ? (
-          <div className="p-12 flex flex-col items-center justify-center gap-3 text-slate-400">
-            <Loader2 size={24} className="animate-spin text-emerald-600" />
-            <p className="text-xs font-semibold">Loading record details…</p>
-          </div>
-        ) : detailError ? (
-          <div className="p-8 pt-6 space-y-4 text-left">
-            <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
-              <AlertCircle size={14} className="text-rose-500" />
-              <span>{detailError}</span>
-            </div>
-            <button type="button" onClick={() => requestClose()} className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors">
-              Close
-            </button>
-          </div>
-        ) : isBatch ? (
-          <EditPigForm
-            pigData={detail || pigData}
-            pens={pens}
-            breeds={breeds}
-            onSave={onSave}
-            onCancel={() => requestClose()}
-            onSuccess={(info) => {
-              setSuccessInfo(info);
-              setSaveSuccess(true);
-            }}
-            isArchived={isArchived}
-            isLoadingData={isLoadingData}
-            maxHeightClass="max-h-[88vh]"
-          />
-        ) : (
-          <EditPigForm
-            pigData={detail || pigData}
-            pens={pens}
-            breeds={breeds}
-            onSave={onSave}
-            onCancel={() => requestClose()}
-            onSuccess={(info) => {
-              setSuccessInfo(info);
-              setSaveSuccess(true);
-            }}
-            isArchived={isArchived}
-            isLoadingData={isLoadingData}
-            maxHeightClass="max-h-[88vh]"
-          />
-        )}
+        <PigEditView
+          pigData={pigData}
+          onSave={onSave}
+          onCancel={() => requestClose()}
+          onClose={() => requestClose()}
+          fetchDetailOnMount={true}
+        />
       </div>
     </div>,
     document.body

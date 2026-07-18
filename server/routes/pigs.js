@@ -592,7 +592,7 @@ router.put('/api/pigs/:id', async (req, res) => {
       });
       if (logError) console.error("Error inserting activity log:", logError);
 
-      return res.json({ message: 'Piglet batch updated successfully', data });
+      return res.json({ message: 'Piglet batch updated successfully', data: data[0] });
     }
 
     // If the pen is changing, confirm the new pen actually has room
@@ -656,7 +656,7 @@ router.put('/api/pigs/:id', async (req, res) => {
     });
     if (logError) console.error("Error inserting activity log:", logError);
 
-    res.json({ message: 'Pig updated successfully', data });
+    res.json({ message: 'Pig updated successfully', data: data[0] });
   } catch (error) {
     console.error('Error updating pig:', error.message);
     res.status(500).json({ error: error.message });
@@ -725,6 +725,69 @@ router.patch('/api/pigs/:id/archive', async (req, res) => {
     return res.json({ message: 'Piglet batch archived successfully', data: batchData });
   } catch (error) {
     console.error('Error archiving record:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/pigs/:id/unarchive – unarchive a pig or piglet batch
+router.patch('/api/pigs/:id/unarchive', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { creator } = req.body;
+    const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator || 'Admin');
+
+    const updatePayload = { is_archived: false, archived_at: null, archive_reasoning: null };
+
+    // Try pigs table first
+    const { data: pigData, error: pigError } = await supabaseAdmin
+      .from('pigs')
+      .update(updatePayload)
+      .eq('pig_id', id)
+      .select();
+
+    if (pigError) throw pigError;
+
+    if (pigData && pigData.length > 0) {
+      const tag = pigData[0].pig_tag || id;
+      await supabaseAdmin.from('activity_logs').insert({
+        user_name: creatorName,
+        user_email: creatorEmail,
+        user_initials: creatorInitials,
+        user_bg_color: 'bg-emerald-100 text-emerald-700',
+        event_title: 'Swine Record Restored',
+        event_desc: `Restored swine record with tag ${tag} to active circulation.`,
+        status: 'SUCCESS'
+      });
+      return res.json({ message: 'Pig unarchived successfully', data: pigData[0] });
+    }
+
+    // Fallback to piglet_batches
+    const { data: batchData, error: batchError } = await supabaseAdmin
+      .from('piglet_batches')
+      .update(updatePayload)
+      .eq('batch_id', id)
+      .select();
+
+    if (batchError) throw batchError;
+
+    if (!batchData || batchData.length === 0) {
+      return res.status(404).json({ error: 'Record not found.' });
+    }
+
+    const tag = batchData[0].batch_tag || id;
+    await supabaseAdmin.from('activity_logs').insert({
+      user_name: creatorName,
+      user_email: creatorEmail,
+      user_initials: creatorInitials,
+      user_bg_color: 'bg-emerald-100 text-emerald-700',
+      event_title: 'Batch Restored',
+      event_desc: `Restored piglet batch with tag ${tag} to active circulation.`,
+      status: 'SUCCESS'
+    });
+
+    return res.json({ message: 'Piglet batch unarchived successfully', data: batchData[0] });
+  } catch (error) {
+    console.error('Error unarchiving record:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
