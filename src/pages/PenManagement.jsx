@@ -437,7 +437,8 @@ export default function PenManagement({ loggedInUser }) {
             return (
               <div
                 key={pen.id}
-                className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all duration-200 p-5 relative flex flex-col justify-between group ${pen.is_archived ? "border-rose-100 bg-rose-50/10 opacity-95" : "border-slate-100 hover:border-slate-200/80"}`}
+                onClick={() => setViewingPen(pen)}
+                className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all duration-200 p-5 relative flex flex-col justify-between group cursor-pointer ${pen.is_archived ? "border-rose-100 bg-rose-50/10 opacity-95" : "border-slate-100 hover:border-slate-200/80"}`}
               >
                 <div>
                   {/* Top Row: Section Badge & Dropdown */}
@@ -453,7 +454,10 @@ export default function PenManagement({ loggedInUser }) {
                       <div className="relative">
                         <button
                           type="button"
-                          onClick={() => setOpenMenu(openMenu === pen.id ? null : pen.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenMenu(openMenu === pen.id ? null : pen.id);
+                          }}
                           className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
                         >
                           <MoreVertical className="w-4 h-4" />
@@ -461,6 +465,7 @@ export default function PenManagement({ loggedInUser }) {
                         {openMenu === pen.id && (
                           <div
                             ref={menuRef}
+                            onClick={(e) => e.stopPropagation()}
                             className="absolute right-0 top-8 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden min-w-[155px] py-1 animate-in fade-in zoom-in-95 duration-150"
                           >
                             <button
@@ -492,20 +497,6 @@ export default function PenManagement({ loggedInUser }) {
                               className="w-full text-left px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition-colors cursor-pointer"
                             >
                               <Archive className="w-3.5 h-3.5 text-amber-600" /> Archive pen
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (pen.occupancy > 0) {
-                                  toast.error(`Cannot delete Pen #${pen.code} because it currently houses ${pen.occupancy} active swine.`);
-                                  setOpenMenu(null);
-                                  return;
-                                }
-                                handleDeletePen(pen.id, pen.code);
-                              }}
-                              className="w-full text-left px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors cursor-pointer border-t border-slate-100"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" /> Delete pen
                             </button>
                           </div>
                         )}
@@ -542,7 +533,10 @@ export default function PenManagement({ loggedInUser }) {
                   <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 mt-2">
                     <button
                       type="button"
-                      onClick={() => handleUnarchivePen(pen.id, pen.code)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUnarchivePen(pen.id, pen.code);
+                      }}
                       disabled={submitting}
                       className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
                     >
@@ -550,7 +544,10 @@ export default function PenManagement({ loggedInUser }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDeletePen(pen.id, pen.code)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeletePen(pen.id, pen.code);
+                      }}
                       disabled={submitting}
                       className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95"
                       title="Permanently Delete"

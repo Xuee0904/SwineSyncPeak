@@ -11,6 +11,7 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
   const [section, setSection] = useState("B");
   const [capacity, setCapacity] = useState("10");
   const [successInfo, setSuccessInfo] = useState(null);
+  const [housedSwine, setHousedSwine] = useState({ pigs: [], batches: [] });
 
   useEffect(() => {
     if (isOpen && pen) {
@@ -26,6 +27,24 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
       setSection(sec);
       setCapacity(String(pen.capacity || sections?.[sec]?.defaultCapacity || 10));
       setSuccessInfo(null);
+
+      const id = pen.id || pen.pen_id;
+      if (id) {
+        fetch(`/api/pens/${encodeURIComponent(id)}/swine`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data && data.data) {
+              setHousedSwine(data.data);
+            } else {
+              setHousedSwine({ pigs: [], batches: [] });
+            }
+          })
+          .catch(() => setHousedSwine({ pigs: [], batches: [] }));
+      } else {
+        setHousedSwine({ pigs: [], batches: [] });
+      }
+    } else {
+      setHousedSwine({ pigs: [], batches: [] });
     }
   }, [isOpen, pen, sections]);
 
@@ -35,11 +54,39 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
     requestClose();
   };
 
+  const getSectionCat = (sec) => {
+    if (!sec) return "S";
+    const s = String(sec).toUpperCase();
+    if (s === "BOAR" || s.includes("BOAR") || s === "B") return "B";
+    if (s === "SOW" || s.includes("SOW") || s.includes("GEST") || s.includes("FARR") || s === "S" || s.startsWith("A")) return "S";
+    if (s === "WEAN" || s.includes("WEAN") || s.includes("FATT") || s.includes("GROW") || s.includes("FINISH") || s.includes("NURS") || s === "W" || s.startsWith("N") || s.startsWith("T")) return "W";
+    if (s === "QUAR" || s.includes("QUAR") || s.includes("ISOL") || s.includes("SICK") || s === "Q") return "Q";
+    return "S";
+  };
+
   const isBoarLocked = section === "B";
   const minCapacity = Math.max(1, pen?.occupancy || 1);
 
+  const originalSecCat = getSectionCat(pen?.section);
+  const newSecCat = getSectionCat(section);
+  const hasSwine = (housedSwine.pigs?.length || 0) > 0 || (housedSwine.batches?.length || 0) > 0 || (pen?.occupancy || 0) > 0;
+  let typeWarning = null;
+
+  if (hasSwine && newSecCat !== originalSecCat) {
+    if (newSecCat === "S" && (housedSwine.pigs?.some(p => p.gender === "Male" || p.type?.toLowerCase() === "boar" || p.category?.toLowerCase()?.includes("boar")) || originalSecCat === "B" || housedSwine.batches?.length > 0)) {
+      typeWarning = "Cannot change to Sow Pen: this housing unit currently houses boars, piglet batches, or non-sow swine. Please transfer them to another pen first.";
+    } else if (newSecCat === "B" && (housedSwine.pigs?.some(p => p.gender === "Female" || p.type?.toLowerCase() === "sow" || p.category?.toLowerCase()?.includes("sow")) || originalSecCat === "S" || housedSwine.batches?.length > 0 || (pen?.occupancy || 0) > 1)) {
+      typeWarning = `Cannot change to Boar Pen: this housing unit currently houses ${pen?.occupancy} swine (sows/batches). Boar pens allow max 1 solitary boar.`;
+    } else if (newSecCat === "W" && housedSwine.pigs?.some(p => p.type?.toLowerCase() === "boar" || p.type?.toLowerCase() === "sow" || p.category?.toLowerCase()?.includes("boar") || p.category?.toLowerCase()?.includes("sow"))) {
+      typeWarning = "Cannot change to Weaned / Fattening: this housing unit currently houses adult breeding swine. Please transfer them first.";
+    } else if (pen?.occupancy > 0) {
+      typeWarning = `Cannot change pen type from ${pen?.section} while this housing unit currently houses ${pen?.occupancy} active swine. Please transfer them to another pen first.`;
+    }
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (typeWarning) return;
     onUpdate({
       id: pen.id,
       code,
@@ -149,6 +196,11 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
                   </option>
                 ))}
               </select>
+              {typeWarning && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold mt-2 flex items-start gap-2 animate-in fade-in">
+                  <span>🚫 {typeWarning}</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -192,7 +244,7 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
               </button>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || Boolean(typeWarning)}
                 className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-md shadow-amber-600/20 transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

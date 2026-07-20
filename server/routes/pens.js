@@ -22,7 +22,14 @@ function getCreatorDetails(creator) {
     ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
     : name.substring(0, 2).toUpperCase();
 
-  return { name, email, initials };
+function getSectionCategory(penSection) {
+  if (!penSection) return "S";
+  const s = String(penSection).trim().toUpperCase();
+  if (s === "BOAR" || s.includes("BOAR") || s === "B") return "B";
+  if (s === "SOW" || s.includes("SOW") || s.includes("GEST") || s.includes("FARR") || s === "S" || s.startsWith("A")) return "S";
+  if (s === "WEAN" || s.includes("WEAN") || s.includes("FATT") || s.includes("GROW") || s.includes("FINISH") || s.includes("NURS") || s === "W" || s.startsWith("N") || s.startsWith("T")) return "W";
+  if (s === "QUAR" || s.includes("QUAR") || s.includes("ISOL") || s.includes("SICK") || s === "Q") return "Q";
+  return "S";
 }
 
 // GET /api/pens – fetch all pens for dropdown filter (active only)
@@ -116,6 +123,40 @@ router.get('/api/pens/all', async (req, res) => {
   }
 });
 
+// GET /api/pens/:id/swine – get all pigs and piglet batches assigned to a specific pen
+router.get('/api/pens/:id/swine', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [pigsRes, batchesRes] = await Promise.all([
+      db.from('pigs').select('*').eq('pen_id', id).eq('is_archived', false).order('pig_tag', { ascending: true }),
+      db.from('piglet_batches').select('*').eq('pen_id', id).eq('is_archived', false).order('batch_number', { ascending: true })
+    ]);
+
+    let pigs = pigsRes.data || [];
+    let batches = batchesRes.data || [];
+
+    if (pigs.length === 0 && batches.length === 0) {
+      const pen = await db.from('pens').select('pen_id, id, pen_code').or(`pen_id.eq.${id},pen_code.eq.${id}`).maybeSingle();
+      if (pen.data) {
+        const targetIds = [pen.data.pen_id, pen.data.id, pen.data.pen_code].filter(Boolean);
+        if (targetIds.length > 0) {
+          const [p2, b2] = await Promise.all([
+            db.from('pigs').select('*').in('pen_id', targetIds).eq('is_archived', false).order('pig_tag', { ascending: true }),
+            db.from('piglet_batches').select('*').in('pen_id', targetIds).eq('is_archived', false).order('batch_number', { ascending: true })
+          ]);
+          pigs = p2.data || pigs;
+          batches = b2.data || batches;
+        }
+      }
+    }
+
+    res.json({ data: { pigs, batches } });
+  } catch (error) {
+    console.error('Error fetching pen swine:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST /api/pens – create a new pen
 router.post('/api/pens', async (req, res) => {
   try {
@@ -172,6 +213,48 @@ router.put('/api/pens/:id', async (req, res) => {
     if (!code) {
       return res.status(400).json({ error: 'Pen code is required.' });
     }
+
+    if (section) {
+      const [penRes, pigsRes, batchesRes] = await Promise.all([
+        db.from('pens').select('pen_id, id, pen_code, pen_type').or(`pen_id.eq.${id},id.eq.${id}`).maybeSingle(),
+        db.from('pigs').select('id, pig_tag, gender, type, category').eq('pen_id', id).eq('is_archived', false),
+        db.from('piglet_batches').select('batch_id, batch_number, current_count').eq('pen_id', id).eq('is_archived', false)
+      ]);
+      const currentPen = penRes.data || {};
+      const pigs = pigsRes.data || [];
+      const batches = batchesRes.data || [];
+      const oldCat = getSectionCategory(currentPen.pen_type || currentPen.section || currentPen.pen_code || 'S');
+      const newCat = getSectionCategory(section);
+
+      if (newCat !== oldCat && (pigs.length > 0 || batches.length > 0)) {
+        if (newCat === 'S') {
+          const boarsOrOthers = pigs.filter(p => p.gender === 'Male' || p.type?.toLowerCase() === 'boar' || p.category?.toLowerCase()?.includes('boar'));
+          if (boarsOrOthers.length > 0 || batches.length > 0) {
+            const names = boarsOrOthers.map(p => `#${p.pig_tag || p.id}`).join(', ');
+            return res.status(400).json({
+              error: `Cannot change pen type to Sow Pen because this unit currently houses ${boarsOrOthers.length > 0 ? `boar(s): ${names}` : 'piglet batches'}. Please transfer them to another housing unit first.`
+            });
+          }
+        } else if (newCat === 'B') {
+          const sowsOrOthers = pigs.filter(p => p.gender === 'Female' || p.type?.toLowerCase() === 'sow' || p.category?.toLowerCase()?.includes('sow'));
+          if (sowsOrOthers.length > 0 || batches.length > 0 || pigs.length > 1) {
+            const names = sowsOrOthers.map(p => `#${p.pig_tag || p.id}`).join(', ');
+            return res.status(400).json({
+              error: `Cannot change pen type to Boar Pen because ${sowsOrOthers.length > 0 ? `it houses sow(s): ${names}` : batches.length > 0 ? 'it houses piglet batches' : `it currently houses ${pigs.length} pigs (Boar pens allow max 1 boar)`}. Please transfer them first.`
+            });
+          }
+        } else if (newCat === 'W') {
+          const breeding = pigs.filter(p => p.type?.toLowerCase() === 'boar' || p.type?.toLowerCase() === 'sow' || p.category?.toLowerCase()?.includes('boar') || p.category?.toLowerCase()?.includes('sow'));
+          if (breeding.length > 0) {
+            const names = breeding.map(p => `#${p.pig_tag || p.id}`).join(', ');
+            return res.status(400).json({
+              error: `Cannot change pen type to Weaned / Fattening because this unit currently houses adult breeding swine (${names}). Please transfer them first.`
+            });
+          }
+        }
+      }
+    }
+
     const payload = {
       pen_code: code,
       max_capacity: Number(capacity) || 20,

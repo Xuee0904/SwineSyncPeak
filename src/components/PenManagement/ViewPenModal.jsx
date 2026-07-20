@@ -1,11 +1,38 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Eye, Pencil, Archive, Grid3X3, Users, CheckCircle2 } from "lucide-react";
+import { X, Eye, Pencil, Archive, Grid3X3, Users, CheckCircle2, Loader2, PiggyBank } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
 
 export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, onArchive }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
+
+  const [swineData, setSwineData] = useState({ pigs: [], batches: [] });
+  const [loadingSwine, setLoadingSwine] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && pen) {
+      const id = pen.id || pen.pen_id;
+      if (!id) return;
+      setLoadingSwine(true);
+      fetch(`/api/pens/${encodeURIComponent(id)}/swine`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.data) {
+            setSwineData(data.data);
+          } else {
+            setSwineData({ pigs: [], batches: [] });
+          }
+        })
+        .catch((err) => {
+          console.error("Error fetching pen swine:", err);
+          setSwineData({ pigs: [], batches: [] });
+        })
+        .finally(() => setLoadingSwine(false));
+    } else {
+      setSwineData({ pigs: [], batches: [] });
+    }
+  }, [isOpen, pen]);
 
   if (!shouldRender || !pen) return null;
 
@@ -82,6 +109,72 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
                 style={{ width: `${pct}%` }}
               />
             </div>
+          </div>
+
+          {/* Currently Housed Swine Section */}
+          <div className="space-y-2.5 pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+              <span className="flex items-center gap-1.5 uppercase tracking-wider text-[11px] text-slate-500 font-extrabold">
+                <PiggyBank className="w-3.5 h-3.5 text-emerald-600" /> Currently Housed Swine
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px]">
+                {loadingSwine ? "..." : (swineData.pigs?.length || 0) + (swineData.batches?.reduce((acc, b) => acc + Number(b.current_count || 0), 0) || 0)} head
+              </span>
+            </div>
+
+            {loadingSwine ? (
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center gap-2 text-xs font-semibold text-slate-400">
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> Loading housed swine...
+              </div>
+            ) : (swineData.pigs?.length || 0) === 0 && (swineData.batches?.length || 0) === 0 ? (
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center text-xs text-slate-400 font-medium">
+                No active swine are currently assigned to this housing unit.
+              </div>
+            ) : (
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                {(swineData.pigs || []).map((pig) => (
+                  <div
+                    key={pig.id || pig.pig_id}
+                    className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-100 flex items-center justify-between gap-2 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-slate-900 truncate">
+                          #{pig.pig_tag || pig.id}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold uppercase tracking-wide shrink-0">
+                          {pig.category || pig.type || pig.gender || "Pig"}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5">
+                        {pig.breed || "Crossbreed"} {pig.current_weight != null ? `• ${Number(pig.current_weight).toFixed(1)} kg` : ""}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+
+                {(swineData.batches || []).map((batch) => (
+                  <div
+                    key={batch.batch_id || batch.id}
+                    className="p-3 rounded-xl bg-amber-50/50 hover:bg-amber-50 border border-amber-100 flex items-center justify-between gap-2 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-amber-950 truncate">
+                          Batch #{batch.batch_number}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold uppercase tracking-wide shrink-0">
+                          Piglet Batch
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-700/80 font-medium truncate mt-0.5">
+                        {batch.breed || "Crossbreed"} • {batch.current_count} head
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-50">
