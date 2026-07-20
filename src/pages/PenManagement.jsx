@@ -17,13 +17,14 @@ import {
   RefreshCw,
 } from "lucide-react";
 import toast from "../utils/toast";
+import AddPenModal from "../components/PenManagement/AddPenModal";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
 // ---- Sections mapping & styling (Client-approved types) ------------
 const SECTIONS = {
   B: { label: "Boar Pen", desc: "Max capacity: 1 (Solitary)", color: "text-blue-800", bg: "bg-blue-50 border-blue-200/60", defaultCapacity: 1 },
-  S: { label: "Sow Pen", desc: "Gestation & Farrowing", color: "text-emerald-800", bg: "bg-emerald-50 border-emerald-200/60", defaultCapacity: 10 },
+  S: { label: "Sow Pen", desc: "Gestation & Farrowing", color: "text-emerald-800", bg: "bg-emerald-50 border-emerald-200/60", defaultCapacity: 1 },
   W: { label: "Weaned / Fattening", desc: "Growing & Finishing", color: "text-amber-800", bg: "bg-amber-50 border-amber-200/60", defaultCapacity: 20 },
   Q: { label: "Quarantine / Isolation", desc: "Sick & Observation", color: "text-rose-800", bg: "bg-rose-50 border-rose-200/60", defaultCapacity: 5 },
 };
@@ -78,10 +79,7 @@ export default function PenManagement({ loggedInUser }) {
   const [submitting, setSubmitting] = useState(false);
   const menuRef = useRef(null);
 
-  // Form states for modal
-  const [newPenCode, setNewPenCode] = useState("");
-  const [newPenSection, setNewPenSection] = useState("S");
-  const [newPenCapacity, setNewPenCapacity] = useState("10");
+
 
   const fetchPens = useCallback(async () => {
     setLoading(true);
@@ -137,9 +135,8 @@ export default function PenManagement({ loggedInUser }) {
     }
   }
 
-  const handleAddPen = async (e) => {
-    e.preventDefault();
-    if (!newPenCode.trim()) {
+  const handleAddPen = async ({ code, section, capacity }) => {
+    if (!code.trim()) {
       toast.error("Please enter a valid pen code");
       return;
     }
@@ -149,19 +146,16 @@ export default function PenManagement({ loggedInUser }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          code: newPenCode.trim().toUpperCase(),
-          section: newPenSection,
-          capacity: newPenSection === "B" ? 1 : (Number(newPenCapacity) || SECTIONS[newPenSection]?.defaultCapacity || 10),
+          code: code.trim().toUpperCase(),
+          section: section,
+          capacity: (section === "B" || section === "S") ? 1 : (Number(capacity) || SECTIONS[section]?.defaultCapacity || 10),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save pen.");
 
-      toast.success(`Added pen ${newPenCode.trim().toUpperCase()}`);
+      toast.success(`Added pen ${code.trim().toUpperCase()}`);
       setShowAddModal(false);
-      setNewPenCode("");
-      setNewPenSection("S");
-      setNewPenCapacity("10");
       fetchPens();
     } catch (err) {
       toast.error(err.message || "Error creating pen.");
@@ -224,11 +218,10 @@ export default function PenManagement({ loggedInUser }) {
           <button
             type="button"
             onClick={() => setActiveSection("ALL")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeSection === "ALL"
-                ? "bg-slate-900 text-white shadow-sm"
-                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-            }`}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeSection === "ALL"
+              ? "bg-slate-900 text-white shadow-sm"
+              : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+              }`}
           >
             All Sections
           </button>
@@ -237,11 +230,10 @@ export default function PenManagement({ loggedInUser }) {
               key={key}
               type="button"
               onClick={() => setActiveSection(key)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeSection === key
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-              }`}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${activeSection === key
+                ? "bg-slate-900 text-white shadow-sm"
+                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+                }`}
             >
               <span className={`w-2 h-2 rounded-full ${activeSection === key ? "bg-emerald-400" : "bg-slate-400"}`} />
               {s.label} ({key})
@@ -315,7 +307,7 @@ export default function PenManagement({ loggedInUser }) {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredPens.map((pen) => {
-            const section = SECTIONS[pen.section] || SECTIONS.S || { label: pen.section || "Sow Pen", color: "text-emerald-800", bg: "bg-emerald-50 border-emerald-200/60" };
+            const section = SECTIONS[pen.section] || Object.values(SECTIONS)[0] || { label: pen.section || "Pen", color: "text-emerald-800", bg: "bg-emerald-50 border-emerald-200/60" };
             const status = getStatus(pen.occupancy, pen.capacity);
             const pct = pen.capacity > 0 ? Math.min(100, Math.round((pen.occupancy / pen.capacity) * 100)) : 0;
 
@@ -323,10 +315,10 @@ export default function PenManagement({ loggedInUser }) {
               status.tone === "full"
                 ? "bg-rose-500"
                 : status.tone === "warn"
-                ? "bg-amber-500"
-                : status.tone === "empty"
-                ? "bg-slate-300"
-                : "bg-emerald-500";
+                  ? "bg-amber-500"
+                  : status.tone === "empty"
+                    ? "bg-slate-300"
+                    : "bg-emerald-500";
 
             return (
               <div
@@ -417,127 +409,14 @@ export default function PenManagement({ loggedInUser }) {
         </div>
       )}
 
-      {/* Portal-based Add Pen Modal matching system design */}
-      {showAddModal &&
-        createPortal(
-          <div
-            className="fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200"
-            onClick={(e) => {
-              if (e.target === e.currentTarget && !submitting) setShowAddModal(false);
-            }}
-          >
-            <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-              <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100/60 flex items-center justify-center text-emerald-600 shadow-sm shrink-0">
-                    <Grid3X3 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900 leading-tight">Add New Pen</h3>
-                    <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Configure pen facility</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => setShowAddModal(false)}
-                  className="p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <form onSubmit={handleAddPen} className="p-6 space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
-                    Pen Code *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    disabled={submitting}
-                    placeholder="e.g. PEN-A3"
-                    value={newPenCode}
-                    onChange={(e) => setNewPenCode(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all disabled:opacity-50"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
-                    Section (Pen Type) *
-                  </label>
-                  <select
-                    value={newPenSection}
-                    disabled={submitting}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setNewPenSection(val);
-                      if (val === "B") {
-                        setNewPenCapacity("1");
-                      } else {
-                        setNewPenCapacity(String(SECTIONS[val]?.defaultCapacity || 10));
-                      }
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {Object.entries(SECTIONS).map(([key, s]) => (
-                      <option key={key} value={key}>
-                        {s.label} ({key}) — {s.desc}
-                      </option>
-                    ))}
-                  </select>
-                  {SECTIONS[newPenSection]?.desc && (
-                    <p className="text-[11px] font-medium text-slate-500 mt-1">
-                      ℹ️ {SECTIONS[newPenSection].desc}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
-                    Capacity (Pigs) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    disabled={submitting || newPenSection === "B"}
-                    min="1"
-                    placeholder="e.g. 10"
-                    value={newPenSection === "B" ? "1" : newPenCapacity}
-                    onChange={(e) => setNewPenCapacity(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
-                  />
-                  {newPenSection === "B" && (
-                    <p className="text-[11px] font-bold text-amber-600 mt-1 flex items-center gap-1">
-                      <span>⚠️ Max capacity is locked to 1 since boars fight other pigs.</span>
-                    </p>
-                  )}
-                </div>
-
-                <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-50">
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => setShowAddModal(false)}
-                    className="px-4 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    {submitting ? "Saving..." : "Save Pen"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>,
-          document.body
-        )}
+      {/* Modular Add Pen Modal */}
+      <AddPenModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onAdd={handleAddPen}
+        sections={SECTIONS}
+        submitting={submitting}
+      />
     </div>
   );
 }
