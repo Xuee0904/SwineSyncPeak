@@ -15,9 +15,13 @@ import {
   Grid3X3,
   Loader2,
   RefreshCw,
+  Archive,
 } from "lucide-react";
 import toast from "../utils/toast";
 import AddPenModal from "../components/PenManagement/AddPenModal";
+import EditPenModal from "../components/PenManagement/EditPenModal";
+import ArchivePenModal from "../components/PenManagement/ArchivePenModal";
+import ViewPenModal from "../components/PenManagement/ViewPenModal";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
@@ -76,6 +80,9 @@ export default function PenManagement({ loggedInUser }) {
   const [openMenu, setOpenMenu] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingPen, setEditingPen] = useState(null);
+  const [archivingPen, setArchivingPen] = useState(null);
+  const [viewingPen, setViewingPen] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const menuRef = useRef(null);
 
@@ -110,8 +117,14 @@ export default function PenManagement({ loggedInUser }) {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
+  const activePens = pens.filter((p) => !p.is_archived);
+  const archivedPensCount = pens.filter((p) => p.is_archived).length;
+
   const filteredPens = pens.filter((p) => {
-    const matchesSection = activeSection === "ALL" || p.section === activeSection;
+    const matchesSection =
+      activeSection === "ARCHIVED"
+        ? p.is_archived
+        : !p.is_archived && (activeSection === "ALL" || p.section === activeSection);
     const q = query.trim().toLowerCase();
     const matchesQuery =
       q === "" ||
@@ -120,8 +133,8 @@ export default function PenManagement({ loggedInUser }) {
     return matchesSection && matchesQuery;
   });
 
-  const totalCapacity = pens.reduce((sum, p) => sum + Number(p.capacity || 0), 0);
-  const totalOccupancy = pens.reduce((sum, p) => sum + Number(p.occupancy || 0), 0);
+  const totalCapacity = activePens.reduce((sum, p) => sum + Number(p.capacity || 0), 0);
+  const totalOccupancy = activePens.reduce((sum, p) => sum + Number(p.occupancy || 0), 0);
   const utilization = totalCapacity ? Math.round((totalOccupancy / totalCapacity) * 100) : 0;
 
   function copyId(id) {
@@ -135,27 +148,33 @@ export default function PenManagement({ loggedInUser }) {
     }
   }
 
-  const handleAddPen = async ({ code, section, capacity }) => {
+  const handleAddPen = async ({ code, section, capacity, onSuccess }) => {
     if (!code.trim()) {
       toast.error("Please enter a valid pen code");
       return;
     }
     setSubmitting(true);
     try {
+      const finalCapacity = section === "B" ? 1 : (Number(capacity) || SECTIONS[section]?.defaultCapacity || 10);
       const res = await fetch(`${API_BASE}/api/pens`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code: code.trim().toUpperCase(),
           section: section,
-          capacity: (section === "B" || section === "S") ? 1 : (Number(capacity) || SECTIONS[section]?.defaultCapacity || 10),
+          capacity: finalCapacity,
+          creator: loggedInUser,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save pen.");
 
       toast.success(`Added pen ${code.trim().toUpperCase()}`);
-      setShowAddModal(false);
+      if (typeof onSuccess === "function") {
+        onSuccess({ code: code.trim().toUpperCase(), section, capacity: finalCapacity });
+      } else {
+        setShowAddModal(false);
+      }
       fetchPens();
     } catch (err) {
       toast.error(err.message || "Error creating pen.");
@@ -164,17 +183,101 @@ export default function PenManagement({ loggedInUser }) {
     }
   };
 
-  const handleDeletePen = async (id, code) => {
+  const handleUpdatePen = async ({ id, code, section, capacity, onSuccess }) => {
+    setSubmitting(true);
     try {
       const res = await fetch(`${API_BASE}/api/pens/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: code.trim().toUpperCase(),
+          section,
+          capacity,
+          creator: loggedInUser,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update pen.");
+
+      toast.success(`Updated pen #${code.trim().toUpperCase()}`);
+      if (typeof onSuccess === "function") {
+        onSuccess({ code: code.trim().toUpperCase(), section, capacity });
+      } else {
+        setEditingPen(null);
+      }
+      fetchPens();
+    } catch (err) {
+      toast.error(err.message || "Error updating pen.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleArchivePen = async ({ id, code, reason, onSuccess }) => {
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/pens/${id}/archive`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          creator: loggedInUser,
+          code,
+          reason,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to archive pen.");
+
+      toast.success(`Archived pen #${code || id}`);
+      if (typeof onSuccess === "function") {
+        onSuccess({ code });
+      } else {
+        setArchivingPen(null);
+      }
+      fetchPens();
+    } catch (err) {
+      toast.error(err.message || "Error archiving pen.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeletePen = async (id, code) => {
+    try {
+      const queryCreator = loggedInUser ? `?creator=${encodeURIComponent(JSON.stringify(loggedInUser))}&code=${encodeURIComponent(code || '')}` : `?code=${encodeURIComponent(code || '')}`;
+      const res = await fetch(`${API_BASE}/api/pens/${id}${queryCreator}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error("Failed to delete pen.");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to delete pen.");
       setOpenMenu(null);
       toast.success(`${code || "Pen"} has been deleted.`);
       fetchPens();
     } catch (err) {
       toast.error(err.message || "Error deleting pen.");
+    }
+  };
+
+  const handleUnarchivePen = async (id, code) => {
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/pens/${id}/unarchive`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          creator: loggedInUser,
+          code,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to restore pen.");
+
+      toast.success(`Restored pen #${code || id}`);
+      fetchPens();
+    } catch (err) {
+      toast.error(err.message || "Error restoring pen.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -239,6 +342,17 @@ export default function PenManagement({ loggedInUser }) {
               {s.label} ({key})
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setActiveSection("ARCHIVED")}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${activeSection === "ARCHIVED"
+              ? "bg-rose-900 text-white shadow-sm"
+              : "bg-rose-50/80 hover:bg-rose-100/80 text-rose-800 border border-rose-200/60"
+              }`}
+          >
+            <Archive className="w-3.5 h-3.5" />
+            Archived ({archivedPensCount})
+          </button>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap justify-end">
@@ -323,7 +437,7 @@ export default function PenManagement({ loggedInUser }) {
             return (
               <div
                 key={pen.id}
-                className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:border-slate-200/80 transition-all duration-200 p-5 relative flex flex-col justify-between group"
+                className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all duration-200 p-5 relative flex flex-col justify-between group ${pen.is_archived ? "border-rose-100 bg-rose-50/10 opacity-95" : "border-slate-100 hover:border-slate-200/80"}`}
               >
                 <div>
                   {/* Top Row: Section Badge & Dropdown */}
@@ -331,81 +445,147 @@ export default function PenManagement({ loggedInUser }) {
                     <span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold tracking-wide uppercase border ${section.bg} ${section.color}`}>
                       {section.label} ({pen.section})
                     </span>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setOpenMenu(openMenu === pen.id ? null : pen.id)}
-                        className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
-                      >
-                        <MoreVertical className="w-4 h-4" />
-                      </button>
-                      {openMenu === pen.id && (
-                        <div
-                          ref={menuRef}
-                          className="absolute right-0 top-8 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden min-w-[150px] py-1 animate-in fade-in zoom-in-95 duration-150"
+                    {pen.is_archived ? (
+                      <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200 tracking-wider">
+                        ARCHIVED
+                      </span>
+                    ) : (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setOpenMenu(openMenu === pen.id ? null : pen.id)}
+                          className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
                         >
-                          <button
-                            type="button"
-                            onClick={() => setOpenMenu(null)}
-                            className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors cursor-pointer"
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                        {openMenu === pen.id && (
+                          <div
+                            ref={menuRef}
+                            className="absolute right-0 top-8 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden min-w-[155px] py-1 animate-in fade-in zoom-in-95 duration-150"
                           >
-                            <Eye className="w-3.5 h-3.5 text-slate-400" /> View details
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setOpenMenu(null)}
-                            className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors cursor-pointer"
-                          >
-                            <Pencil className="w-3.5 h-3.5 text-slate-400" /> Edit pen
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeletePen(pen.id, pen.code)}
-                            className="w-full text-left px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" /> Delete pen
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenMenu(null);
+                                setViewingPen(pen);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-slate-400" /> View details
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenMenu(null);
+                                setEditingPen(pen);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-slate-400" /> Edit pen
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOpenMenu(null);
+                                setArchivingPen(pen);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition-colors cursor-pointer"
+                            >
+                              <Archive className="w-3.5 h-3.5 text-amber-600" /> Archive pen
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (pen.occupancy > 0) {
+                                  toast.error(`Cannot delete Pen #${pen.code} because it currently houses ${pen.occupancy} active swine.`);
+                                  setOpenMenu(null);
+                                  return;
+                                }
+                                handleDeletePen(pen.id, pen.code);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors cursor-pointer border-t border-slate-100"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Delete pen
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Code */}
                   <h3 className="text-xl font-black text-slate-900 tracking-tight">{pen.code}</h3>
 
-                  {/* Progress Bar Track */}
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden my-4">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
+                  {pen.is_archived ? (
+                    <div className="my-3 space-y-1">
+                      <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-100 text-rose-900 text-xs">
+                        <span className="font-bold block text-[10px] uppercase text-rose-500 tracking-wider mb-0.5">
+                          Archive Reason
+                        </span>
+                        <p className="font-medium leading-relaxed">
+                          {pen.archive_reason || "Archived by user"}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Progress Bar Track */
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden my-4">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
 
-                {/* Bottom Occupancy & Status Badge */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-50/80 mt-1">
-                  <div className="text-xs font-bold text-slate-800">
-                    {pen.occupancy} <span className="font-normal text-slate-400">/ {pen.capacity} pigs</span>
+                {pen.is_archived ? (
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => handleUnarchivePen(pen.id, pen.code)}
+                      disabled={submitting}
+                      className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" /> Restore Pen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePen(pen.id, pen.code)}
+                      disabled={submitting}
+                      className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95"
+                      title="Permanently Delete"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${status.badgeClass}`}>
-                    {status.label}
-                  </span>
-                </div>
+                ) : (
+                  /* Bottom Occupancy & Status Badge */
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-50/80 mt-1">
+                    <div className="text-xs font-bold text-slate-800">
+                      {pen.occupancy} <span className="font-normal text-slate-400">/ {pen.capacity} pigs</span>
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${status.badgeClass}`}>
+                      {status.label}
+                    </span>
+                  </div>
+                )}
               </div>
             );
           })}
 
-          {/* Ghost Card to Add New Pen */}
-          <button
-            type="button"
-            onClick={() => setShowAddModal(true)}
-            className="border-2 border-dashed border-slate-200 hover:border-emerald-500/50 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/20 cursor-pointer transition-all duration-200 min-h-[190px] group active:scale-[0.99]"
-          >
-            <div className="w-11 h-11 rounded-2xl bg-slate-50 group-hover:bg-emerald-100/60 flex items-center justify-center transition-colors">
-              <Plus className="w-5 h-5 text-slate-400 group-hover:text-emerald-600" />
-            </div>
-            <span className="font-bold text-xs tracking-wide">Add New Pen</span>
-          </button>
+          {/* Ghost Card to Add New Pen (Hidden when viewing Archived tab) */}
+          {activeSection !== "ARCHIVED" && (
+            <button
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className="border-2 border-dashed border-slate-200 hover:border-emerald-500/50 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/20 cursor-pointer transition-all duration-200 min-h-[190px] group active:scale-[0.99]"
+            >
+              <div className="w-11 h-11 rounded-2xl bg-slate-50 group-hover:bg-emerald-100/60 flex items-center justify-center transition-colors">
+                <Plus className="w-5 h-5 text-slate-400 group-hover:text-emerald-600" />
+              </div>
+              <span className="font-bold text-xs tracking-wide">Add New Pen</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -416,6 +596,35 @@ export default function PenManagement({ loggedInUser }) {
         onAdd={handleAddPen}
         sections={SECTIONS}
         submitting={submitting}
+      />
+
+      {/* Modular Edit Pen Modal */}
+      <EditPenModal
+        isOpen={Boolean(editingPen)}
+        onClose={() => setEditingPen(null)}
+        onUpdate={handleUpdatePen}
+        pen={editingPen}
+        sections={SECTIONS}
+        submitting={submitting}
+      />
+
+      {/* Modular Archive Pen Modal */}
+      <ArchivePenModal
+        isOpen={Boolean(archivingPen)}
+        onClose={() => setArchivingPen(null)}
+        onArchive={handleArchivePen}
+        pen={archivingPen}
+        submitting={submitting}
+      />
+
+      {/* Modular View Pen Modal */}
+      <ViewPenModal
+        isOpen={Boolean(viewingPen)}
+        onClose={() => setViewingPen(null)}
+        pen={viewingPen}
+        sections={SECTIONS}
+        onEdit={(p) => setEditingPen(p)}
+        onArchive={(p) => setArchivingPen(p)}
       />
     </div>
   );

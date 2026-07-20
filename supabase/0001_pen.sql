@@ -26,3 +26,8 @@ to anon
 using (true);
 
 grant select on public.pens to anon, authenticated;
+
+ALTER TABLE pens
+ADD COLUMN is_archived BOOLEAN DEFAULT false,
+ADD COLUMN archived_at TIMESTAMPTZ,
+ADD COLUMN archive_reason TEXT;

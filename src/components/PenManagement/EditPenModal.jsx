@@ -1,46 +1,55 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Plus, Loader2, CheckCircle2, PlusCircle } from "lucide-react";
+import { X, Pencil, Loader2, CheckCircle2 } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
 
-export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitting }) {
+export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections, submitting }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
   const [code, setCode] = useState("");
   const [section, setSection] = useState("B");
-  const [capacity, setCapacity] = useState("1");
+  const [capacity, setCapacity] = useState("10");
   const [successInfo, setSuccessInfo] = useState(null);
 
   useEffect(() => {
-    if (isOpen) {
-      setCode("");
+    if (isOpen && pen) {
+      setCode(pen.code || "");
+      let sec = pen.section && sections?.[pen.section] ? pen.section : "S";
+      if (!sections?.[pen.section] && pen.section) {
+        const s = String(pen.section).toUpperCase();
+        if (s === "BOAR" || s.includes("BOAR") || s === "B") sec = "B";
+        else if (s === "SOW" || s.includes("SOW") || s.includes("GEST") || s.includes("FARR") || s === "S" || s.startsWith("A")) sec = "S";
+        else if (s === "WEAN" || s.includes("WEAN") || s.includes("FATT") || s.includes("GROW") || s.includes("FINISH") || s.includes("NURS") || s === "W" || s.startsWith("N") || s.startsWith("T")) sec = "W";
+        else if (s === "QUAR" || s.includes("QUAR") || s.includes("ISOL") || s.includes("SICK") || s === "Q") sec = "Q";
+      }
+      setSection(sec);
+      setCapacity(String(pen.capacity || sections?.[sec]?.defaultCapacity || 10));
       setSuccessInfo(null);
-      const firstSec = sections && Object.keys(sections)[0] ? Object.keys(sections)[0] : "B";
-      setSection(firstSec);
-      setCapacity(firstSec === "B" ? "1" : String(sections?.[firstSec]?.defaultCapacity || "10"));
     }
-  }, [isOpen, sections]);
+  }, [isOpen, pen, sections]);
 
-  if (!shouldRender) return null;
+  if (!shouldRender || !pen) return null;
 
   const handleClose = () => {
     requestClose();
   };
 
+  const isBoarLocked = section === "B";
+  const minCapacity = Math.max(1, pen?.occupancy || 1);
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    onAdd({
+    onUpdate({
+      id: pen.id,
       code,
       section,
-      capacity,
+      capacity: isBoarLocked ? 1 : Number(capacity),
       onSuccess: (info) => {
         setSuccessInfo(info);
       },
     });
   };
-
-  const isBoarLocked = section === "B";
 
   return createPortal(
     <div
@@ -52,13 +61,13 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
       <div className={`w-full max-w-md overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${panelClassName}`}>
         <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 font-bold">
-              <Plus size={20} />
+            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 font-bold">
+              <Pencil size={18} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">Add New Pen</h3>
+              <h3 className="text-base font-bold text-slate-900">Edit Pen #{pen.code}</h3>
               <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                Create a new housing unit
+                Update housing unit details
               </p>
             </div>
           </div>
@@ -79,32 +88,21 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
             </div>
             <div>
               <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                Housing Unit Saved
+                Housing Unit Updated
               </span>
               <h4 className="text-xl font-black text-slate-900">
-                Pen #{successInfo.code} Created!
+                Pen #{successInfo.code} Updated!
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
-                {sections[successInfo.section]?.label || "Pen"} created with a capacity of {successInfo.capacity} {Number(successInfo.capacity) === 1 ? "pig" : "pigs"}.
+                {sections[successInfo.section]?.label || "Pen"} details have been updated successfully and recorded in activity logs.
               </p>
             </div>
 
-            <div className="pt-2 w-full flex flex-col gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setCode("");
-                  setSuccessInfo(null);
-                }}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                <PlusCircle size={16} />
-                Add Another Pen
-              </button>
+            <div className="pt-2 w-full">
               <button
                 type="button"
                 onClick={handleClose}
-                className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
               >
                 Done & Close
               </button>
@@ -139,44 +137,48 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
                   setSection(val);
                   if (val === "B") {
                     setCapacity("1");
-                  } else {
-                    setCapacity(String(sections[val]?.defaultCapacity || 10));
+                  } else if (Number(capacity) < minCapacity) {
+                    setCapacity(String(minCapacity));
                   }
                 }}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all cursor-pointer disabled:opacity-50"
               >
-                {Object.entries(sections).map(([key, s]) => (
+                {Object.entries(sections || {}).map(([key, s]) => (
                   <option key={key} value={key}>
                     {s.label} ({key}) — {s.desc}
                   </option>
                 ))}
               </select>
-              {sections[section]?.desc && (
-                <p className="text-[11px] font-medium text-slate-500 mt-1">
-                  ℹ️ {sections[section].desc}
-                </p>
-              )}
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
-                Capacity *
+              <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider flex justify-between">
+                <span>Capacity *</span>
+                {pen?.occupancy > 0 && (
+                  <span className="text-slate-400 font-normal text-[11px]">
+                    Min capacity: {pen.occupancy} (Currently housed)
+                  </span>
+                )}
               </label>
               <input
                 type="number"
                 required
                 disabled={submitting || isBoarLocked}
-                min="1"
+                min={isBoarLocked ? "1" : String(minCapacity)}
                 placeholder="e.g. 10"
                 value={isBoarLocked ? "1" : capacity}
                 onChange={(e) => setCapacity(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
               />
-              {isBoarLocked && (
-                <p className="text-[11px] font-bold text-amber-600 mt-1 flex items-center gap-1">
-                  <span>⚠️ Max capacity is locked to 1 since boars fight other pigs.</span>
+              {isBoarLocked ? (
+                <p className="text-[11px] font-bold text-amber-600 mt-1">
+                  ⚠️ Max capacity is locked to 1 since boars fight other pigs.
                 </p>
-              )}
+              ) : pen?.occupancy > 0 ? (
+                <p className="text-[11px] font-medium text-slate-500 mt-1">
+                  ℹ️ Capacity cannot be lower than the current occupancy ({pen.occupancy} pigs).
+                </p>
+              ) : null}
             </div>
 
             <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-50">
@@ -191,10 +193,10 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-md shadow-amber-600/20 transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                {submitting ? "Saving..." : "Save Pen"}
+                {submitting ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </form>
