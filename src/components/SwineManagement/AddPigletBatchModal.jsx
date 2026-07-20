@@ -75,8 +75,36 @@ export function AddPigletBatchForm({
   const [breedsState, setBreeds] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
-  const pens = propPens || pensState;
+  const pens = pensState.length > 0 ? pensState : (propPens || []);
   const breeds = propBreeds || breedsState;
+
+  const availablePensForBatch = pens.filter(p => {
+    if (p.section === 'B' || p.section === 'BOAR') return false;
+
+    let ageInDays = null;
+    if (form.dateOfBirth) {
+      ageInDays = Math.floor((new Date() - new Date(form.dateOfBirth)) / (1000 * 60 * 60 * 24));
+    }
+    const currentStatus = (form.status || '').toLowerCase();
+    const isWeaned = currentStatus === 'weaned' || (currentStatus !== 'suckling' && ageInDays !== null && ageInDays > 28);
+    const isNursing = currentStatus === 'suckling' || (currentStatus !== 'weaned' && ageInDays !== null && ageInDays <= 28);
+
+    if (isWeaned) {
+      if (p.section !== 'W' && p.section !== 'WEANED') return false;
+      return typeof p.remaining === 'number' ? (String(p.id) === String(form.penId) || p.remaining > 0) : true;
+    }
+    if (isNursing) {
+      if (p.section !== 'S' && p.section !== 'SOW') return false;
+      return true;
+    }
+
+    if (String(p.id) === String(form.penId)) return true;
+    const selectedSow = sows.find(s => String(s.id) === String(form.sowId));
+    if (selectedSow && selectedSow.penId && String(p.id) === String(selectedSow.penId)) {
+      return true;
+    }
+    return typeof p.remaining === 'number' ? p.remaining > 0 : true;
+  });
 
   // Breed combo-box
   const [breedOpen, setBreedOpen] = useState(false);
@@ -105,7 +133,7 @@ export function AddPigletBatchForm({
       setIsLoadingData(true);
       try {
         const [pensRes, sowsRes, breedsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/pens/available`),
+          fetch(`${API_BASE}/api/pens`),
           fetch(`${API_BASE}/api/sows`),
           fetch(`${API_BASE}/api/breeds`),
         ]);
@@ -128,8 +156,77 @@ export function AddPigletBatchForm({
 
   const handleChange = (field) => (e) => {
     const value = e.target.value;
-    setForm(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }));
+    setForm(prev => {
+      const nextForm = { ...prev, [field]: value };
+      let currentStatus = (nextForm.status || '').toLowerCase();
+
+      if (field === 'dateOfBirth' && value) {
+        const ageInDays = Math.floor((new Date() - new Date(value)) / (1000 * 60 * 60 * 24));
+        if (ageInDays <= 28) {
+          nextForm.status = 'suckling';
+          currentStatus = 'suckling';
+        } else if (ageInDays > 28) {
+          nextForm.status = 'weaned';
+          currentStatus = 'weaned';
+        }
+      } else if (field === 'status') {
+        currentStatus = (value || '').toLowerCase();
+      }
+
+      const currentPen = pens.find(p => String(p.id) === String(nextForm.penId));
+      if (currentStatus === 'weaned' && currentPen && (currentPen.section !== 'W' && currentPen.section !== 'WEANED')) {
+        nextForm.penId = '';
+      } else if (currentStatus === 'suckling' && currentPen && (currentPen.section !== 'S' && currentPen.section !== 'SOW')) {
+        nextForm.penId = '';
+      }
+
+      return nextForm;
+    });
+
+    if (field === 'dateOfBirth') {
+      if (errors.dateOfBirth) setErrors(prev => ({ ...prev, dateOfBirth: undefined }));
+      if (errors.status) setErrors(prev => ({ ...prev, status: undefined }));
+    } else if (field === 'status') {
+      if (errors.status) setErrors(prev => ({ ...prev, status: undefined }));
+      if (errors.penId) setErrors(prev => ({ ...prev, penId: undefined }));
+
+      if (form.dateOfBirth) {
+        const ageInDays = Math.floor((new Date() - new Date(form.dateOfBirth)) / (1000 * 60 * 60 * 24));
+        const chosenStatus = (value || '').toLowerCase();
+        if (chosenStatus === 'suckling' && ageInDays > 28) {
+          setErrors(prev => ({
+            ...prev,
+            status: `Piglets > 28 days old (${ageInDays} days old) must be marked Weaned (or check birth date if still suckling)`
+          }));
+        } else if (chosenStatus === 'weaned' && ageInDays <= 28) {
+          setErrors(prev => ({
+            ...prev,
+            status: `Piglets <= 28 days old (${ageInDays} days old) cannot be marked Weaned (must be Suckling or check birth date)`
+          }));
+        }
+      }
+    } else {
+      if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }));
+    }
+  };
+
+  const handleSowChange = (e) => {
+    const sowId = e.target.value;
+    const selectedSow = sows.find(s => String(s.id) === String(sowId));
+    setForm(prev => {
+      const currentStatus = (prev.status || '').toLowerCase();
+      const nextStatus = currentStatus === 'weaned' ? prev.status : (sowId ? 'suckling' : prev.status);
+      const nextPenId = currentStatus === 'weaned' ? prev.penId : (selectedSow && selectedSow.penId ? selectedSow.penId : prev.penId);
+      return {
+        ...prev,
+        sowId,
+        status: nextStatus,
+        penId: nextPenId,
+      };
+    });
+    if (errors.sowId) setErrors(prev => ({ ...prev, sowId: undefined }));
+    if (errors.penId && selectedSow && selectedSow.penId) setErrors(prev => ({ ...prev, penId: undefined }));
+    if (errors.status) setErrors(prev => ({ ...prev, status: undefined }));
   };
 
   // Auto-sync currentCount from totalBornAlive right at batch creation
@@ -158,6 +255,14 @@ export function AddPigletBatchForm({
       next.dateOfBirth = 'Date of birth cannot be in the future';
     } else if (form.dateOfBirth < minDobStr) {
       next.dateOfBirth = 'Date of birth is too far in the past (max 15 years)';
+    } else {
+      const ageInDays = Math.floor((new Date() - new Date(form.dateOfBirth)) / (1000 * 60 * 60 * 24));
+      const chosenStatus = (form.status || '').toLowerCase();
+      if (ageInDays <= 28 && chosenStatus === 'weaned') {
+        next.status = `Piglets <= 28 days old (${ageInDays} days old) cannot be marked Weaned (must be Suckling or check birth date)`;
+      } else if (ageInDays > 28 && chosenStatus === 'suckling') {
+        next.status = `Piglets > 28 days old (${ageInDays} days old) must be marked Weaned (or check birth date if still suckling)`;
+      }
     }
     if (!form.totalBornAlive || Number(form.totalBornAlive) <= 0)
       next.totalBornAlive = 'Enter at least 1 piglet born alive';
@@ -167,6 +272,28 @@ export function AddPigletBatchForm({
       else if (w < 0) next.averageWeight = 'Weight cannot be negative';
       else if (w > 500) next.averageWeight = 'Weight cannot exceed 500 kg';
     }
+
+    if (form.penId && !next.penId) {
+      const selectedPen = pens.find(p => String(p.id) === String(form.penId));
+      const selectedSow = sows.find(s => String(s.id) === String(form.sowId));
+      let ageInDays = null;
+      if (form.dateOfBirth) {
+        ageInDays = Math.floor((new Date() - new Date(form.dateOfBirth)) / (1000 * 60 * 60 * 24));
+      }
+
+      if (selectedPen) {
+        if (selectedPen.section === 'B' || selectedPen.section === 'BOAR') {
+          next.penId = 'Piglet batches cannot be assigned to a Boar pen';
+        } else if (selectedSow && selectedSow.penId && String(selectedPen.id) !== String(selectedSow.penId)) {
+          next.penId = `Must be assigned to Mother Sow #${selectedSow.tag}'s pen`;
+        } else if (ageInDays !== null && ageInDays <= 28 && selectedPen.section !== 'S' && selectedPen.section !== 'SOW') {
+          next.penId = 'Nursing piglets (<=28 days old) must be assigned to a Sow pen';
+        } else if (ageInDays !== null && ageInDays > 28 && selectedPen.section !== 'W' && selectedPen.section !== 'WEANED') {
+          next.penId = 'Weaned piglets (>28 days old) must be assigned to a Weaned pen';
+        }
+      }
+    }
+
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -311,7 +438,7 @@ export function AddPigletBatchForm({
                 <Field label="Pen Assignment" error={errors.penId} icon={<Home />}>
                   <select value={form.penId} onChange={handleChange('penId')} disabled={isLoadingData} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
                     <option value="">{isLoadingData ? 'Loading…' : 'Select Pen'}</option>
-                    {pens.map(p => (
+                    {availablePensForBatch.map(p => (
                       <option key={p.id} value={p.id}>
                         {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
                       </option>
@@ -324,7 +451,7 @@ export function AddPigletBatchForm({
                 </Field>
 
                 <Field label="Mother Sow (optional)" icon={<Heart />}>
-                  <select value={form.sowId} onChange={handleChange('sowId')} disabled={isLoadingData} className={`${inputBase} ${inputOk} appearance-none`}>
+                  <select value={form.sowId} onChange={handleSowChange} disabled={isLoadingData} className={`${inputBase} ${inputOk} appearance-none`}>
                     <option value="">{isLoadingData ? 'Loading…' : 'None / Unknown'}</option>
                     {sows.map(s => (
                       <option key={s.id} value={s.id}>#{s.tag} — {s.breed}</option>
@@ -355,8 +482,8 @@ export function AddPigletBatchForm({
                   )}
                 </div>
 
-                <Field label="Status" icon={<Activity />}>
-                  <select value={form.status} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
+                <Field label="Status" error={errors.status} icon={<Activity />}>
+                  <select value={form.status} onChange={handleChange('status')} className={`${inputBase} ${errors.status ? inputErr : inputOk} appearance-none`}>
                     {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
                   </select>
                 </Field>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, Plus, Loader2, CheckCircle2, PlusCircle } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
+import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
 
 export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitting }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
@@ -11,6 +12,8 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
   const [section, setSection] = useState("B");
   const [capacity, setCapacity] = useState("1");
   const [successInfo, setSuccessInfo] = useState(null);
+
+  const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(Boolean(successInfo));
 
   useEffect(() => {
     if (isOpen) {
@@ -49,32 +52,40 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
         if (e.target === e.currentTarget && !submitting) handleClose();
       }}
     >
-      <div className={`w-full max-w-md overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${panelClassName}`}>
-        <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 font-bold">
-              <Plus size={20} />
+      <div
+        ref={containerRef}
+        style={stepTransitionStyle}
+        className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${
+          successInfo ? "max-w-sm" : "max-w-md"
+        } ${panelClassName}`}
+      >
+        {!successInfo && (
+          <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 font-bold">
+                <Plus size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Add New Pen</h3>
+                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  Create a new housing unit
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Add New Pen</h3>
-              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                Create a new housing unit
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={submitting}
+              className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={submitting}
-            className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        )}
 
         {successInfo ? (
-          <div className="p-8 text-center space-y-5">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600 mx-auto">
+          <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner mx-auto">
               <CheckCircle2 size={32} className="animate-bounce" />
             </div>
             <div>
@@ -111,7 +122,7 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <form onSubmit={handleSubmit} className="p-6 space-y-4 animate-in fade-in duration-300">
             <div>
               <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
                 Pen Code *

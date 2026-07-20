@@ -55,7 +55,64 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleChange = (field) => (e) => setForm(p => ({ ...p, [field]: e.target.value }));
+  const handleChange = (field) => (e) => {
+    const value = e.target.value;
+    setForm(p => {
+      const nextForm = { ...p, [field]: value };
+      if (isBatch) {
+        let currentStatus = (nextForm.status || pigData?.status || '').toLowerCase();
+        if (field === 'dateOfBirth' && value) {
+          const ageInDays = Math.floor((new Date() - new Date(value)) / (1000 * 60 * 60 * 24));
+          if (ageInDays <= 28) {
+            nextForm.status = 'Suckling';
+            currentStatus = 'suckling';
+          } else if (ageInDays > 28 && currentStatus === 'suckling') {
+            nextForm.status = 'Weaned';
+            currentStatus = 'weaned';
+          }
+        } else if (field === 'status') {
+          currentStatus = (value || '').toLowerCase();
+        }
+
+        const currentPen = pens.find(pen => String(pen.id) === String(nextForm.penId || pigData?.pen_id));
+        if (currentStatus === 'weaned' && currentPen && (currentPen.section !== 'W' && currentPen.section !== 'WEANED')) {
+          nextForm.penId = '';
+        } else if (currentStatus === 'suckling' && currentPen && (currentPen.section !== 'S' && currentPen.section !== 'SOW')) {
+          nextForm.penId = '';
+        }
+      }
+      return nextForm;
+    });
+
+    if (field === 'dateOfBirth') {
+      if (errors.dateOfBirth) setErrors(prev => ({ ...prev, dateOfBirth: undefined }));
+      if (errors.status) setErrors(prev => ({ ...prev, status: undefined }));
+    } else if (field === 'status') {
+      if (errors.status) setErrors(prev => ({ ...prev, status: undefined }));
+      if (errors.penId) setErrors(prev => ({ ...prev, penId: undefined }));
+
+      if (isBatch) {
+        const dob = form.dateOfBirth || pigData?.date_of_birth;
+        if (dob) {
+          const ageInDays = Math.floor((new Date() - new Date(dob)) / (1000 * 60 * 60 * 24));
+          const chosenStatus = (value || '').toLowerCase();
+          if (chosenStatus === 'suckling' && ageInDays > 28) {
+            setErrors(prev => ({
+              ...prev,
+              status: `Piglet batches > 28 days old (${ageInDays} days old) must be "Weaned" (or check birth date if still suckling)`
+            }));
+          } else if (chosenStatus === 'weaned' && ageInDays <= 28) {
+            setErrors(prev => ({
+              ...prev,
+              status: `Piglet batches <= 28 days old (${ageInDays} days old) cannot be "Weaned" (must be Suckling or check birth date)`
+            }));
+          }
+        }
+      }
+    } else {
+      if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }));
+    }
+  };
 
   const todayStr = new Date().toISOString().split('T')[0];
   const minDate = new Date();
@@ -91,6 +148,16 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
     if (isBatch) {
       if (!form.totalBornAlive || Number(form.totalBornAlive) <= 0) {
         next.totalBornAlive = 'Enter at least 1 piglet born alive';
+      }
+      const dob = form.dateOfBirth || pigData?.date_of_birth;
+      if (dob) {
+        const ageInDays = Math.floor((new Date() - new Date(dob)) / (1000 * 60 * 60 * 24));
+        const statusStr = (form.status || pigData?.status || '').toLowerCase();
+        if (ageInDays <= 28 && statusStr === 'weaned') {
+          next.status = 'Piglet batches <= 28 days old cannot have status "Weaned" (must be Suckling)';
+        } else if (ageInDays > 28 && statusStr === 'suckling') {
+          next.status = 'Piglet batches > 28 days old must be "Weaned" (no longer Suckling)';
+        }
       }
     }
     if (!form.penId) next.penId = 'Select a pen';
@@ -131,6 +198,50 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
       setIsSaving(false);
     }
   };
+
+  const currentGender = pigData?.gender || (pigData?.type?.toLowerCase() === 'sow' ? 'Female' : pigData?.type?.toLowerCase() === 'boar' ? 'Male' : '');
+  const currentStatus = form.status?.toLowerCase() || pigData?.status?.toLowerCase() || '';
+  const isSickOrQuarantine = currentStatus === 'sick' || currentStatus === 'quarantine';
+  const availablePensForPig = pens.filter(p => {
+    if (String(p.id) === String(pigData?.pen_id || form.penId)) return true;
+    const isQPen = p.section === 'Q' || p.section === 'QUARANTINE';
+    if (!isSickOrQuarantine && isQPen) return false;
+    if (isSickOrQuarantine && !isQPen) return false;
+
+    if (currentGender === 'Female') {
+      if (p.section === 'B' || p.section === 'BOAR') return false;
+      if ((p.section === 'S' || p.section === 'SOW') && (p.hasSow || p.sowCount >= 1 || p.pigCount >= 1)) return false;
+    }
+    if (currentGender === 'Male') {
+      if (p.section !== 'B' && p.section !== 'BOAR') return false;
+      if (p.hasBoar || p.boarCount >= 1 || p.pigCount >= 1) return false;
+    }
+    return typeof p.remaining === 'number' ? p.remaining > 0 : true;
+  });
+  const availablePensForBatch = pens.filter(p => {
+    if (p.section === 'B' || p.section === 'BOAR') return false;
+
+    let ageInDays = null;
+    const dob = form.dateOfBirth || pigData?.date_of_birth;
+    if (dob) {
+      ageInDays = Math.floor((new Date() - new Date(dob)) / (1000 * 60 * 60 * 24));
+    }
+    const currentStatus = (form.status || pigData?.status || '').toLowerCase();
+    const isWeaned = currentStatus === 'weaned' || (currentStatus !== 'suckling' && ageInDays !== null && ageInDays > 28);
+    const isNursing = currentStatus === 'suckling' || (currentStatus !== 'weaned' && ageInDays !== null && ageInDays <= 28);
+
+    if (isWeaned) {
+      if (p.section !== 'W' && p.section !== 'WEANED') return false;
+      return typeof p.remaining === 'number' ? (String(p.id) === String(pigData?.pen_id || form.penId) || p.remaining > 0) : true;
+    }
+    if (isNursing) {
+      if (p.section !== 'S' && p.section !== 'SOW') return false;
+      return true;
+    }
+
+    if (String(p.id) === String(pigData?.pen_id || form.penId)) return true;
+    return typeof p.remaining === 'number' ? p.remaining > 0 : true;
+  });
 
   const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs pl-10 pr-4";
   const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
@@ -190,16 +301,16 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
         <div className="grid grid-cols-2 gap-4">
           <Field label="Pen Code" error={errors.penId} icon={<Home />}>
             <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
-              <option value="">Select Pen</option>
-              {pens.map(p => (
+              <option value="">{availablePensForBatch.length === 0 ? 'No available pens' : 'Select Pen'}</option>
+              {availablePensForBatch.map(p => (
                 <option key={p.id} value={p.id}>
                   {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
                 </option>
               ))}
             </select>
           </Field>
-          <Field label="Status" icon={<Activity />}>
-            <select value={form.status ?? 'Suckling'} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
+          <Field label="Status" error={errors.status} icon={<Activity />}>
+            <select value={form.status ?? 'Suckling'} onChange={handleChange('status')} className={`${inputBase} ${errors.status ? inputErr : inputOk} appearance-none`}>
               {BATCH_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </Field>
@@ -327,8 +438,8 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
         <div className="grid grid-cols-2 gap-4">
           <Field label="Pen Code" error={errors.penId} icon={<Home />}>
             <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
-              <option value="">Select Pen</option>
-              {pens.map(p => (
+              <option value="">{availablePensForPig.length === 0 ? 'No available pens' : 'Select Pen'}</option>
+              {availablePensForPig.map(p => (
                 <option key={p.id} value={p.id}>
                   {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
                 </option>

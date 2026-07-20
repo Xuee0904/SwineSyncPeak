@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ChevronLeft, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle, Bookmark, CheckCircle2 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
+import useSmoothStepTransition from '../../hooks/useSmoothStepTransition';
 import useFormDraft, { fetchDraftPayload } from '../../hooks/useFormDraft';
 import DraftBanner from '../DraftBanner';
 import toast from '../../utils/toast';
@@ -31,6 +32,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
   const [step, setStep] = useState('select');
   const [gender, setGender] = useState(null);
   const [successInfo, setSuccessInfo] = useState(null);
+  const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(step);
   const {
     form,
     setForm,
@@ -258,6 +260,23 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
   const isPastDob = Boolean(form.dateOfBirth && form.dateOfBirth < minDobStr);
   const isInvalidWeight = Boolean(form.weight !== '' && form.weight !== undefined && form.weight !== null && (isNaN(Number(form.weight)) || Number(form.weight) < 0 || Number(form.weight) > 500));
 
+  const isSickOrQuarantine = form.status?.toLowerCase() === 'sick' || form.status?.toLowerCase() === 'quarantine';
+  const availablePensForGender = pens.filter(p => {
+    const isQPen = p.section === 'Q' || p.section === 'QUARANTINE';
+    if (!isSickOrQuarantine && isQPen) return false;
+    if (isSickOrQuarantine && !isQPen) return false;
+
+    if (gender === 'Female') {
+      if (p.section === 'B' || p.section === 'BOAR') return false;
+      if ((p.section === 'S' || p.section === 'SOW') && (p.hasSow || p.sowCount >= 1 || p.pigCount >= 1)) return false;
+    }
+    if (gender === 'Male') {
+      if (p.section !== 'B' && p.section !== 'BOAR') return false;
+      if (p.hasBoar || p.boarCount >= 1 || p.pigCount >= 1) return false;
+    }
+    return typeof p.remaining === 'number' ? p.remaining > 0 : true;
+  });
+
   return createPortal(
     <>
       {shouldRender && (
@@ -268,8 +287,9 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
           }}
         >
           <div
-            style={{ willChange: 'transform, opacity, max-width' }}
-            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 transition-[max-width] duration-300 ease-in-out ${
+            ref={containerRef}
+            style={stepTransitionStyle}
+            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${
               step === 'select' || step === 'success' ? 'max-w-md' : step === 'batch' ? 'max-w-4xl' : 'max-w-2xl'
             } ${panelClassName}`}
           >
@@ -398,8 +418,8 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                   <div className="grid grid-cols-2 gap-4">
                     <Field label="Pen Code" error={errors.penId} icon={<Home />}>
                       <select value={form.penId} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`} disabled={isLoadingData}>
-                        <option value="">{isLoadingData ? 'Loading...' : 'Select Pen'}</option>
-                        {pens.map(p => (
+                        <option value="">{isLoadingData ? 'Loading...' : availablePensForGender.length === 0 ? `No available pens for ${gender}` : 'Select Pen'}</option>
+                        {availablePensForGender.map(p => (
                           <option key={p.id} value={p.id}>
                             {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
                           </option>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, Pencil, Loader2, CheckCircle2 } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
+import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
 
 export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections, submitting }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
@@ -12,6 +13,8 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
   const [capacity, setCapacity] = useState("10");
   const [successInfo, setSuccessInfo] = useState(null);
   const [housedSwine, setHousedSwine] = useState({ pigs: [], batches: [] });
+
+  const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(Boolean(successInfo));
 
   useEffect(() => {
     if (isOpen && pen) {
@@ -105,32 +108,40 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
         if (e.target === e.currentTarget && !submitting) handleClose();
       }}
     >
-      <div className={`w-full max-w-md overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${panelClassName}`}>
-        <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 font-bold">
-              <Pencil size={18} />
+      <div
+        ref={containerRef}
+        style={stepTransitionStyle}
+        className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${
+          successInfo ? "max-w-sm" : "max-w-md"
+        } ${panelClassName}`}
+      >
+        {!successInfo && (
+          <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 font-bold">
+                <Pencil size={18} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Edit Pen #{pen.code}</h3>
+                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  Update housing unit details
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Edit Pen #{pen.code}</h3>
-              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                Update housing unit details
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={submitting}
+              className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={submitting}
-            className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        )}
 
         {successInfo ? (
-          <div className="p-8 text-center space-y-5">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600 mx-auto">
+          <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner mx-auto">
               <CheckCircle2 size={32} className="animate-bounce" />
             </div>
             <div>
@@ -156,7 +167,7 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <form onSubmit={handleSubmit} className="p-6 space-y-4 animate-in fade-in duration-300">
             <div>
               <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
                 Pen Code *
@@ -245,7 +256,7 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
               <button
                 type="submit"
                 disabled={submitting || Boolean(typeWarning)}
-                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-md shadow-amber-600/20 transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {submitting ? "Saving..." : "Save Changes"}

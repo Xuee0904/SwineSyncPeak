@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, AlertTriangle, Loader2, CheckCircle2, Archive, Lock } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
+import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
 
 export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submitting }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
@@ -11,6 +12,8 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
   const [customReason, setCustomReason] = useState("");
   const [reasonError, setReasonError] = useState("");
   const [successInfo, setSuccessInfo] = useState(null);
+
+  const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(Boolean(successInfo));
 
   const reasonOptions = [
     "Facility Decommissioned / No Longer Needed",
@@ -63,34 +66,42 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
         if (e.target === e.currentTarget && !submitting) handleClose();
       }}
     >
-      <div className={`w-full max-w-md overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${panelClassName}`}>
-        <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl ${hasSwine ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-600"} flex items-center justify-center font-bold`}>
-              {hasSwine ? <Lock size={18} /> : <Archive size={18} />}
+      <div
+        ref={containerRef}
+        style={stepTransitionStyle}
+        className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${
+          successInfo ? "max-w-sm" : "max-w-md"
+        } ${panelClassName}`}
+      >
+        {!successInfo && (
+          <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl ${hasSwine ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-600"} flex items-center justify-center font-bold`}>
+                {hasSwine ? <Lock size={18} /> : <Archive size={18} />}
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  {hasSwine ? `Cannot Archive #${pen.code}` : `Archive Pen #${pen.code}`}
+                </h3>
+                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  {hasSwine ? "Active records detected" : "Deactivate housing unit"}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">
-                {hasSwine ? `Cannot Archive #${pen.code}` : `Archive Pen #${pen.code}`}
-              </h3>
-              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                {hasSwine ? "Active records detected" : "Deactivate housing unit"}
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={submitting}
+              className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={submitting}
-            className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        )}
 
         {successInfo ? (
-          <div className="p-8 text-center space-y-5">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center text-emerald-600 mx-auto">
+          <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner mx-auto">
               <CheckCircle2 size={32} className="animate-bounce" />
             </div>
             <div>
@@ -116,7 +127,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
             </div>
           </div>
         ) : hasSwine ? (
-          <div className="p-6 space-y-5">
+          <div className="p-6 space-y-5 animate-in fade-in duration-300">
             <div className="rounded-2xl bg-amber-50/80 border border-amber-200/80 p-4.5 flex gap-3 text-amber-900">
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div className="space-y-1.5 text-xs">
@@ -144,7 +155,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <form onSubmit={handleSubmit} className="p-6 space-y-4 animate-in fade-in duration-300">
             <p className="text-xs text-slate-600 leading-relaxed">
               Archiving pen <span className="font-bold text-slate-900">#{pen.code}</span> will remove it from active housing selections across the system. This action will be logged in activity history.
             </p>

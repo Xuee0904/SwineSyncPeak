@@ -22,6 +22,9 @@ function getCreatorDetails(creator) {
     ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
     : name.substring(0, 2).toUpperCase();
 
+  return { name, email, initials };
+}
+
 function getSectionCategory(penSection) {
   if (!penSection) return "S";
   const s = String(penSection).trim().toUpperCase();
@@ -34,17 +37,57 @@ function getSectionCategory(penSection) {
 
 // GET /api/pens – fetch all pens for dropdown filter (active only)
 router.get('/api/pens', async (req, res) => {
-  const { data, error } = await db
-    .from('pens')
-    .select('id:pen_id, name:pen_code, is_archived')
-    .order('pen_code', { ascending: true });
+  try {
+    const { data: pens, error } = await db
+      .from('pens')
+      .select('pen_id, pen_code, pen_type, max_capacity, is_archived')
+      .order('pen_code', { ascending: true });
 
-  if (error) {
-    console.error('Error fetching pens:', error.message);
-    return res.json({ data: [] });
+    if (error) {
+      console.error('Error fetching pens:', error.message);
+      return res.json({ data: [] });
+    }
+
+    const occupancy = await getAllPenOccupancy();
+    const active = (pens || [])
+      .filter(p => !p.is_archived)
+      .map(p => {
+        const occ = occupancy.get(String(p.pen_id)) || { total: 0, pigCount: 0, sowCount: 0, boarCount: 0, batchCount: 0 };
+        const occupied = typeof occ === 'number' ? occ : occ.total;
+        const sowCount = typeof occ === 'number' ? 0 : occ.sowCount;
+        const boarCount = typeof occ === 'number' ? 0 : occ.boarCount;
+        const pigCount = typeof occ === 'number' ? 0 : occ.pigCount;
+        const capacity = p.max_capacity ?? 20;
+        const section = getSectionCategory(p.pen_type || p.section || p.pen_code);
+
+        const isSowPen = section === 'S';
+        const isBoarPen = section === 'B';
+
+        let remaining = Math.max(0, capacity - occupied);
+        if (isBoarPen && (boarCount >= 1 || pigCount >= 1)) {
+          remaining = 0;
+        }
+
+        return {
+          id: p.pen_id,
+          name: p.pen_code,
+          section,
+          maxCapacity: capacity,
+          occupied,
+          sowCount,
+          boarCount,
+          pigCount,
+          hasSow: sowCount > 0 || (isSowPen && pigCount > 0),
+          hasBoar: boarCount > 0 || (isBoarPen && pigCount > 0),
+          remaining,
+        };
+      });
+
+    res.json({ data: active });
+  } catch (err) {
+    console.error('Error in /api/pens:', err.message);
+    res.json({ data: [] });
   }
-  const active = (data ?? []).filter(p => !p.is_archived);
-  res.json({ data: active });
 });
 
 // GET /api/pens/available – pens that still have room for at least one more (active only)
@@ -52,7 +95,7 @@ router.get('/api/pens/available', async (req, res) => {
   try {
     const { data: pens, error } = await db
       .from('pens')
-      .select('pen_id, pen_code, max_capacity, is_archived')
+      .select('pen_id, pen_code, pen_type, max_capacity, is_archived')
       .order('pen_code', { ascending: true });
 
     if (error) throw error;
@@ -62,14 +105,34 @@ router.get('/api/pens/available', async (req, res) => {
     const available = (pens || [])
       .filter(p => !p.is_archived)
       .map(p => {
-        const occupied = occupancy.get(p.pen_id) || 0;
-        const capacity = p.max_capacity ?? 0;
+        const occ = occupancy.get(String(p.pen_id)) || { total: 0, pigCount: 0, sowCount: 0, boarCount: 0, batchCount: 0 };
+        const occupied = typeof occ === 'number' ? occ : occ.total;
+        const sowCount = typeof occ === 'number' ? 0 : occ.sowCount;
+        const boarCount = typeof occ === 'number' ? 0 : occ.boarCount;
+        const pigCount = typeof occ === 'number' ? 0 : occ.pigCount;
+        const capacity = p.max_capacity ?? 20;
+        const section = getSectionCategory(p.pen_type || p.section || p.pen_code);
+
+        const isSowPen = section === 'S';
+        const isBoarPen = section === 'B';
+
+        let remaining = Math.max(0, capacity - occupied);
+        if (isBoarPen && (boarCount >= 1 || pigCount >= 1)) {
+          remaining = 0;
+        }
+
         return {
           id: p.pen_id,
           name: p.pen_code,
+          section,
           maxCapacity: capacity,
           occupied,
-          remaining: Math.max(0, capacity - occupied),
+          sowCount,
+          boarCount,
+          pigCount,
+          hasSow: sowCount > 0 || (isSowPen && pigCount > 0),
+          hasBoar: boarCount > 0 || (isBoarPen && pigCount > 0),
+          remaining,
         };
       })
       .filter(p => p.remaining > 0);
@@ -94,7 +157,11 @@ router.get('/api/pens/all', async (req, res) => {
     const occupancy = await getAllPenOccupancy();
 
     const formatted = (pens || []).map(p => {
-      const occupied = occupancy.get(p.pen_id) || 0;
+      const occ = occupancy.get(String(p.pen_id)) || { total: 0, pigCount: 0, sowCount: 0, boarCount: 0, batchCount: 0 };
+      const occupied = typeof occ === 'number' ? occ : occ.total;
+      const sowCount = typeof occ === 'number' ? 0 : occ.sowCount;
+      const boarCount = typeof occ === 'number' ? 0 : occ.boarCount;
+      const pigCount = typeof occ === 'number' ? 0 : occ.pigCount;
       const capacity = p.max_capacity ?? p.capacity ?? 20;
       let section = p.pen_type || p.section || p.pen_section || 'S';
       if (!p.pen_type && !p.section && !p.pen_section && p.pen_code) {
@@ -109,6 +176,12 @@ router.get('/api/pens/all', async (req, res) => {
         section: section,
         capacity: capacity,
         occupancy: occupied,
+        remaining: Math.max(0, capacity - occupied),
+        sowCount,
+        boarCount,
+        pigCount,
+        hasSow: sowCount > 0 || (section === 'S' && pigCount > 0),
+        hasBoar: boarCount > 0 || (section === 'B' && pigCount > 0),
         is_archived: Boolean(p.is_archived),
         archived_at: p.archived_at || null,
         archive_reason: p.archive_reason || null,
@@ -217,7 +290,7 @@ router.put('/api/pens/:id', async (req, res) => {
     if (section) {
       const [penRes, pigsRes, batchesRes] = await Promise.all([
         db.from('pens').select('pen_id, id, pen_code, pen_type').or(`pen_id.eq.${id},id.eq.${id}`).maybeSingle(),
-        db.from('pigs').select('id, pig_tag, gender, type, category').eq('pen_id', id).eq('is_archived', false),
+        db.from('pigs').select('pig_id, pig_tag, gender, status').eq('pen_id', id).eq('is_archived', false),
         db.from('piglet_batches').select('batch_id, batch_number, current_count').eq('pen_id', id).eq('is_archived', false)
       ]);
       const currentPen = penRes.data || {};
@@ -228,17 +301,17 @@ router.put('/api/pens/:id', async (req, res) => {
 
       if (newCat !== oldCat && (pigs.length > 0 || batches.length > 0)) {
         if (newCat === 'S') {
-          const boarsOrOthers = pigs.filter(p => p.gender === 'Male' || p.type?.toLowerCase() === 'boar' || p.category?.toLowerCase()?.includes('boar'));
+          const boarsOrOthers = pigs.filter(p => p.gender === 'Male' || p.status?.toLowerCase() === 'boar');
           if (boarsOrOthers.length > 0 || batches.length > 0) {
-            const names = boarsOrOthers.map(p => `#${p.pig_tag || p.id}`).join(', ');
+            const names = boarsOrOthers.map(p => `#${p.pig_tag || p.pig_id}`).join(', ');
             return res.status(400).json({
               error: `Cannot change pen type to Sow Pen because this unit currently houses ${boarsOrOthers.length > 0 ? `boar(s): ${names}` : 'piglet batches'}. Please transfer them to another housing unit first.`
             });
           }
         } else if (newCat === 'B') {
-          const sowsOrOthers = pigs.filter(p => p.gender === 'Female' || p.type?.toLowerCase() === 'sow' || p.category?.toLowerCase()?.includes('sow'));
+          const sowsOrOthers = pigs.filter(p => p.gender === 'Female' || p.status?.toLowerCase() === 'sow');
           if (sowsOrOthers.length > 0 || batches.length > 0 || pigs.length > 1) {
-            const names = sowsOrOthers.map(p => `#${p.pig_tag || p.id}`).join(', ');
+            const names = sowsOrOthers.map(p => `#${p.pig_tag || p.pig_id}`).join(', ');
             return res.status(400).json({
               error: `Cannot change pen type to Boar Pen because ${sowsOrOthers.length > 0 ? `it houses sow(s): ${names}` : batches.length > 0 ? 'it houses piglet batches' : `it currently houses ${pigs.length} pigs (Boar pens allow max 1 boar)`}. Please transfer them first.`
             });

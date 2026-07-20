@@ -31,7 +31,7 @@ router.get('/api/sows', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('pigs')
-      .select('pig_id, pig_tag, breeds(name)')
+      .select('pig_id, pig_tag, pen_id, breeds(name)')
       .eq('gender', 'Female')
       .eq('is_archived', false)
       .order('pig_tag', { ascending: true });
@@ -39,6 +39,7 @@ router.get('/api/sows', async (req, res) => {
     const sows = (data || []).map(p => ({
       id: p.pig_id,
       tag: p.pig_tag,
+      penId: p.pen_id || null,
       breed: p.breeds?.name || '—',
     }));
     res.json({ data: sows });
@@ -389,13 +390,40 @@ router.post('/api/pigs', async (req, res) => {
     if (penId) {
       const { data: pen, error: penError } = await supabase
         .from('pens')
-        .select('pen_code, max_capacity')
+        .select('pen_code, pen_type, max_capacity')
         .eq('pen_id', penId)
         .single();
 
       if (penError) throw penError;
 
-      const occupied = await getPenOccupancy(penId);
+      const occ = await getPenOccupancy(penId);
+      const occupied = typeof occ === 'number' ? occ : occ.total;
+      const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
+
+      if (gender === 'Female' && (penSection === 'B' || penSection === 'BOAR')) {
+        return res.status(400).json({ error: `Cannot assign a female sow to boar pen ${pen.pen_code}.` });
+      }
+      if (gender === 'Male' && penSection !== 'B' && penSection !== 'BOAR') {
+        return res.status(400).json({ error: `Cannot assign a male boar to ${pen.pen_code}. Boars must be housed alone in a Boar pen.` });
+      }
+      const isSickOrQ = status?.toLowerCase() === 'sick' || status?.toLowerCase() === 'quarantine';
+      const isQPen = penSection === 'Q' || penSection === 'QUARANTINE';
+      if (!isSickOrQ && isQPen) {
+        return res.status(400).json({ error: `Cannot assign a ${status || 'Healthy'} pig to Quarantine pen ${pen.pen_code}. Quarantine pens are reserved for sick or quarantined pigs.` });
+      }
+      if (isSickOrQ && !isQPen) {
+        return res.status(400).json({ error: `Cannot assign a ${status} pig to ${pen.pen_code}. Sick or quarantined pigs must be placed in a Quarantine housing unit.` });
+      }
+      if ((penSection === 'S' || penSection === 'SOW') && (occ.hasSow || occ.sowCount >= 1 || occ.pigCount >= 1)) {
+        return res.status(400).json({
+          error: `Sow pen ${pen.pen_code} already houses 1 sow. The farm can only house 1 sow per sow pen.`,
+        });
+      }
+      if ((penSection === 'B' || penSection === 'BOAR') && (occ.hasBoar || occ.boarCount >= 1 || occ.pigCount >= 1)) {
+        return res.status(400).json({
+          error: `Boar pen ${pen.pen_code} already houses 1 boar. The farm can only house 1 boar per boar pen.`,
+        });
+      }
       if (occupied >= (pen.max_capacity ?? 0)) {
         return res.status(400).json({
           error: `Pen ${pen.pen_code} is already at full capacity (${pen.max_capacity}). Please choose another pen.`,
@@ -458,7 +486,7 @@ router.post('/api/pigs/batch', async (req, res) => {
     if (resolvedPenId) {
       const { data: pen, error: penError } = await supabase
         .from('pens')
-        .select('pen_code, max_capacity')
+        .select('pen_code, max_capacity, pen_type')
         .eq('pen_id', resolvedPenId)
         .single();
 
@@ -466,12 +494,52 @@ router.post('/api/pigs/batch', async (req, res) => {
 
       const occupied  = await getPenOccupancy(resolvedPenId);
       const incoming  = resolvedCount;
-      const remaining = Math.max(0, (pen.max_capacity ?? 0) - occupied);
+      const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
 
-      if (incoming > remaining) {
-        return res.status(400).json({
-          error: `Pen ${pen.pen_code} only has ${remaining} slot(s) left, but this batch has ${incoming} piglet(s).`,
-        });
+      if (penSection === 'B' || penSection === 'BOAR') {
+        return res.status(400).json({ error: `Piglet batches cannot be assigned to Boar pen ${pen.pen_code}.` });
+      }
+
+      if (penSection !== 'S' && penSection !== 'SOW') {
+        const remaining = Math.max(0, (pen.max_capacity ?? 0) - (typeof occupied === 'number' ? occupied : occupied.total));
+        if (incoming > remaining) {
+          return res.status(400).json({
+            error: `Pen ${pen.pen_code} only has ${remaining} slot(s) left, but this batch has ${incoming} piglet(s).`,
+          });
+        }
+      }
+
+      const statusStr = (status || '').toLowerCase();
+      let ageInDays = null;
+      if (dateOfBirth) {
+        ageInDays = Math.floor((Date.now() - new Date(dateOfBirth).getTime()) / (1000 * 60 * 60 * 24));
+      }
+      const isBatchWeaned = statusStr === 'weaned' || (statusStr !== 'suckling' && ageInDays !== null && ageInDays > 28);
+      const isBatchNursing = statusStr === 'suckling' || (statusStr !== 'weaned' && ageInDays !== null && ageInDays <= 28);
+
+      if (sowId && resolvedPenId && isBatchNursing) {
+        const { data: motherSow } = await supabase.from('pigs').select('pen_id, pig_tag').eq('pig_id', sowId).single();
+        if (motherSow && motherSow.pen_id && String(motherSow.pen_id) !== String(resolvedPenId)) {
+          return res.status(400).json({
+            error: `Piglet batch is linked to Mother Sow #${motherSow.pig_tag}, but assigned to a different pen (${pen.pen_code}). Nursing piglet batches must be placed in their Mother Sow's pen.`,
+          });
+        }
+      }
+
+      if (dateOfBirth) {
+        if (ageInDays <= 28 && statusStr === 'weaned') {
+          return res.status(400).json({ error: `Piglet batches <= 28 days old (${ageInDays} days old) cannot have status "weaned" (must be suckling).` });
+        }
+        if (ageInDays > 28 && statusStr === 'suckling') {
+          return res.status(400).json({ error: `Piglet batches > 28 days old (${ageInDays} days old) cannot have status "suckling" (must be weaned).` });
+        }
+
+        if (isBatchNursing && penSection !== 'S' && penSection !== 'SOW') {
+          return res.status(400).json({ error: `Nursing piglet batches (<=28 days old) must be assigned to a Sow/Farrowing pen (${pen.pen_code} is ${penSection}).` });
+        }
+        if (isBatchWeaned && penSection !== 'W' && penSection !== 'WEANED') {
+          return res.status(400).json({ error: `Weaned piglet batches (>28 days old) must be assigned to a Weaned/Fattening pen (${pen.pen_code} is ${penSection}).` });
+        }
       }
     }
 
@@ -643,10 +711,10 @@ router.put('/api/pigs/:id', async (req, res) => {
       return res.json({ message: 'Piglet batch updated successfully', data: data[0] });
     }
 
-    // If the pen is changing, confirm the new pen actually has room
+    // If the pen is changing, confirm the new pen actually has room and follows gender/section limits
     const { data: currentPig, error: currentPigError } = await supabase
       .from('pigs')
-      .select('pen_id')
+      .select('pen_id, gender, status')
       .eq('pig_id', id)
       .maybeSingle();
 
@@ -655,13 +723,46 @@ router.put('/api/pigs/:id', async (req, res) => {
     if (currentPig && String(currentPig.pen_id) !== String(penId)) {
       const { data: pen, error: penError } = await supabase
         .from('pens')
-        .select('pen_code, max_capacity')
+        .select('pen_code, pen_type, max_capacity')
         .eq('pen_id', penId)
         .single();
 
-      if (penError) throw penError;
+      if (penError || !pen) {
+        return res.status(400).json({ error: 'Selected pen not found or invalid.' });
+      }
 
-      const occupied = await getPenOccupancy(penId);
+      const occ = await getPenOccupancy(penId);
+      const occupied = typeof occ === 'number' ? occ : occ.total;
+      const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
+
+      const isSow = gender === 'Female' || currentPig?.gender === 'Female' || currentPig?.status?.toLowerCase() === 'sow';
+      const isBoar = gender === 'Male' || currentPig?.gender === 'Male' || currentPig?.status?.toLowerCase() === 'boar';
+
+      if (isSow && (penSection === 'B' || penSection === 'BOAR')) {
+        return res.status(400).json({ error: `Cannot assign a female sow to boar pen ${pen.pen_code}.` });
+      }
+      if (isBoar && penSection !== 'B' && penSection !== 'BOAR') {
+        return res.status(400).json({ error: `Cannot assign a male boar to ${pen.pen_code}. Boars must be housed alone in a Boar pen.` });
+      }
+      const currentStatus = req.body.status?.toLowerCase() || currentPig?.status?.toLowerCase() || '';
+      const isSickOrQ = currentStatus === 'sick' || currentStatus === 'quarantine';
+      const isQPen = penSection === 'Q' || penSection === 'QUARANTINE';
+      if (!isSickOrQ && isQPen) {
+        return res.status(400).json({ error: `Cannot assign a ${currentStatus || 'Healthy'} pig to Quarantine pen ${pen.pen_code}. Quarantine pens are reserved for sick or quarantined pigs.` });
+      }
+      if (isSickOrQ && !isQPen) {
+        return res.status(400).json({ error: `Cannot assign a ${currentStatus} pig to ${pen.pen_code}. Sick or quarantined pigs must be placed in a Quarantine housing unit.` });
+      }
+      if ((penSection === 'S' || penSection === 'SOW') && (occ.sowCount >= 1 || occ.pigCount >= 1)) {
+        return res.status(400).json({
+          error: `Sow pen ${pen.pen_code} already houses 1 sow. The farm can only house 1 sow per sow pen.`,
+        });
+      }
+      if ((penSection === 'B' || penSection === 'BOAR') && (occ.boarCount >= 1 || occ.pigCount >= 1)) {
+        return res.status(400).json({
+          error: `Boar pen ${pen.pen_code} already houses 1 boar. The farm can only house 1 boar per boar pen.`,
+        });
+      }
       if (occupied >= (pen.max_capacity ?? 0)) {
         return res.status(400).json({
           error: `Pen ${pen.pen_code} is already at full capacity (${pen.max_capacity}). Please choose another pen.`,
@@ -846,7 +947,7 @@ router.put('/api/pigs/batch/:id', async (req, res) => {
     const { id } = req.params;
     const { 
       batchTag, tagNumber, dateOfBirth, breed, averageWeight, weight,
-      penId, status, creator,
+      penId, sowId, status, creator,
       totalBornAlive, stillbornCount, mummyCount
     } = req.body;
     
@@ -865,6 +966,53 @@ router.put('/api/pigs/batch/:id', async (req, res) => {
       .maybeSingle();
     if (existingBatch && existingBatch.is_archived) {
       return res.status(400).json({ error: 'Cannot modify details of an archived piglet batch.' });
+    }
+
+    if (penId) {
+      const { data: pen, error: penError } = await supabase
+        .from('pens')
+        .select('pen_code, max_capacity, pen_type')
+        .eq('pen_id', penId)
+        .single();
+      if (penError) throw penError;
+
+      const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
+      if (penSection === 'B' || penSection === 'BOAR') {
+        return res.status(400).json({ error: `Piglet batches cannot be assigned to Boar pen ${pen.pen_code}.` });
+      }
+
+      const statusStr = (status || '').toLowerCase();
+      let ageInDays = null;
+      if (dateOfBirth) {
+        ageInDays = Math.floor((Date.now() - new Date(dateOfBirth).getTime()) / (1000 * 60 * 60 * 24));
+      }
+      const isBatchWeaned = statusStr === 'weaned' || (statusStr !== 'suckling' && ageInDays !== null && ageInDays > 28);
+      const isBatchNursing = statusStr === 'suckling' || (statusStr !== 'weaned' && ageInDays !== null && ageInDays <= 28);
+
+      if (sowId && penId && isBatchNursing) {
+        const { data: motherSow } = await supabase.from('pigs').select('pen_id, pig_tag').eq('pig_id', sowId).single();
+        if (motherSow && motherSow.pen_id && String(motherSow.pen_id) !== String(penId)) {
+          return res.status(400).json({
+            error: `Piglet batch is linked to Mother Sow #${motherSow.pig_tag}, but assigned to a different pen (${pen.pen_code}). Nursing piglet batches must be placed in their Mother Sow's pen.`,
+          });
+        }
+      }
+
+      if (dateOfBirth) {
+        if (ageInDays <= 28 && statusStr === 'weaned') {
+          return res.status(400).json({ error: `Piglet batches <= 28 days old (${ageInDays} days old) cannot have status "weaned" (must be suckling).` });
+        }
+        if (ageInDays > 28 && statusStr === 'suckling') {
+          return res.status(400).json({ error: `Piglet batches > 28 days old (${ageInDays} days old) cannot have status "suckling" (must be weaned).` });
+        }
+
+        if (isBatchNursing && penSection !== 'S' && penSection !== 'SOW') {
+          return res.status(400).json({ error: `Nursing piglet batches (<=28 days old) must be assigned to a Sow/Farrowing pen (${pen.pen_code} is ${penSection}).` });
+        }
+        if (isBatchWeaned && penSection !== 'W' && penSection !== 'WEANED') {
+          return res.status(400).json({ error: `Weaned piglet batches (>28 days old) must be assigned to a Weaned/Fattening pen (${pen.pen_code} is ${penSection}).` });
+        }
+      }
     }
 
     let finalBreedId = breed;
