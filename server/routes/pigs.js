@@ -47,6 +47,54 @@ router.get('/api/sows', async (req, res) => {
   }
 });
 
+// GET /api/pigs/breeding-logs – fetch live pregnant sows for Breeding Logs module
+router.get('/api/pigs/breeding-logs', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('pigs')
+      .select('pig_id, pig_tag, parity_count, breeding_date, created_at, breeds(name)')
+      .eq('status', 'pregnant')
+      .eq('is_archived', false)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const sows = (data || []).map(p => {
+      // Use breeding_date if available, otherwise fallback to created_at
+      const matingDateStr = p.breeding_date || p.created_at;
+      const matingDate = new Date(matingDateStr);
+      const today = new Date();
+      const diffTime = Math.abs(today - matingDate);
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      
+      let status = "pregnant";
+      if (diffDays < 21) status = "monitoring";
+      else if (diffDays > 114) status = "action";
+      
+      const dueDate = new Date(matingDate);
+      dueDate.setDate(dueDate.getDate() + 114);
+      
+      const isOverdue = diffDays > 114;
+      const dueStr = isOverdue ? "Overdue" : dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+      return {
+        id: p.pig_tag || p.pig_id,
+        tag: p.pig_tag,
+        parity: p.parity_count || 1,
+        breed: p.breeds?.name || 'Unknown',
+        day: diffDays,
+        status,
+        dueDate: dueStr,
+        matingDate: matingDateStr.split('T')[0],
+      };
+    });
+
+    res.json({ data: sows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/pigs/stats – aggregate counts for summary cards
 router.get('/api/pigs/stats', async (req, res) => {
   try {
