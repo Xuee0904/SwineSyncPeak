@@ -4,6 +4,7 @@ import SideNav, { NAV_ITEMS } from '../components/SideNav';
 import Admin from './Admin';
 import SwineManagement from './SwineManagement';
 import PenManagement from './PenManagement';
+import BreedingLogs from './BreedingLogs';
 import {
   Sparkles, Database, ArrowUpRight, ChevronRight,
   AlertTriangle, CheckSquare, Square,
@@ -402,7 +403,13 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && (
+          {activeTab === 'breeding_logs' && (
+            <main>
+              <BreedingLogs loggedInUser={loggedInUser} />
+            </main>
+          )}
+
+          {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && activeTab !== 'breeding_logs' && (
             <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
               <div className="text-center space-y-4 max-w-xs mx-auto animate-fade-in">
                 <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">

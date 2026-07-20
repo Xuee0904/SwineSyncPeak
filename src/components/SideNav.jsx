@@ -6,18 +6,19 @@ import {
 } from 'lucide-react';
 
 export const NAV_ITEMS = [
-  { id: 'dashboard',         label: 'Dashboard',           icon: LayoutDashboard },
-  { id: 'swine_management',  label: 'Swine Management',    icon: Users,          sub: true,
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  {
+    id: 'swine_management', label: 'Swine Management', icon: Users, sub: true,
     children: [
       { id: 'pen_management', label: 'Pen Management', icon: Grid3X3 },
     ]
   },
-  { id: 'growth_program',    label: 'Growth Program',      icon: TrendingUp,     sub: true },
-  { id: 'health_management', label: 'Health Management',   icon: Activity,       sub: true },
-  { id: 'breeding_logs',     label: 'Breeding Logs',       icon: Baby,           sub: true },
-  { id: 'inventory',         label: 'Inventory Mgmt',      icon: ClipboardList,  sub: true },
-  { id: 'transactions',      label: 'Transaction Records', icon: Receipt,        sub: true },
-  { id: 'admin',             label: 'Admin Settings',      icon: Settings },
+  { id: 'growth_program', label: 'Growth Program', icon: TrendingUp, sub: true },
+  { id: 'health_management', label: 'Health Management', icon: Activity, sub: true },
+  { id: 'breeding_logs', label: 'Breeding Logs', icon: Baby },
+  { id: 'inventory', label: 'Inventory Mgmt', icon: ClipboardList, sub: true },
+  { id: 'transactions', label: 'Transaction Records', icon: Receipt, sub: true },
+  { id: 'admin', label: 'Admin Settings', icon: Settings },
 ];
 
 export default function SideNav({ activeTab, onTabChange, onClose, onLogout, loggedInUser, mobileOpen }) {
@@ -112,10 +113,10 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
           {/* Nav Menu */}
           <nav className="px-3 py-4 space-y-0.5" aria-label="Main menu">
             {filteredNavItems.map(({ id, label, icon: Icon, sub, children }) => {
-              const active       = activeTab === id;
+              const active = activeTab === id;
               const parentActive = isItemActive({ id, children });
-              const isExpanded   = !!expanded[id];
-              const hasChildren  = !!children?.length;
+              const isExpanded = !!expanded[id];
+              const hasChildren = !!children?.length;
 
               return (
                 <div key={id} className="space-y-0.5">
@@ -166,8 +167,8 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
                         }}
                         className={[
                           'py-2.5 px-3 rounded-r-xl transition-all duration-150 cursor-pointer flex items-center justify-center border-l border-slate-100/40',
-                          parentActive 
-                            ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100/50' 
+                          parentActive
+                            ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100/50'
                             : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50',
                         ].join(' ')}
                         title={isExpanded ? "Collapse sub-items" : "Expand sub-items"}
@@ -181,11 +182,10 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
                   {/* Children with smooth CSS grid accordion transition */}
                   {hasChildren && (
                     <div
-                      className={`grid transition-[grid-template-rows,opacity,margin] duration-300 cubic-bezier(0.16, 1, 0.3, 1) ${
-                        isExpanded
+                      className={`grid transition-[grid-template-rows,opacity,margin] duration-300 cubic-bezier(0.16, 1, 0.3, 1) ${isExpanded
                           ? 'grid-rows-[1fr] opacity-100 mt-1'
                           : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
-                      }`}
+                        }`}
                     >
                       <div className="overflow-hidden">
                         <div className="ml-4 space-y-0.5 border-l-2 border-slate-100 pl-2 py-0.5">
