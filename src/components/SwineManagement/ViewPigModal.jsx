@@ -148,6 +148,10 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
   const totalBorn = totalBornAlive + stillbornCount + mummyCount;
   const survivability = totalBorn > 0 ? ((totalBornAlive / totalBorn) * 100).toFixed(1) : null;
 
+  const sourceOrigin = data.source_origin || data.sourceOrigin || 'born_in_farm';
+  const supplierName = data.supplier_name || data.supplierName || null;
+  const arrivalDate = data.arrival_date || data.arrivalDate ? String(data.arrival_date || data.arrivalDate).slice(0, 10) : null;
+
   const switchToEdit = () => {
     if (isArchived) return;
     changeMode('edit');
@@ -379,6 +383,29 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                               </span>
                             </div>
                           )}
+
+                          {/* Source Origin & Acquisition Card */}
+                          <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                                <Award className="w-5 h-5 text-emerald-600" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-800">Origin & Acquisition Tracking</h4>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  {sourceOrigin === 'born_in_farm'
+                                    ? 'Born within farm facility (Internal Breeding Cycle)'
+                                    : sourceOrigin === 'purchased'
+                                      ? `Purchased external inventory${supplierName ? ` from ${supplierName}` : ''}`
+                                      : `Transferred from external farm or facility${supplierName ? ` (${supplierName})` : ''}`}
+                                  {arrivalDate ? ` • Arrived on ${arrivalDate}` : ''}
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-xs font-extrabold px-3 py-1 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 capitalize">
+                              {sourceOrigin === 'born_in_farm' ? 'Born in Farm' : sourceOrigin}
+                            </span>
+                          </div>
 
                           {/* Quick Medical & Vaccine Snapshot */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">

@@ -1,12 +1,18 @@
 import React, { useState, useEffect, useRef, cloneElement } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Tag, Calendar, Weight, Home, Activity, Ruler, Loader2, AlertCircle, PlusCircle, Baby, Hash, Shuffle, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { X, Tag, Calendar, Weight, Home, Activity, Ruler, Loader2, AlertCircle, PlusCircle, Baby, Hash, Shuffle, CheckCircle2, ArrowLeft, Users } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import toast from '../../utils/toast';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
 const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Quarantine'];
+
+const SOURCE_OPTIONS = [
+  { value: 'born_in_farm', label: 'Born in Farm', hint: 'Internal breeding cycle' },
+  { value: 'purchased', label: 'Purchased', hint: 'External supplier acquisition' },
+  { value: 'transferred', label: 'Transferred', hint: 'Moved from another facility' },
+];
 
 function toFormState(fullPig) {
   const isBatch = fullPig.category === 'Piglet Batch' || Boolean(fullPig.batch_tag) || (typeof fullPig.pig_tag === 'string' && fullPig.pig_tag.startsWith('BATCH'));
@@ -23,6 +29,9 @@ function toFormState(fullPig) {
     totalBornAlive: fullPig.total_born_alive !== undefined && fullPig.total_born_alive !== null ? fullPig.total_born_alive : '',
     stillbornCount: fullPig.stillborn_count !== undefined && fullPig.stillborn_count !== null ? fullPig.stillborn_count : 0,
     mummyCount: fullPig.mummy_count !== undefined && fullPig.mummy_count !== null ? fullPig.mummy_count : 0,
+    sourceOrigin: fullPig.source_origin || fullPig.sourceOrigin || 'born_in_farm',
+    supplierName: fullPig.supplier_name || fullPig.supplierName || '',
+    arrivalDate: fullPig.arrival_date || fullPig.arrivalDate ? String(fullPig.arrival_date || fullPig.arrivalDate).slice(0, 10) : '',
   };
 }
 
@@ -209,7 +218,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
     if (isSickOrQuarantine && !isQPen) return false;
 
     if (currentGender === 'Female') {
-      if (p.section === 'B' || p.section === 'BOAR') return false;
+      if (!isQPen && p.section !== 'S' && p.section !== 'SOW') return false;
       if ((p.section === 'S' || p.section === 'SOW') && (p.hasSow || p.sowCount >= 1 || p.pigCount >= 1)) return false;
     }
     if (currentGender === 'Male') {
@@ -248,7 +257,8 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
   const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 text-rose-900 bg-rose-50/10";
 
   return isBatch ? (
-    <form onSubmit={handleSubmit} className={`p-8 pt-6 space-y-5 text-left overflow-y-auto ${maxHeightClass}`}>
+    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto p-8 pt-6 space-y-5 text-left">
       {isArchived && (
         <div className="p-3.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 font-medium">
           <AlertCircle size={16} className="text-amber-600 shrink-0" />
@@ -372,10 +382,46 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
               </div>
             );
           })()}
+
+          {/* Source Origin */}
+          <div className="pt-2">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
+            <div className="grid grid-cols-3 gap-2.5">
+              {SOURCE_OPTIONS.map(opt => (
+                <label key={opt.value} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-xs transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 shadow-xs' : 'border-slate-200 hover:bg-slate-50'}`}>
+                  <span className="flex items-center gap-2 font-semibold text-slate-700">
+                    <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
+                    {opt.label}
+                  </span>
+                  <span className="pl-5 text-[10px] text-slate-400 leading-tight">{opt.hint}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div
+            className={`grid transition-all duration-300 ease-in-out ${
+              form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
+                ? 'grid-rows-[1fr] opacity-100 pt-3'
+                : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
+            }`}
+          >
+            <div className="overflow-hidden">
+              <div className="grid grid-cols-2 gap-4 pb-1">
+                <Field label="Supplier / Breeder Name" icon={<Users />}>
+                  <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
+                </Field>
+                <Field label="Arrival Date" icon={<Calendar />}>
+                  <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} className={`${inputBase} ${inputOk}`} />
+                </Field>
+              </div>
+            </div>
+          </div>
         </div>
       </fieldset>
+    </div>
 
-      <div className="pt-4 flex gap-3">
+      <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-3 shrink-0">
         <button type="button" onClick={() => onCancel?.()} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
           Cancel
         </button>
@@ -385,7 +431,8 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
       </div>
     </form>
   ) : (
-    <form onSubmit={handleSubmit} className={`p-8 pt-6 space-y-4 text-left overflow-y-auto ${maxHeightClass}`}>
+    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto p-8 pt-6 space-y-4 text-left">
       {isArchived && (
         <div className="p-3.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 font-medium">
           <AlertCircle size={16} className="text-amber-600 shrink-0" />
@@ -458,9 +505,45 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
             <input type="number" value={form.parityCount ?? ''} onChange={handleChange('parityCount')} className={`${inputBase} ${inputOk}`} />
           </Field>
         )}
-      </fieldset>
 
-      <div className="pt-4 flex gap-3">
+        {/* Source Origin */}
+        <div className="pt-2">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
+          <div className="grid grid-cols-3 gap-2.5">
+            {SOURCE_OPTIONS.map(opt => (
+              <label key={opt.value} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-xs transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 shadow-xs' : 'border-slate-200 hover:bg-slate-50'}`}>
+                <span className="flex items-center gap-2 font-semibold text-slate-700">
+                  <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
+                  {opt.label}
+                </span>
+                <span className="pl-5 text-[10px] text-slate-400 leading-tight">{opt.hint}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div
+          className={`grid transition-all duration-300 ease-in-out ${
+            form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
+              ? 'grid-rows-[1fr] opacity-100 pt-3'
+              : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
+          }`}
+        >
+          <div className="overflow-hidden">
+            <div className="grid grid-cols-2 gap-4 pb-1">
+              <Field label="Supplier / Breeder Name" icon={<Users />}>
+                <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
+              </Field>
+              <Field label="Arrival Date" icon={<Calendar />}>
+                <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} className={`${inputBase} ${inputOk}`} />
+              </Field>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+    </div>
+
+      <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-3 shrink-0">
         <button type="button" onClick={() => onCancel?.()} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
           Cancel
         </button>
@@ -595,8 +678,8 @@ export function PigEditView({
   }
 
   return (
-    <div className="flex flex-col w-full">
-      <div className="px-8 pt-8 pb-4 flex items-center justify-between border-b border-slate-100/60">
+    <div className="flex flex-col flex-1 min-h-0 w-full overflow-hidden">
+      <div className="px-8 pt-7 pb-5 flex items-center justify-between border-b border-slate-100 shrink-0">
         <div className="flex items-center gap-3">
           {showBackBtn ? (
             <button
@@ -675,7 +758,7 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
     >
       <div
         style={{ willChange: 'transform, opacity, max-width' }}
-        className={`flex max-h-[92vh] flex-col w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative transition-[max-width] duration-300 ease-in-out ${
+        className={`flex max-h-[86vh] flex-col w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative transition-[max-width] duration-300 ease-in-out ${
           isBatch ? 'max-w-3xl' : 'max-w-2xl'
         } ${panelClassName}`}
       >

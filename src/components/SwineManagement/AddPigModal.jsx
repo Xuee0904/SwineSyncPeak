@@ -14,6 +14,12 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
 
+const SOURCE_OPTIONS = [
+  { value: 'born_in_farm', label: 'Born in Farm', hint: 'Internal breeding cycle' },
+  { value: 'purchased', label: 'Purchased', hint: 'External supplier acquisition' },
+  { value: 'transferred', label: 'Transferred', hint: 'Moved from another facility' },
+];
+
 const EMPTY_FORM = {
   tagNumber: '',
   dateOfBirth: '',
@@ -22,6 +28,9 @@ const EMPTY_FORM = {
   penId: '',       // Stores Pen UUID
   status: 'Healthy',
   parityCount: '',
+  sourceOrigin: 'born_in_farm',
+  supplierName: '',
+  arrivalDate: '',
 };
 
 export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
@@ -267,7 +276,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
     if (isSickOrQuarantine && !isQPen) return false;
 
     if (gender === 'Female') {
-      if (p.section === 'B' || p.section === 'BOAR') return false;
+      if (!isQPen && p.section !== 'S' && p.section !== 'SOW') return false;
       if ((p.section === 'S' || p.section === 'SOW') && (p.hasSow || p.sowCount >= 1 || p.pigCount >= 1)) return false;
     }
     if (gender === 'Male') {
@@ -289,7 +298,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
           <div
             ref={containerRef}
             style={stepTransitionStyle}
-            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${
+            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[86vh] transition-[max-width] duration-300 ease-in-out ${
               step === 'select' || step === 'success' ? 'max-w-md' : step === 'batch' ? 'max-w-4xl' : 'max-w-2xl'
             } ${panelClassName}`}
           >
@@ -343,7 +352,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
               )}
             </div>
             )}
-            <div>
+            <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
               {step === 'select' && (
                 <div className="px-8 pb-8 pt-2 text-left">
                   <p className="mb-6 text-xs text-slate-400 font-medium uppercase tracking-wider">
@@ -363,7 +372,8 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
               )}
 
               {step === 'form' && (
-                <form onSubmit={handleSubmit} className="p-8 pt-2 space-y-4 text-left">
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                  <div className="flex-1 min-h-0 overflow-y-auto p-8 pt-2 space-y-4 text-left">
                   <div className="p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-2">
                     {gender === 'Female' ? <Venus size={14} /> : <Mars size={14} />}
                     <span>Gender is automatically recorded as {gender}</span>
@@ -439,7 +449,45 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                     </Field>
                   )}
 
-                  <div className="pt-4 flex gap-2">
+                  {/* Source Origin */}
+                  <div className="pt-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
+                    <div className="grid grid-cols-3 gap-2.5">
+                      {SOURCE_OPTIONS.map(opt => (
+                        <label key={opt.value} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-xs transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 shadow-xs' : 'border-slate-200 hover:bg-slate-50'}`}>
+                          <span className="flex items-center gap-2 font-semibold text-slate-700">
+                            <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
+                            {opt.label}
+                          </span>
+                          <span className="pl-5 text-[10px] text-slate-400 leading-tight">{opt.hint}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Supplier tracking when purchased or transferred */}
+                  <div
+                    className={`grid transition-all duration-300 ease-in-out ${
+                      form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
+                        ? 'grid-rows-[1fr] opacity-100 pt-1'
+                        : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
+                    }`}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="grid grid-cols-2 gap-4 pb-1">
+                        <Field label="Supplier / Breeder Name" icon={<Users />}>
+                          <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
+                        </Field>
+                        <Field label="Arrival Date" icon={<Calendar />}>
+                          <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} max={todayStr} className={`${inputBase} ${inputOk}`} />
+                        </Field>
+                      </div>
+                    </div>
+                  </div>
+
+                  </div>
+
+                  <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-2 shrink-0">
                     <button type="button" onClick={resetAndClose} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
                       Cancel
                     </button>

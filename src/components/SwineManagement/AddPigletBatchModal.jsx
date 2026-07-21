@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom';
 import {
   X, PackagePlus, Loader2, Tag, Calendar, Home, Heart,
   AlertCircle, Baby, Weight, Activity, PlusCircle, Hash,
-  Shuffle, BarChart2, Bookmark, ChevronLeft, CheckCircle2,
+  Shuffle, BarChart2, Bookmark, ChevronLeft, CheckCircle2, Users,
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
+import useSmoothStepTransition from '../../hooks/useSmoothStepTransition';
 import useFormDraft from '../../hooks/useFormDraft';
 import DraftBanner from '../DraftBanner';
 import toast from '../../utils/toast';
@@ -27,6 +28,8 @@ const EMPTY_FORM = {
   dateOfBirth:    '',
   breed:          '',
   sourceOrigin:   'born_in_farm',
+  supplierName:   '',
+  arrivalDate:    '',
   totalBornAlive: '',
   currentCount:   '',
   stillbornCount: '0',
@@ -329,6 +332,8 @@ export function AddPigletBatchForm({
         dateOfBirth:    form.dateOfBirth || null,
         breed:          form.breed.trim() || null,
         sourceOrigin:   form.sourceOrigin,
+        supplierName:   form.supplierName || null,
+        arrivalDate:    form.arrivalDate || null,
         totalBornAlive: Number(form.totalBornAlive) || 0,
         currentCount:   Number(form.totalBornAlive) || 0,
         stillbornCount: Number(form.stillbornCount) || 0,
@@ -378,7 +383,7 @@ export function AddPigletBatchForm({
   const isInvalidWeight = Boolean(form.averageWeight && (isNaN(Number(form.averageWeight)) || Number(form.averageWeight) < 0 || Number(form.averageWeight) > 500));
 
   return (
-    <div className="flex max-h-[90vh] w-full flex-col bg-white overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 w-full bg-white overflow-hidden">
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-8 pt-7 pb-5 border-b border-slate-100 shrink-0">
         <div className="flex items-center gap-3">
@@ -412,7 +417,7 @@ export function AddPigletBatchForm({
           className="flex flex-1 min-h-0 overflow-hidden"
         >
           {/* Left: main form */}
-          <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+          <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6 space-y-6">
             <DraftBanner
               hasDraft={hasDraft}
               draftInfo={draftInfo}
@@ -504,6 +509,26 @@ export function AddPigletBatchForm({
                   ))}
                 </div>
               </div>
+
+              {/* Supplier tracking when purchased or transferred */}
+              <div
+                className={`grid transition-all duration-300 ease-in-out ${
+                  form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
+                    ? 'grid-rows-[1fr] opacity-100 mt-4'
+                    : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+                }`}
+              >
+                <div className="overflow-hidden">
+                  <div className="grid grid-cols-2 gap-4 pb-1">
+                    <Field label="Supplier / Breeder Name" icon={<Users />}>
+                      <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
+                    </Field>
+                    <Field label="Arrival Date" icon={<Calendar />}>
+                      <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} max={todayStr} className={`${inputBase} ${inputOk}`} />
+                    </Field>
+                  </div>
+                </div>
+              </div>
             </Section>
 
             {/* ── Section 2: Count & Vitals ── */}
@@ -565,6 +590,9 @@ export function AddPigletBatchForm({
               <p className="text-xs font-semibold text-slate-700">
                 {SOURCE_OPTIONS.find(o => o.value === form.sourceOrigin)?.label || '—'}
               </p>
+              {(form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred') && form.supplierName && (
+                <p className="text-[10px] text-slate-500 mt-1 truncate">Supplier: {form.supplierName}</p>
+              )}
             </div>
 
             <div className="mt-auto pt-2 space-y-2">
@@ -622,6 +650,7 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
 
   const [step, setStep] = useState('form');
   const [successInfo, setSuccessInfo] = useState(null);
+  const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(step);
 
   useEffect(() => {
     if (!isOpen) {
@@ -642,8 +671,9 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
       onMouseDown={(e) => { if (e.target === e.currentTarget) handleModalClose(); }}
     >
       <div
-        style={{ willChange: 'transform, opacity, max-width' }}
-        className={`flex max-h-[92vh] w-full ${step === 'success' ? 'max-w-md' : 'max-w-4xl'} flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden transition-[max-width] duration-300 ease-in-out ${panelClassName}`}
+        ref={containerRef}
+        style={stepTransitionStyle}
+        className={`flex max-h-[86vh] w-full ${step === 'success' ? 'max-w-md' : 'max-w-4xl'} flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden transition-[max-width] duration-300 ease-in-out ${panelClassName}`}
       >
         {step === 'success' ? (
           <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">

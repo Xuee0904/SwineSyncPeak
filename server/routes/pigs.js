@@ -166,10 +166,16 @@ router.get('/api/pigs', async (req, res) => {
       pig_tag: pig.pig_tag, 
       breed: pig.breeds?.name || '—',
       breed_id: pig.breed_id,
+      date_of_birth: pig.date_of_birth || null,
       age_weeks: pig.date_of_birth ? Math.floor((Date.now() - new Date(pig.date_of_birth)) / 604800000) : '—',
       current_weight: pig.weight,
+      pen_id: pig.pen_id || null,
       category: (pig.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
       status: pig.status || 'healthy',
+      source_origin: pig.source_origin || 'born_in_farm',
+      supplier_name: pig.supplier_name || null,
+      arrival_date: pig.arrival_date || null,
+      parity_count: pig.parity_count ?? null,
       is_archived: pig.is_archived || false,
       archived_at: pig.archived_at || null,
       archive_reasoning: pig.archive_reasoning || null,
@@ -178,14 +184,26 @@ router.get('/api/pigs', async (req, res) => {
     const unifiedBatches = batchData.map(batch => ({
       id: batch.batch_id,
       pig_tag: batch.batch_tag,
+      batch_tag: batch.batch_tag,
       breed: batch.breeds?.name || '—',
       breed_id: batch.breed_id,
+      date_of_birth: batch.date_of_birth || null,
       age_weeks: batch.date_of_birth
         ? Math.floor((Date.now() - new Date(batch.date_of_birth)) / 604800000)
         : '—',
       current_weight: batch.average_weight,
+      average_weight: batch.average_weight,
+      pen_id: batch.pen_id || null,
+      sow_id: batch.sow_id || null,
       category: 'Piglet Batch',
       status: batch.status || 'suckling',
+      source_origin: batch.source_origin || 'born_in_farm',
+      supplier_name: batch.supplier_name || null,
+      arrival_date: batch.arrival_date || null,
+      total_born_alive: batch.total_born_alive || 0,
+      current_count: batch.current_count || 0,
+      stillborn_count: batch.stillborn_count || 0,
+      mummy_count: batch.mummy_count || 0,
       is_archived: batch.is_archived || false,
       archived_at: batch.archived_at || null,
       archive_reasoning: batch.archive_reasoning || null,
@@ -304,6 +322,9 @@ router.get('/api/pigs/:id', async (req, res) => {
           gender: data.gender,
           category: (data.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
           parity_count: data.parity_count ?? '',
+          source_origin: data.source_origin || 'born_in_farm',
+          supplier_name: data.supplier_name || null,
+          arrival_date: data.arrival_date || null,
           is_archived: data.is_archived || false,
           archived_at: data.archived_at || null,
           archive_reasoning: data.archive_reasoning || null,
@@ -333,8 +354,11 @@ router.get('/api/pigs/:id', async (req, res) => {
         average_weight: batchData.average_weight,
         pen_id: batchData.pen_id,
         pen_code: batchData.pens?.pen_code || '',
+        sow_id: batchData.sow_id || null,
         status: batchData.status || 'suckling',
-        source_origin: batchData.source_origin,
+        source_origin: batchData.source_origin || 'born_in_farm',
+        supplier_name: batchData.supplier_name || null,
+        arrival_date: batchData.arrival_date || null,
         total_born_alive: batchData.total_born_alive,
         current_count: batchData.current_count,
         stillborn_count: batchData.stillborn_count,
@@ -354,7 +378,7 @@ router.get('/api/pigs/:id', async (req, res) => {
 // POST /api/pigs - Create an individual pig (Sow/Boar)
 router.post('/api/pigs', async (req, res) => {
   try {
-    const { tagNumber, dateOfBirth, breed, weight, penId, status, gender, creator } = req.body;
+    const { tagNumber, dateOfBirth, breed, weight, penId, status, gender, creator, sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date } = req.body;
     const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
     let finalBreedId = breed;
 
@@ -414,6 +438,9 @@ router.post('/api/pigs', async (req, res) => {
       if (isSickOrQ && !isQPen) {
         return res.status(400).json({ error: `Cannot assign a ${status} pig to ${pen.pen_code}. Sick or quarantined pigs must be placed in a Quarantine housing unit.` });
       }
+      if (gender === 'Female' && !isQPen && penSection !== 'S' && penSection !== 'SOW') {
+        return res.status(400).json({ error: `Cannot assign a female sow to ${pen.pen_code}. Sows must be housed in Sow/Farrowing pens.` });
+      }
       if ((penSection === 'S' || penSection === 'SOW') && (occ.hasSow || occ.sowCount >= 1 || occ.pigCount >= 1)) {
         return res.status(400).json({
           error: `Sow pen ${pen.pen_code} already houses 1 sow. The farm can only house 1 sow per sow pen.`,
@@ -442,6 +469,9 @@ router.post('/api/pigs', async (req, res) => {
         pen_id: penId,
         status: status.toLowerCase(),
         gender: gender,
+        source_origin: sourceOrigin || source_origin || 'born_in_farm',
+        supplier_name: supplierName || supplier_name || null,
+        arrival_date: arrivalDate || arrival_date || null,
         is_archived: false
       }])
       .select();
@@ -472,6 +502,7 @@ router.post('/api/pigs/batch', async (req, res) => {
       batchTag, penId, sowId, dateOfBirth, breed,
       totalBornAlive, currentCount, stillbornCount, mummyCount,
       averageWeight, status, creator,
+      sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date,
       // legacy fallback fields from old form
       batchId, penLocation, totalHerdCount,
     } = req.body;
@@ -575,6 +606,9 @@ router.post('/api/pigs/batch', async (req, res) => {
       mummy_count:    parseInt(mummyCount) || 0,
       average_weight: averageWeight ? parseFloat(averageWeight) : null,
       status:         status || 'suckling',
+      source_origin:  sourceOrigin || source_origin || 'born_in_farm',
+      supplier_name:  supplierName || supplier_name || null,
+      arrival_date:   arrivalDate || arrival_date || null,
       is_archived:    false,
     };
 
@@ -610,7 +644,8 @@ router.put('/api/pigs/:id', async (req, res) => {
     const { 
       tagNumber, dateOfBirth, breed, weight, 
       penId, status, parityCount, creator,
-      totalBornAlive, stillbornCount, mummyCount, category, isBatch
+      totalBornAlive, stillbornCount, mummyCount, category, isBatch,
+      sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date
     } = req.body;
     
     const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
@@ -673,6 +708,9 @@ router.put('/api/pigs/:id', async (req, res) => {
         pen_id: penId,
         status: (status || 'suckling').toLowerCase(),
       };
+      if (sourceOrigin || source_origin) updatePayload.source_origin = sourceOrigin || source_origin;
+      if (supplierName || supplier_name) updatePayload.supplier_name = supplierName || supplier_name;
+      if (arrivalDate || arrival_date) updatePayload.arrival_date = arrivalDate || arrival_date;
       if (weight !== undefined && weight !== null && weight !== '') {
         updatePayload.average_weight = parseFloat(weight);
       }
@@ -753,6 +791,9 @@ router.put('/api/pigs/:id', async (req, res) => {
       if (isSickOrQ && !isQPen) {
         return res.status(400).json({ error: `Cannot assign a ${currentStatus} pig to ${pen.pen_code}. Sick or quarantined pigs must be placed in a Quarantine housing unit.` });
       }
+      if (isSow && !isQPen && penSection !== 'S' && penSection !== 'SOW') {
+        return res.status(400).json({ error: `Cannot assign a female sow to ${pen.pen_code}. Sows must be housed in Sow/Farrowing pens.` });
+      }
       if ((penSection === 'S' || penSection === 'SOW') && (occ.sowCount >= 1 || occ.pigCount >= 1)) {
         return res.status(400).json({
           error: `Sow pen ${pen.pen_code} already houses 1 sow. The farm can only house 1 sow per sow pen.`,
@@ -778,6 +819,9 @@ router.put('/api/pigs/:id', async (req, res) => {
       pen_id: penId,
       status: (status || '').toLowerCase(),
     };
+    if (sourceOrigin || source_origin) updatePayload.source_origin = sourceOrigin || source_origin;
+    if (supplierName || supplier_name) updatePayload.supplier_name = supplierName || supplier_name;
+    if (arrivalDate || arrival_date) updatePayload.arrival_date = arrivalDate || arrival_date;
 
     if (parityCount !== undefined && parityCount !== '' && !Number.isNaN(Number(parityCount))) {
       updatePayload.parity_count = Number(parityCount);
@@ -948,7 +992,8 @@ router.put('/api/pigs/batch/:id', async (req, res) => {
     const { 
       batchTag, tagNumber, dateOfBirth, breed, averageWeight, weight,
       penId, sowId, status, creator,
-      totalBornAlive, stillbornCount, mummyCount
+      totalBornAlive, stillbornCount, mummyCount,
+      sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date
     } = req.body;
     
     const resolvedTag = batchTag || tagNumber;
@@ -1038,6 +1083,10 @@ router.put('/api/pigs/batch/:id', async (req, res) => {
       pen_id: penId,
       status: (status || 'suckling').toLowerCase(),
     };
+    if (sourceOrigin || source_origin) updatePayload.source_origin = sourceOrigin || source_origin;
+    if (supplierName || supplier_name) updatePayload.supplier_name = supplierName || supplier_name;
+    if (arrivalDate || arrival_date) updatePayload.arrival_date = arrivalDate || arrival_date;
+    if (sowId !== undefined) updatePayload.sow_id = sowId || null;
     if (resolvedWeight !== undefined && resolvedWeight !== null && resolvedWeight !== '') {
       updatePayload.average_weight = parseFloat(resolvedWeight);
     }
