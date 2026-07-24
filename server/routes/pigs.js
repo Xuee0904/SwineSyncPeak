@@ -531,13 +531,13 @@ router.post('/api/pigs/batch', async (req, res) => {
         return res.status(400).json({ error: `Piglet batches cannot be assigned to Boar pen ${pen.pen_code}.` });
       }
 
-      if (penSection !== 'S' && penSection !== 'SOW') {
-        const remaining = Math.max(0, (pen.max_capacity ?? 0) - (typeof occupied === 'number' ? occupied : occupied.total));
-        if (incoming > remaining) {
-          return res.status(400).json({
-            error: `Pen ${pen.pen_code} only has ${remaining} slot(s) left, but this batch has ${incoming} piglet(s).`,
-          });
-        }
+      const currentOccupied = typeof occupied === 'number' ? occupied : occupied.total;
+      const maxCap = pen.max_capacity ?? 20;
+      const remaining = Math.max(0, maxCap - currentOccupied);
+      if (incoming > remaining) {
+        return res.status(400).json({
+          error: `Pen ${pen.pen_code} only has ${remaining} slot(s) left (capacity ${maxCap}), but this batch has ${incoming} piglet(s).`,
+        });
       }
 
       const statusStr = (status || '').toLowerCase();
@@ -1006,7 +1006,7 @@ router.put('/api/pigs/batch/:id', async (req, res) => {
 
     const { data: existingBatch } = await supabaseAdmin
       .from('piglet_batches')
-      .select('is_archived')
+      .select('is_archived, current_count, pen_id')
       .eq('batch_id', id)
       .maybeSingle();
     if (existingBatch && existingBatch.is_archived) {
@@ -1024,6 +1024,22 @@ router.put('/api/pigs/batch/:id', async (req, res) => {
       const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
       if (penSection === 'B' || penSection === 'BOAR') {
         return res.status(400).json({ error: `Piglet batches cannot be assigned to Boar pen ${pen.pen_code}.` });
+      }
+
+      const occupied = await getPenOccupancy(penId);
+      const currentOccupied = typeof occupied === 'number' ? occupied : occupied.total;
+      const maxCap = pen.max_capacity ?? 20;
+      
+      const isSamePen = existingBatch && String(existingBatch.pen_id) === String(penId);
+      const currentBatchCountInPen = isSamePen ? (existingBatch.current_count || 0) : 0;
+      const effectiveOccupied = currentOccupied - currentBatchCountInPen;
+      const remaining = Math.max(0, maxCap - effectiveOccupied);
+
+      const incomingCount = parseInt(req.body.currentCount ?? req.body.totalBornAlive) || (existingBatch ? existingBatch.current_count : 0);
+      if (incomingCount > remaining) {
+        return res.status(400).json({
+          error: `Pen ${pen.pen_code} only has ${remaining} slot(s) left (capacity ${maxCap}), but this batch has ${incomingCount} piglet(s).`,
+        });
       }
 
       const statusStr = (status || '').toLowerCase();

@@ -169,7 +169,27 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
         }
       }
     }
-    if (!form.penId) next.penId = 'Select a pen';
+    if (!form.penId) {
+      next.penId = 'Select a pen';
+    } else if (form.penId && !next.penId) {
+      const selectedPen = pens.find(p => String(p.id) === String(form.penId));
+      if (selectedPen) {
+        const isSamePen = pigData && String(pigData.pen_id || pigData.penId) === String(form.penId);
+        const currentCountInPen = isSamePen
+          ? (isBatch ? (pigData?.current_count ?? pigData?.total_born_alive ?? 0) : 1)
+          : 0;
+        const incomingCount = isBatch
+          ? (parseInt(form.totalBornAlive) || 1)
+          : 1;
+        const effectiveRemaining = isSamePen
+          ? (typeof selectedPen.remaining === 'number' ? selectedPen.remaining + currentCountInPen : Infinity)
+          : (typeof selectedPen.remaining === 'number' ? selectedPen.remaining : Infinity);
+
+        if (incomingCount > effectiveRemaining) {
+          next.penId = `Pen ${selectedPen.name} only has ${effectiveRemaining} slot(s) available for this update.`;
+        }
+      }
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };

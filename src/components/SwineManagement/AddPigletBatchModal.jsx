@@ -92,21 +92,23 @@ export function AddPigletBatchForm({
     const isWeaned = currentStatus === 'weaned' || (currentStatus !== 'suckling' && ageInDays !== null && ageInDays > 28);
     const isNursing = currentStatus === 'suckling' || (currentStatus !== 'weaned' && ageInDays !== null && ageInDays <= 28);
 
+    const incomingCount = parseInt(form.currentCount || form.totalBornAlive) || 1;
+
     if (isWeaned) {
       if (p.section !== 'W' && p.section !== 'WEANED') return false;
-      return typeof p.remaining === 'number' ? (String(p.id) === String(form.penId) || p.remaining > 0) : true;
+      return typeof p.remaining === 'number' ? (String(p.id) === String(form.penId) || p.remaining >= incomingCount) : true;
     }
     if (isNursing) {
       if (p.section !== 'S' && p.section !== 'SOW') return false;
-      return true;
+      return typeof p.remaining === 'number' ? (String(p.id) === String(form.penId) || p.remaining >= incomingCount) : true;
     }
 
     if (String(p.id) === String(form.penId)) return true;
     const selectedSow = sows.find(s => String(s.id) === String(form.sowId));
     if (selectedSow && selectedSow.penId && String(p.id) === String(selectedSow.penId)) {
-      return true;
+      return typeof p.remaining === 'number' ? p.remaining >= incomingCount : true;
     }
-    return typeof p.remaining === 'number' ? p.remaining > 0 : true;
+    return typeof p.remaining === 'number' ? p.remaining >= incomingCount : true;
   });
 
   // Breed combo-box
@@ -285,6 +287,7 @@ export function AddPigletBatchForm({
       }
 
       if (selectedPen) {
+        const batchCount = parseInt(form.currentCount || form.totalBornAlive) || 0;
         if (selectedPen.section === 'B' || selectedPen.section === 'BOAR') {
           next.penId = 'Piglet batches cannot be assigned to a Boar pen';
         } else if (selectedSow && selectedSow.penId && String(selectedPen.id) !== String(selectedSow.penId)) {
@@ -293,6 +296,8 @@ export function AddPigletBatchForm({
           next.penId = 'Nursing piglets (<=28 days old) must be assigned to a Sow pen';
         } else if (ageInDays !== null && ageInDays > 28 && selectedPen.section !== 'W' && selectedPen.section !== 'WEANED') {
           next.penId = 'Weaned piglets (>28 days old) must be assigned to a Weaned pen';
+        } else if (typeof selectedPen.remaining === 'number' && batchCount > selectedPen.remaining) {
+          next.penId = `Pen ${selectedPen.name} only has ${selectedPen.remaining} slot(s) left, but this batch has ${batchCount} piglet(s).`;
         }
       }
     }
