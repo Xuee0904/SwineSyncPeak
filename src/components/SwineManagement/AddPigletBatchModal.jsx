@@ -55,6 +55,7 @@ export function AddPigletBatchForm({
   onSuccess,
   pens: propPens,
   breeds: propBreeds,
+  initialData,
 }) {
   const {
     form,
@@ -130,7 +131,11 @@ export function AddPigletBatchForm({
     if (!autoRestore) {
       Promise.resolve().then(() => {
         checkDraft();
-        resetForm(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
+        resetForm(() => ({ 
+          ...EMPTY_FORM, 
+          batchTag: generateBatchTag(),
+          ...initialData
+        }));
       });
     }
 
@@ -446,7 +451,7 @@ export function AddPigletBatchForm({
                 </Field>
 
                 <Field label="Pen Assignment" error={errors.penId} icon={<Home />}>
-                  <select value={form.penId} onChange={handleChange('penId')} disabled={isLoadingData} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
+                  <select value={form.penId} onChange={handleChange('penId')} disabled={isLoadingData || !!initialData?.penId} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none ${!!initialData?.penId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
                     <option value="">{isLoadingData ? 'Loading…' : 'Select Pen'}</option>
                     {availablePensForBatch.map(p => (
                       <option key={p.id} value={p.id}>
@@ -457,11 +462,11 @@ export function AddPigletBatchForm({
                 </Field>
 
                 <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
-                  <input type="date" min={minDobStr} max={todayStr} value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
+                  <input type="date" min={minDobStr} max={todayStr} value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} disabled={!!initialData?.dateOfBirth} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk} ${!!initialData?.dateOfBirth ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`} />
                 </Field>
 
                 <Field label="Mother Sow (optional)" icon={<Heart />}>
-                  <select value={form.sowId} onChange={handleSowChange} disabled={isLoadingData} className={`${inputBase} ${inputOk} appearance-none`}>
+                  <select value={form.sowId} onChange={handleSowChange} disabled={isLoadingData || !!initialData?.sowId} className={`${inputBase} ${inputOk} appearance-none ${!!initialData?.sowId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
                     <option value="">{isLoadingData ? 'Loading…' : 'None / Unknown'}</option>
                     {sows.map(s => (
                       <option key={s.id} value={s.id}>#{s.tag} — {s.breed}</option>
@@ -649,7 +654,7 @@ export function AddPigletBatchForm({
   );
 }
 
-export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, breeds }) {
+export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, breeds, initialData }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
@@ -698,14 +703,16 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
             </div>
 
             <div className="pt-2 w-full flex flex-col gap-2.5">
-              <button
-                type="button"
-                onClick={() => setStep('form')}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                <PlusCircle size={16} />
-                Add Another Batch
-              </button>
+              {!initialData && (
+                <button
+                  type="button"
+                  onClick={() => setStep('form')}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <PlusCircle size={16} />
+                  Add Another Batch
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleModalClose}
@@ -726,6 +733,7 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
             }}
             pens={pens}
             breeds={breeds}
+            initialData={initialData}
           />
         )}
       </div>

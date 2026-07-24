@@ -23,9 +23,12 @@ export async function getPenOccupancy(penId) {
   }
   
   const pen = penRes.data || {};
+  const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : '');
+  const isSowPen = penSection === 'S' || penSection === 'SOW';
+
   const batchCount = (batchesRes.data || []).reduce((sum, b) => sum + (b.current_count || 0), 0);
   return {
-    total: pigCount + batchCount,
+    total: pigCount + (isSowPen ? 0 : batchCount),
     pigCount,
     sowCount,
     boarCount,
@@ -69,7 +72,15 @@ export async function getAllPenOccupancy() {
     const occ = getOrCreate(batch.pen_id);
     const count = batch.current_count || 0;
     occ.batchCount += count;
-    occ.total += count;
+    
+    // We need pen_type to know if it's a Sow Pen
+    const pen = pensRes.data?.find(p => String(p.pen_id) === String(batch.pen_id)) || {};
+    const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : '');
+    const isSowPen = penSection === 'S' || penSection === 'SOW';
+    
+    if (!isSowPen) {
+      occ.total += count;
+    }
   }
 
   return occupancy;

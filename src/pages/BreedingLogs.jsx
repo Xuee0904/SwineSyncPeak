@@ -7,7 +7,15 @@ import {
   Heart,
   AlertTriangle,
   Baby,
+  Activity,
 } from "lucide-react";
+import AddBreedingLogModal from "../components/BreedingLogs/AddBreedingLogModal";
+import EditBreedingLogModal from "../components/BreedingLogs/EditBreedingLogModal";
+import LogCheckModal from "../components/BreedingLogs/LogCheckModal";
+import ArchiveBreedingLogModal from "../components/BreedingLogs/ArchiveBreedingLogModal";
+import LogFarrowingModal from "../components/BreedingLogs/LogFarrowingModal";
+import AddPigletBatchModal from "../components/SwineManagement/AddPigletBatchModal";
+import toast from "../utils/toast";
 
 // ---- Domain constants ---------------------------------------------------
 // A sow's gestation runs exactly 114 days — "3 months, 3 weeks, 3 days".
@@ -34,6 +42,9 @@ const STATUS_META = {
   pregnant: { label: "Pregnant", color: "var(--pine)", tint: "var(--pine-tint)" },
   monitoring: { label: "Monitoring", color: "var(--slate)", tint: "var(--slate-tint)" },
   action: { label: "Action required", color: "var(--brick)", tint: "var(--brick-tint)" },
+  failed: { label: "Failed", color: "var(--wheat)", tint: "var(--wheat-tint)" },
+  farrowed: { label: "Farrowed", color: "var(--pine)", tint: "var(--pine-tint)" },
+  archived: { label: "Archived", color: "var(--ink-soft)", tint: "var(--border)" },
 };
 
 // MatingDate is dynamically pulled from the backend using the pig's creation date (fallback).
@@ -108,17 +119,31 @@ function GestationRing({ day, status }) {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
-export default function BreedingLogs() {
+export default function BreedingLogs({ loggedInUser }) {
   const [sows, setSows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("ALL");
   const [query, setQuery] = useState("");
   const [openMenu, setOpenMenu] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editLogData, setEditLogData] = useState(null);
+  const [showCheckModal, setShowCheckModal] = useState(false);
+  const [checkLogData, setCheckLogData] = useState(null);
+  const [showArchiveModal, setShowArchiveModal] = useState(false);
+  const [archiveLogData, setArchiveLogData] = useState(null);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [showFarrowModal, setShowFarrowModal] = useState(false);
+  const [farrowLogData, setFarrowLogData] = useState(null);
+  const [showPigletModal, setShowPigletModal] = useState(false);
+  const [pigletInitialData, setPigletInitialData] = useState(null);
+  const [activeTab, setActiveTab] = useState("active");
 
   React.useEffect(() => {
     const fetchSows = async () => {
+      setLoading(true);
       try {
-        const res = await fetch(`${API_BASE}/api/pigs/breeding-logs`);
+        const res = await fetch(`${API_BASE}/api/breeding-logs?tab=${activeTab}`);
         const json = await res.json();
         setSows(json.data || []);
       } catch (err) {
@@ -128,7 +153,69 @@ export default function BreedingLogs() {
       }
     };
     fetchSows();
-  }, []);
+  }, [activeTab]);
+
+  const refreshLogs = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/breeding-logs?tab=${activeTab}`);
+      const json = await res.json();
+      setSows(json.data || []);
+    } catch (err) {
+      console.error("Failed to refresh breeding logs", err);
+    }
+  };
+
+  const handleSaveBatch = async (batchData) => {
+    const payload = { ...batchData, creator: loggedInUser };
+    const res = await fetch(`${API_BASE}/api/pigs/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || `Failed to save batch (status ${res.status})`);
+    }
+  };
+
+  const confirmArchive = async (reason) => {
+    if (!archiveLogData) return;
+    setIsArchiving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/breeding-logs/${archiveLogData.breeding_id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creator: loggedInUser, archive_reason: reason }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Failed to archive record");
+      toast.success("Breeding record archived successfully!");
+      setShowArchiveModal(false);
+      setArchiveLogData(null);
+      refreshLogs();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
+  const handleAbort = async (breeding_id) => {
+    if (!window.confirm("Are you sure you want to report a miscarriage? This will mark the cycle as failed and return the sow to Healthy status.")) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/breeding-logs/${breeding_id}/abort`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creator: loggedInUser }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Failed to report miscarriage");
+      toast.success("Miscarriage reported successfully.");
+      refreshLogs();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
 
   const filtered = sows.filter((s) => {
     const matchesFilter = filter === "ALL" || s.status === filter;
@@ -137,15 +224,16 @@ export default function BreedingLogs() {
     return matchesFilter && matchesQuery;
   });
 
-  const totalPregnant = sows.filter((s) => s.status !== "monitoring").length;
-  const dueThisMonth = sows.filter((s) => s.day >= 90 && s.day <= GESTATION_DAYS).length + 15; // mock baseline
+  const totalPregnant = sows.filter((s) => s.status === "pregnant").length;
+  const dueThisMonth = sows.filter((s) => s.day >= 90 && s.day <= GESTATION_DAYS).length;
   const actionRequired = sows.filter((s) => s.status === "action").length;
+  const activeMatings = sows.length;
 
   return (
     <div className="brl-root">
       <style>{`
         .brl-root {
-          --bg: #F6F7F2;
+          --bg: transparent;
           --surface: #FFFFFF;
           --border: #E3E6DD;
           --ink: #1C2420;
@@ -258,10 +346,10 @@ export default function BreedingLogs() {
           bg={actionRequired ? "bg-rose-50/60" : "bg-white"}
         />
         <StatCard
-          icon={<Baby className="w-6 h-6 text-indigo-500" />}
-          label="Ready to Wean"
-          value={loading ? 0 : 65}
-          badge="PIGLETS"
+          icon={<Activity className="w-6 h-6 text-indigo-500" />}
+          label="Active Matings"
+          value={activeMatings}
+          badge="TOTAL"
           badgeColor="bg-indigo-100 text-indigo-700"
           accentColor="bg-indigo-50"
           loading={loading}
@@ -269,23 +357,77 @@ export default function BreedingLogs() {
       </div>
 
       {/* Controls */}
-      <div className="brl-controls">
-        <div className="brl-chips">
-          <button className={`brl-chip ${filter === "ALL" ? "active" : ""}`} onClick={() => setFilter("ALL")}>All</button>
-          <button className={`brl-chip ${filter === "pregnant" ? "active" : ""}`} onClick={() => setFilter("pregnant")}>Pregnant</button>
-          <button className={`brl-chip ${filter === "monitoring" ? "active" : ""}`} onClick={() => setFilter("monitoring")}>Monitoring</button>
-          <button className={`brl-chip ${filter === "action" ? "active" : ""}`} onClick={() => setFilter("action")}>Action required</button>
+      <div className="mb-7 flex flex-col gap-4">
+        
+        {/* Top Row: Tabs, Search, and Add Button */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          {/* Tab Toggle */}
+          <div className="flex bg-slate-200/50 p-1 rounded-xl shrink-0">
+            <button 
+              className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'active' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => { setActiveTab('active'); setFilter('ALL'); }}
+            >
+              Active Matings
+            </button>
+            <button 
+              className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              onClick={() => { setActiveTab('history'); setFilter('ALL'); }}
+            >
+              History
+            </button>
+          </div>
+
+          <div className="flex items-center flex-wrap gap-4 flex-1 lg:justify-end">
+            <div className="brl-search w-full sm:w-auto">
+              <Search size={15} />
+              <input type="text" placeholder="Search sow ID or breed…" value={query} onChange={(e) => setQuery(e.target.value)} />
+            </div>
+
+            {/* Add New Button */}
+            {activeTab === 'active' && (
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow-sm transition-colors w-full sm:w-auto"
+              >
+                <Plus size={16} /> Log New Mating
+              </button>
+            )}
+          </div>
         </div>
-        <div className="brl-search">
-          <Search size={15} />
-          <input type="text" placeholder="Search sow ID or breed…" value={query} onChange={(e) => setQuery(e.target.value)} />
-        </div>
+
+        {/* Bottom Row: Filters (Only in Active Tab) */}
+        {activeTab === 'active' && (
+          <div className="flex items-center">
+            <div className="brl-chips">
+              <button className={`brl-chip ${filter === "ALL" ? "active" : ""}`} onClick={() => setFilter("ALL")}>All</button>
+              <button className={`brl-chip ${filter === "pregnant" ? "active" : ""}`} onClick={() => setFilter("pregnant")}>Pregnant</button>
+              <button className={`brl-chip ${filter === "monitoring" ? "active" : ""}`} onClick={() => setFilter("monitoring")}>Monitoring</button>
+              <button className={`brl-chip ${filter === "action" ? "active" : ""}`} onClick={() => setFilter("action")}>Action required</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pipeline list */}
       <div className="brl-list">
         {loading ? (
-          <div className="p-8 text-center text-slate-500 text-sm animate-pulse">Loading breeding records...</div>
+          <div className="flex flex-col gap-3.5">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="brl-card animate-pulse" style={{ pointerEvents: 'none' }}>
+                <div className="w-[60px] h-[60px] rounded-full bg-slate-100 shrink-0" />
+                <div className="flex-1 w-full space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-2">
+                      <div className="h-5 w-32 bg-slate-200 rounded-md" />
+                      <div className="h-3 w-48 bg-slate-100 rounded-md" />
+                    </div>
+                    <div className="h-6 w-24 bg-slate-100 rounded-full" />
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-100 rounded-full mt-2" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center text-slate-400">
             <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
@@ -302,7 +444,7 @@ export default function BreedingLogs() {
             const fillPct = Math.min(100, (sow.day / GESTATION_DAYS) * 100);
 
             return (
-              <div className="brl-card" key={sow.id}>
+              <div className="brl-card" key={sow.id} style={{ zIndex: openMenu === sow.id ? 20 : 1 }}>
                 <GestationRing day={sow.day} status={sow.status} />
 
                 <div className="brl-card-main">
@@ -316,18 +458,27 @@ export default function BreedingLogs() {
                         {sow.status === "action" && <span className="brl-pulse-dot" />}
                         {meta.label}
                       </span>
-                      <div style={{ position: "relative" }}>
-                        <button className="brl-menu-btn" onClick={() => setOpenMenu(openMenu === sow.id ? null : sow.id)}>
-                          <MoreVertical size={16} />
-                        </button>
-                        {openMenu === sow.id && (
-                          <div className="brl-menu">
-                            <button>View full log</button>
-                            <button>Log new check</button>
-                            <button>Edit record</button>
-                          </div>
-                        )}
-                      </div>
+                      {activeTab === 'active' && (
+                        <div style={{ position: "relative" }}>
+                          <button className="brl-menu-btn" onClick={() => setOpenMenu(openMenu === sow.id ? null : sow.id)}>
+                            <MoreVertical size={16} />
+                          </button>
+                          {openMenu === sow.id && (
+                            <div className="brl-menu">
+                              <button onClick={() => setOpenMenu(null)}>View full log</button>
+                              <button onClick={() => { setCheckLogData(sow); setShowCheckModal(true); setOpenMenu(null); }}>Log new check</button>
+                              {(sow.status === 'pregnant' || sow.status === 'action' || sow.day >= 100) && (
+                                <button style={{ color: 'var(--pine)' }} onClick={() => { setFarrowLogData(sow); setShowFarrowModal(true); setOpenMenu(null); }}>
+                                  Log farrowing
+                                </button>
+                              )}
+                              <button onClick={() => { setEditLogData(sow); setShowEditModal(true); setOpenMenu(null); }}>Edit mating record</button>
+                              <button onClick={() => { handleAbort(sow.breeding_id); setOpenMenu(null); }} style={{ color: "var(--wheat)" }}>Report Miscarriage</button>
+                              <button onClick={() => { setArchiveLogData(sow); setShowArchiveModal(true); setOpenMenu(null); }} style={{ color: "var(--brick)" }}>Archive record</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -380,9 +531,89 @@ export default function BreedingLogs() {
           );
         })
       )}
-
-        <button className="brl-ghost"><Plus size={16} /> Log a new mating</button>
       </div>
+
+      {/* Add Breeding Log Modal */}
+      <AddBreedingLogModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        loggedInUser={loggedInUser}
+        onSaved={() => {
+          toast.success("Breeding log saved successfully!");
+          refreshLogs();
+        }}
+      />
+
+      {/* Edit Breeding Log Modal */}
+      <EditBreedingLogModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        loggedInUser={loggedInUser}
+        initialData={editLogData}
+        onSaved={() => {
+          toast.success("Breeding log updated successfully!");
+          setShowEditModal(false);
+          refreshLogs();
+        }}
+      />
+
+      {/* Log Check Modal */}
+      <LogCheckModal
+        isOpen={showCheckModal}
+        onClose={() => setShowCheckModal(false)}
+        loggedInUser={loggedInUser}
+        initialData={checkLogData}
+        onSaved={() => {
+          toast.success("Milestone check recorded successfully!");
+          refreshLogs();
+        }}
+      />
+
+      <LogFarrowingModal
+        isOpen={showFarrowModal}
+        onClose={() => {
+          setShowFarrowModal(false);
+          setFarrowLogData(null);
+        }}
+        onSaved={refreshLogs}
+        onRegisterPiglets={(farrowDate) => {
+          if (farrowLogData) {
+            setPigletInitialData({
+              sowId: farrowLogData.sow_id,
+              penId: farrowLogData.pen_id || "",
+              dateOfBirth: farrowDate || "",
+            });
+          }
+          setShowPigletModal(true);
+        }}
+        loggedInUser={loggedInUser}
+        initialData={farrowLogData}
+      />
+
+      <AddPigletBatchModal
+        isOpen={showPigletModal}
+        onClose={() => {
+          setShowPigletModal(false);
+          setFarrowLogData(null);
+          setPigletInitialData(null);
+        }}
+        initialData={pigletInitialData}
+        onSave={handleSaveBatch}
+      />
+
+      {/* Archive Modal */}
+      <ArchiveBreedingLogModal
+        isOpen={showArchiveModal}
+        onClose={() => {
+          if (!isArchiving) {
+            setShowArchiveModal(false);
+            setArchiveLogData(null);
+          }
+        }}
+        onConfirm={confirmArchive}
+        sowTag={archiveLogData?.tag || archiveLogData?.id}
+        isArchiving={isArchiving}
+      />
     </div>
   );
 }

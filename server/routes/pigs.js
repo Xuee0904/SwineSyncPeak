@@ -26,29 +26,7 @@ function getCreatorDetails(creator) {
 
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Inactive'];
 
-// GET /api/sows — lightweight list of active sows for the sow_id dropdown
-router.get('/api/sows', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('pigs')
-      .select('pig_id, pig_tag, pen_id, breeds(name)')
-      .eq('gender', 'Female')
-      .eq('is_archived', false)
-      .order('pig_tag', { ascending: true });
-    if (error) throw error;
-    const sows = (data || []).map(p => ({
-      id: p.pig_id,
-      tag: p.pig_tag,
-      penId: p.pen_id || null,
-      breed: p.breeds?.name || '—',
-    }));
-    res.json({ data: sows });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET /api/pigs/breeding-logs – fetch live pregnant sows for Breeding Logs module
+// GET /api/pigs/breeding-logs – legacy alias forwarding to breeding_logs
 router.get('/api/pigs/breeding-logs', async (req, res) => {
   try {
     const { data, error } = await supabase

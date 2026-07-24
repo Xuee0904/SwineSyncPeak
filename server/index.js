@@ -9,6 +9,7 @@ import pensRouter from './routes/pens.js';
 import breedsRouter from './routes/breeds.js';
 import pigsRouter from './routes/pigs.js';
 import healthRouter from './routes/health.js';
+import breedingLogsRouter from './routes/breedingLogs.js';
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.use(pensRouter);
 app.use(breedsRouter);
 app.use(pigsRouter);
 app.use(healthRouter);
+app.use(breedingLogsRouter);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', () => {
