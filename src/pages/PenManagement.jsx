@@ -620,7 +620,14 @@ export default function PenManagement({ loggedInUser }) {
         onClose={() => setViewingPen(null)}
         pen={viewingPen}
         sections={SECTIONS}
-        onEdit={(p) => setEditingPen(p)}
+        loggedInUser={loggedInUser}
+        onEdit={(updatedPen, wasSaved) => {
+          if (wasSaved) {
+            // Post-save: show a toast and refresh the pen list
+            toast.success(`Updated pen #${updatedPen.code?.toUpperCase() || ''}`);
+            fetchPens();
+          }
+        }}
         onArchive={(p) => setArchivingPen(p)}
       />
     </div>

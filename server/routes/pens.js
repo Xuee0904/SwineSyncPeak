@@ -202,7 +202,7 @@ router.get('/api/pens/:id/swine', async (req, res) => {
     const { id } = req.params;
     const [pigsRes, batchesRes] = await Promise.all([
       db.from('pigs').select('*').eq('pen_id', id).eq('is_archived', false).order('pig_tag', { ascending: true }),
-      db.from('piglet_batches').select('*').eq('pen_id', id).eq('is_archived', false).order('batch_number', { ascending: true })
+      db.from('piglet_batches').select('*').eq('pen_id', id).eq('is_archived', false).order('batch_tag', { ascending: true })
     ]);
 
     let pigs = pigsRes.data || [];
@@ -215,7 +215,7 @@ router.get('/api/pens/:id/swine', async (req, res) => {
         if (targetIds.length > 0) {
           const [p2, b2] = await Promise.all([
             db.from('pigs').select('*').in('pen_id', targetIds).eq('is_archived', false).order('pig_tag', { ascending: true }),
-            db.from('piglet_batches').select('*').in('pen_id', targetIds).eq('is_archived', false).order('batch_number', { ascending: true })
+            db.from('piglet_batches').select('*').in('pen_id', targetIds).eq('is_archived', false).order('batch_tag', { ascending: true })
           ]);
           pigs = p2.data || pigs;
           batches = b2.data || batches;
