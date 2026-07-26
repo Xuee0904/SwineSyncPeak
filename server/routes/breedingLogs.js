@@ -77,8 +77,64 @@ router.get('/api/boars', async (req, res) => {
   }
 });
 
+// GET /api/breeding-logs/by-sow/:sow_id — fetch all breeding records for a specific sow
+router.get('/api/breeding-logs/by-sow/:sow_id', async (req, res) => {
+  try {
+    const db = supabaseAdmin || supabase;
+    const { sow_id } = req.params;
+
+    const { data: logs, error } = await db
+      .from('breeding_logs')
+      .select('*')
+      .eq('sow_id', sow_id)
+      .order('breeding_date', { ascending: false });
+
+    if (error) throw error;
+
+    if (!logs || logs.length === 0) return res.json({ data: [] });
+
+    // Fetch boar info
+    const boarIds = [...new Set(logs.map(l => l.boar_id).filter(Boolean))];
+    let boarsMap = {};
+    if (boarIds.length > 0) {
+      const { data: boars } = await db.from('pigs').select('pig_id, pig_tag').in('pig_id', boarIds);
+      (boars || []).forEach(b => { boarsMap[b.pig_id] = b; });
+    }
+
+    const result = logs.map(b => {
+      const boarTag = boarsMap[b.boar_id]?.pig_tag || null;
+      const matingDate = new Date(b.breeding_date);
+      const today = new Date();
+      const diffDays = Math.floor((today - matingDate) / (1000 * 60 * 60 * 24));
+
+      return {
+        breeding_id: b.breeding_id,
+        breeding_date: b.breeding_date,
+        breeding_method: b.breeding_method,
+        boar_id: b.boar_id,
+        boar_tag: boarTag,
+        breeding_status: b.breeding_status,
+        heat_check_date: b.heat_check_date,
+        preg_check_date: b.preg_check_date,
+        expected_farrowing_date: b.expected_farrowing_date,
+        actual_farrowing_date: b.actual_farrowing_date,
+        is_archived: b.is_archived,
+        archive_reason: b.archive_reason,
+        day: diffDays,
+        notes: b.notes || null,
+      };
+    });
+
+    res.json({ data: result });
+  } catch (error) {
+    console.error('GET /api/breeding-logs/by-sow error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/breeding-logs — fetch all breeding log records for the dashboard
 router.get('/api/breeding-logs', async (req, res) => {
+
   try {
     const db = supabaseAdmin || supabase;
 
@@ -219,6 +275,22 @@ router.post('/api/breeding-logs', async (req, res) => {
     expectedFarrowingDate.setDate(expectedFarrowingDate.getDate() + 114);
     const expectedFarrowingStr = expectedFarrowingDate.toISOString().split('T')[0];
 
+    const db = supabaseAdmin || supabase;
+
+    // Check if sow already has an active breeding log
+    const { data: existingActiveLogs, error: checkError } = await db
+      .from('breeding_logs')
+      .select('breeding_id')
+      .eq('sow_id', sow_id)
+      .eq('is_archived', false)
+      .in('breeding_status', ['pending', 'pregnant']);
+
+    if (checkError) throw checkError;
+    
+    if (existingActiveLogs && existingActiveLogs.length > 0) {
+      return res.status(400).json({ error: 'This sow already has an active breeding cycle.' });
+    }
+
     const payload = {
       breeding_method,
       sow_id,
@@ -229,7 +301,6 @@ router.post('/api/breeding-logs', async (req, res) => {
       actual_farrowing_date: null,
     };
 
-    const db = supabaseAdmin || supabase;
     const { data, error } = await db
       .from('breeding_logs')
       .insert([payload])
@@ -248,7 +319,7 @@ router.post('/api/breeding-logs', async (req, res) => {
     // Update sow status in pigs table to Pregnant
     await db
       .from('pigs')
-      .update({ status: 'pregnant' })
+      .update({ status: 'Pregnant' })
       .eq('pig_id', sow_id);
 
     const sowTag = sowPig?.pig_tag || sow_id;
@@ -498,7 +569,7 @@ router.post('/api/breeding-logs/:id/check', async (req, res) => {
       } else if (type === 'pregnancy') {
         updatePayload.preg_check_date = today;
         updatePayload.breeding_status = 'pregnant';
-        await db.from('pigs').update({ status: 'pregnant' }).eq('pig_id', sow_id);
+        await db.from('pigs').update({ status: 'Pregnant' }).eq('pig_id', sow_id);
         eventTitle = 'Pregnancy Confirmed';
         eventDesc = `Sow confirmed pregnant.`;
       }

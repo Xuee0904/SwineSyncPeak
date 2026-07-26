@@ -12,6 +12,10 @@ export default function useModalAnimation(isOpen, onClose) {
       if (closeTimer.current) clearTimeout(closeTimer.current);
       setIsClosing(false);
       setShouldRender(true);
+    } else {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+      setIsClosing(false);
+      setShouldRender(false);
     }
   }, [isOpen]);
 

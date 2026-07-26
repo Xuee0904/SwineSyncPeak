@@ -142,20 +142,22 @@ export default function LogCheckModal({ isOpen, onClose, onSaved, loggedInUser, 
                   Check Type
                 </label>
                 <div className="flex bg-slate-100 rounded-xl p-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (containerRef.current) prevHeightRef.current = containerRef.current.offsetHeight;
-                      setCheckType('heat');
-                    }}
-                    className={`flex-1 text-[11px] font-bold py-2 rounded-lg transition-all ${
-                      checkType === 'heat' 
-                        ? 'bg-white text-indigo-700 shadow-sm' 
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    Heat Check (Day 18-24)
-                  </button>
+                  {initialData?.day < 25 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (containerRef.current) prevHeightRef.current = containerRef.current.offsetHeight;
+                        setCheckType('heat');
+                      }}
+                      className={`flex-1 text-[11px] font-bold py-2 rounded-lg transition-all ${
+                        checkType === 'heat' 
+                          ? 'bg-white text-indigo-700 shadow-sm' 
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      Heat Check (Day 18-24)
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

@@ -5,6 +5,7 @@ import {
   Calendar, User, PiggyBank, CalendarCheck, Edit3
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
+import useSmoothStepTransition from '../../hooks/useSmoothStepTransition';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const GESTATION_DAYS = 114;
@@ -62,6 +63,7 @@ export default function EditBreedingLogModal({ isOpen, onClose, onSaved, loggedI
   const [breedingMethod, setBreedingMethod] = useState('');
   const [submitting, setSubmitting]   = useState(false);
   const [formError, setFormError]     = useState('');
+  const [dateError, setDateError]     = useState('');
 
   /* ── dropdown data ────────────────────────────────────────────── */
   const [sows, setSows]   = useState([]);
@@ -69,35 +71,10 @@ export default function EditBreedingLogModal({ isOpen, onClose, onSaved, loggedI
   const [loadingDropdowns, setLoadingDropdowns] = useState(false);
 
   /* ── smooth step transition (snapshot pattern) ────────────────── */
-  const containerRef      = useRef(null);
-  const prevHeightRef     = useRef(null);
-  const [ht, setHt]       = useState('auto');
-
-  useLayoutEffect(() => {
-    const el = containerRef.current;
-    if (!el || prevHeightRef.current === null) return;
-    const fromH = prevHeightRef.current;
-    prevHeightRef.current = null;
-    const toH = el.scrollHeight;
-    if (Math.abs(fromH - toH) < 2) return;
-    setHt(`${fromH}px`);
-    const raf = requestAnimationFrame(() => {
-      setHt(`${toH}px`);
-      const t = setTimeout(() => setHt('auto'), TRANSITION_MS);
-      return () => clearTimeout(t);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [step, breedingDate, breedingMethod]);
+  const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(step);
 
   const goTo = (newStep) => {
-    if (containerRef.current) prevHeightRef.current = containerRef.current.offsetHeight;
     setStep(newStep);
-  };
-
-  const containerStyle = {
-    height: ht,
-    transition: ht === 'auto' ? undefined : `height ${TRANSITION_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
-    willChange: 'height',
   };
 
   /* ── reset on open / close & populate initialData ──────────────── */
@@ -105,8 +82,8 @@ export default function EditBreedingLogModal({ isOpen, onClose, onSaved, loggedI
     if (isOpen) {
       setStep(STEP_FORM);
       setFormError('');
+      setDateError('');
       setSuccessInfo(null);
-      setHt('auto');
 
       if (initialData) {
         setSowId(initialData.sow_id || '');
@@ -148,8 +125,17 @@ export default function EditBreedingLogModal({ isOpen, onClose, onSaved, loggedI
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
+    setDateError('');
 
     if (!sowId) { setFormError('Please select a sow.'); return; }
+    if (!breedingDate) { setFormError('Please enter the breeding date.'); return; }
+    
+    // Future date validation check
+    const today = new Date().toISOString().split('T')[0];
+    if (breedingDate > today) {
+      setDateError('Breeding date cannot be in the future.');
+      return;
+    }
     if (!breedingDate) { setFormError('Please enter the breeding date.'); return; }
     if (breedingMethod === 'natural_mating' && !boarId) {
       setFormError('Please select a boar for Natural Mating.'); return;
@@ -196,8 +182,8 @@ export default function EditBreedingLogModal({ isOpen, onClose, onSaved, loggedI
     >
       <div
         ref={containerRef}
-        style={containerStyle}
-        className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${maxWidth} ${panelClassName}`}
+        style={stepTransitionStyle}
+        className={`w-full bg-white rounded-3xl shadow-2xl border border-slate-100 ${maxWidth} ${panelClassName} overflow-hidden`}
       >
         {/* ══ STEP: FORM ══════════════════════════════════════════ */}
         {step === STEP_FORM && (
@@ -325,11 +311,20 @@ export default function EditBreedingLogModal({ isOpen, onClose, onSaved, loggedI
                   max={new Date().toISOString().split('T')[0]}
                   value={breedingDate}
                   onChange={(e) => {
-                    if (containerRef.current) prevHeightRef.current = containerRef.current.offsetHeight;
-                    setBreedingDate(e.target.value);
+                    const val = e.target.value;
+                    const today = new Date().toISOString().split('T')[0];
+                    if (val > today) {
+                      setDateError('Breeding date cannot be in the future.');
+                    } else {
+                      setDateError('');
+                    }
+                    setBreedingDate(val);
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all disabled:opacity-50"
+                  className={`w-full rounded-xl border ${dateError ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-red-500/10' : 'border-slate-200 bg-slate-50 focus:border-emerald-500 focus:ring-emerald-500/10'} px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 transition-all disabled:opacity-50`}
                 />
+                {dateError && (
+                  <p className="text-[11px] text-red-600 font-medium mt-1 animate-in fade-in slide-in-from-top-1 duration-200">{dateError}</p>
+                )}
               </div>
 
               {/* Expected farrowing — read-only computed field */}

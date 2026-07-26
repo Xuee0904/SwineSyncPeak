@@ -203,3 +203,43 @@ input::-ms-clear {
 
 .animate-panel-in { animation: modalIn 0.2s cubic-bezier(0, 0, 0.2, 1) forwards; }
 .animate-panel-out { animation: modalOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards; }
+
+/* ── Skeleton Shimmer ──────────────────────────────────── */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position: 600px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #f1f5f9 0px,
+    #e2e8f0 40%,
+    #f1f5f9 80%
+  );
+  background-size: 600px 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+
+/* ── Staggered Tab Content Entry ───────────────────────── */
+@keyframes tab-slide-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.tab-enter {
+  animation: tab-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.tab-enter-stagger > * {
+  opacity: 0;
+  animation: tab-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.tab-enter-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.tab-enter-stagger > *:nth-child(2) { animation-delay: 45ms; }
+.tab-enter-stagger > *:nth-child(3) { animation-delay: 90ms; }
+.tab-enter-stagger > *:nth-child(4) { animation-delay: 135ms; }
+.tab-enter-stagger > *:nth-child(5) { animation-delay: 180ms; }
+.tab-enter-stagger > *:nth-child(6) { animation-delay: 225ms; }

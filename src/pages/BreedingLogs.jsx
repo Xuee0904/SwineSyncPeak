@@ -15,6 +15,7 @@ import LogCheckModal from "../components/BreedingLogs/LogCheckModal";
 import ArchiveBreedingLogModal from "../components/BreedingLogs/ArchiveBreedingLogModal";
 import LogFarrowingModal from "../components/BreedingLogs/LogFarrowingModal";
 import AddPigletBatchModal from "../components/SwineManagement/AddPigletBatchModal";
+import ReportMiscarriageModal from "../components/BreedingLogs/ReportMiscarriageModal";
 import toast from "../utils/toast";
 
 // ---- Domain constants ---------------------------------------------------
@@ -137,6 +138,9 @@ export default function BreedingLogs({ loggedInUser }) {
   const [farrowLogData, setFarrowLogData] = useState(null);
   const [showPigletModal, setShowPigletModal] = useState(false);
   const [pigletInitialData, setPigletInitialData] = useState(null);
+  const [showAbortModal, setShowAbortModal] = useState(false);
+  const [abortLogData, setAbortLogData] = useState(null);
+  const [isAborting, setIsAborting] = useState(false);
   const [activeTab, setActiveTab] = useState("active");
 
   React.useEffect(() => {
@@ -190,18 +194,18 @@ export default function BreedingLogs({ loggedInUser }) {
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Failed to archive record");
       toast.success("Breeding record archived successfully!");
-      setShowArchiveModal(false);
-      setArchiveLogData(null);
       refreshLogs();
     } catch (err) {
       toast.error(err.message);
+      throw err;
     } finally {
       setIsArchiving(false);
     }
   };
 
   const handleAbort = async (breeding_id) => {
-    if (!window.confirm("Are you sure you want to report a miscarriage? This will mark the cycle as failed and return the sow to Healthy status.")) return;
+    if (!abortLogData) return;
+    setIsAborting(true);
     try {
       const res = await fetch(`${API_BASE}/api/breeding-logs/${breeding_id}/abort`, {
         method: "POST",
@@ -214,6 +218,9 @@ export default function BreedingLogs({ loggedInUser }) {
       refreshLogs();
     } catch (err) {
       toast.error(err.message);
+      throw err;
+    } finally {
+      setIsAborting(false);
     }
   };
 
@@ -267,7 +274,7 @@ export default function BreedingLogs({ loggedInUser }) {
         .brl-search input { width: 100%; padding: 9px 12px 9px 36px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-size: 13.5px; font-weight: 500; color: var(--ink); }
         .brl-search input:focus { outline: 2px solid var(--pine); outline-offset: 1px; }
 
-        .brl-list { display: flex; flex-direction: column; gap: 14px; }
+        .brl-list { display: flex; flex-direction: column; gap: 14px; padding-bottom: 120px; }
 
         .brl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; display: flex; gap: 18px; align-items: center; transition: box-shadow 0.15s ease, transform 0.15s ease; position: relative; }
         .brl-card:hover { box-shadow: 0 6px 20px rgba(28,36,32,0.07); transform: translateY(-1px); }
@@ -305,7 +312,16 @@ export default function BreedingLogs({ loggedInUser }) {
 
         .brl-menu-btn { background: none; border: none; color: var(--ink-soft); cursor: pointer; padding: 4px; border-radius: 6px; display: flex; }
         .brl-menu-btn:hover { background: var(--bg); color: var(--ink); }
-        .brl-menu { position: absolute; right: 16px; top: 52px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(28,36,32,0.14); z-index: 10; overflow: hidden; min-width: 150px; }
+        .brl-menu { 
+          position: absolute; right: 16px; top: 52px; background: var(--surface); 
+          border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(28,36,32,0.14); 
+          z-index: 10; overflow: hidden; min-width: 150px; transform-origin: top right;
+          animation: menuFadeIn 0.15s ease-out forwards;
+        }
+        @keyframes menuFadeIn {
+          from { opacity: 0; transform: scale(0.95) translateY(-5px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
         .brl-menu button { width: 100%; text-align: left; padding: 9px 13px; font-size: 13.5px; font-weight: 600; background: none; border: none; cursor: pointer; color: var(--ink); }
         .brl-menu button:hover { background: var(--bg); }
 
@@ -444,7 +460,7 @@ export default function BreedingLogs({ loggedInUser }) {
             const fillPct = Math.min(100, (sow.day / GESTATION_DAYS) * 100);
 
             return (
-              <div className="brl-card" key={sow.id} style={{ zIndex: openMenu === sow.id ? 20 : 1 }}>
+              <div className="brl-card" key={sow.breeding_id || sow.id} style={{ zIndex: openMenu === (sow.breeding_id || sow.id) ? 20 : 1 }}>
                 <GestationRing day={sow.day} status={sow.status} />
 
                 <div className="brl-card-main">
@@ -460,20 +476,24 @@ export default function BreedingLogs({ loggedInUser }) {
                       </span>
                       {activeTab === 'active' && (
                         <div style={{ position: "relative" }}>
-                          <button className="brl-menu-btn" onClick={() => setOpenMenu(openMenu === sow.id ? null : sow.id)}>
+                          <button className="brl-menu-btn" onClick={() => {
+                            const id = sow.breeding_id || sow.id;
+                            setOpenMenu(openMenu === id ? null : id);
+                          }}>
                             <MoreVertical size={16} />
                           </button>
-                          {openMenu === sow.id && (
+                          {openMenu === (sow.breeding_id || sow.id) && (
                             <div className="brl-menu">
-                              <button onClick={() => setOpenMenu(null)}>View full log</button>
-                              <button onClick={() => { setCheckLogData(sow); setShowCheckModal(true); setOpenMenu(null); }}>Log new check</button>
-                              {(sow.status === 'pregnant' || sow.status === 'action' || sow.day >= 100) && (
+                              {sow.status !== 'pregnant' && (
+                                <button onClick={() => { setCheckLogData(sow); setShowCheckModal(true); setOpenMenu(null); }}>Log new check</button>
+                              )}
+                              {sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
                                 <button style={{ color: 'var(--pine)' }} onClick={() => { setFarrowLogData(sow); setShowFarrowModal(true); setOpenMenu(null); }}>
                                   Log farrowing
                                 </button>
                               )}
                               <button onClick={() => { setEditLogData(sow); setShowEditModal(true); setOpenMenu(null); }}>Edit mating record</button>
-                              <button onClick={() => { handleAbort(sow.breeding_id); setOpenMenu(null); }} style={{ color: "var(--wheat)" }}>Report Miscarriage</button>
+                              <button onClick={() => { setAbortLogData(sow); setShowAbortModal(true); setOpenMenu(null); }} style={{ color: "var(--wheat)" }}>Report Miscarriage</button>
                               <button onClick={() => { setArchiveLogData(sow); setShowArchiveModal(true); setOpenMenu(null); }} style={{ color: "var(--brick)" }}>Archive record</button>
                             </div>
                           )}
@@ -605,14 +625,23 @@ export default function BreedingLogs({ loggedInUser }) {
       <ArchiveBreedingLogModal
         isOpen={showArchiveModal}
         onClose={() => {
-          if (!isArchiving) {
-            setShowArchiveModal(false);
-            setArchiveLogData(null);
-          }
+          setShowArchiveModal(false);
+          setArchiveLogData(null);
         }}
         onConfirm={confirmArchive}
         sowTag={archiveLogData?.tag || archiveLogData?.id}
         isArchiving={isArchiving}
+      />
+
+      <ReportMiscarriageModal
+        isOpen={showAbortModal}
+        onClose={() => {
+          setShowAbortModal(false);
+          setAbortLogData(null);
+        }}
+        sowTag={abortLogData?.tag || abortLogData?.id}
+        isSubmitting={isAborting}
+        onConfirm={() => abortLogData && handleAbort(abortLogData.breeding_id)}
       />
     </div>
   );
