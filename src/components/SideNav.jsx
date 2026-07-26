@@ -13,7 +13,12 @@ export const NAV_ITEMS = [
       { id: 'pen_management', label: 'Pen Management', icon: Grid3X3 },
     ]
   },
-  { id: 'growth_program', label: 'Growth Program', icon: TrendingUp, sub: true },
+  { 
+    id: 'growth', label: 'Growth Management', icon: TrendingUp, sub: true,
+    children: [
+      { id: 'growth_analytics', label: 'Growth Analytics', icon: Activity },
+    ]
+  },
   { id: 'health_management', label: 'Health Management', icon: Activity, sub: true },
   { id: 'breeding_logs', label: 'Breeding Logs', icon: Baby },
   { id: 'inventory', label: 'Inventory Mgmt', icon: ClipboardList, sub: true },

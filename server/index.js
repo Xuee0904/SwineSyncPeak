@@ -10,6 +10,7 @@ import breedsRouter from './routes/breeds.js';
 import pigsRouter from './routes/pigs.js';
 import healthRouter from './routes/health.js';
 import breedingLogsRouter from './routes/breedingLogs.js';
+import growthRouter from './routes/growth.js';
 
 const app = express();
 
@@ -40,6 +41,7 @@ app.use(breedsRouter);
 app.use(pigsRouter);
 app.use(healthRouter);
 app.use(breedingLogsRouter);
+app.use(growthRouter);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', () => {
