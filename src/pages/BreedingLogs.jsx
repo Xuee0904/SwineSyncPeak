@@ -8,6 +8,8 @@ import {
   AlertTriangle,
   Baby,
   Activity,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import AddBreedingLogModal from "../components/BreedingLogs/AddBreedingLogModal";
 import EditBreedingLogModal from "../components/BreedingLogs/EditBreedingLogModal";
@@ -142,6 +144,7 @@ export default function BreedingLogs({ loggedInUser }) {
   const [abortLogData, setAbortLogData] = useState(null);
   const [isAborting, setIsAborting] = useState(false);
   const [activeTab, setActiveTab] = useState("active");
+  const [viewMode, setViewMode] = useState("card"); // "card" or "table"
 
   React.useEffect(() => {
     const fetchSows = async () => {
@@ -332,6 +335,20 @@ export default function BreedingLogs({ loggedInUser }) {
           .brl-card { flex-direction: column; align-items: flex-start; }
           .brl-stage-label { display: none; }
         }
+
+        /* --- Table View CSS --- */
+        .brl-table-container { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(28,36,32,0.03); }
+        .brl-table { width: 100%; border-collapse: collapse; text-align: left; }
+        .brl-table th { padding: 14px 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); border-bottom: 1px solid var(--border); background: var(--bg); }
+        .brl-table td { padding: 16px 20px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .brl-table tr:last-child td { border-bottom: none; }
+        .brl-table tbody tr:hover { background: var(--slate-tint); opacity: 0.95; }
+        
+        .brl-table-sow { font-weight: 700; font-size: 14px; color: var(--ink); margin: 0; }
+        .brl-table-sub { font-size: 11px; font-weight: 500; color: var(--ink-soft); margin-top: 2px; }
+        .brl-table-timeline { display: flex; align-items: center; gap: 8px; }
+        .brl-table-timeline-bar { flex: 1; height: 6px; background: var(--track); border-radius: 999px; overflow: hidden; max-width: 120px; }
+        .brl-table-timeline-fill { height: 100%; border-radius: 999px; }
       `}</style>
 
       {/* Stats Grid */}
@@ -399,6 +416,24 @@ export default function BreedingLogs({ loggedInUser }) {
               <input type="text" placeholder="Search sow ID or breed…" value={query} onChange={(e) => setQuery(e.target.value)} />
             </div>
 
+            {/* View Toggle */}
+            <div className="flex bg-slate-200/50 p-1 rounded-xl shrink-0 border border-slate-200/60 shadow-inner">
+              <button
+                onClick={() => setViewMode("card")}
+                className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${viewMode === "card" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5" : "text-slate-400 hover:text-slate-600"}`}
+                title="Card View"
+              >
+                <LayoutGrid size={16} strokeWidth={2.5} />
+              </button>
+              <button
+                onClick={() => setViewMode("table")}
+                className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${viewMode === "table" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5" : "text-slate-400 hover:text-slate-600"}`}
+                title="Table View"
+              >
+                <List size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
             {/* Add New Button */}
             {activeTab === 'active' && (
               <button
@@ -425,65 +460,84 @@ export default function BreedingLogs({ loggedInUser }) {
       </div>
 
       {/* Pipeline list */}
-      <div className="brl-list">
-        {loading ? (
-          <div className="flex flex-col gap-3.5">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="brl-card animate-pulse" style={{ pointerEvents: 'none' }}>
-                <div className="w-[60px] h-[60px] rounded-full bg-slate-100 shrink-0" />
-                <div className="flex-1 w-full space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-2">
-                      <div className="h-5 w-32 bg-slate-200 rounded-md" />
-                      <div className="h-3 w-48 bg-slate-100 rounded-md" />
-                    </div>
-                    <div className="h-6 w-24 bg-slate-100 rounded-full" />
-                  </div>
-                  <div className="h-1.5 w-full bg-slate-100 rounded-full mt-2" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="p-12 text-center text-slate-400">
-            <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
-              <Search size={24} className="text-slate-300" />
-            </div>
-            <h3 className="text-slate-900 font-semibold mb-1">No sows found</h3>
-            <p className="text-sm">Try adjusting your filters or search query.</p>
-          </div>
-        ) : (
-          filtered.map((sow) => {
-            const meta = STATUS_META[sow.status];
-            const stageIdx = activeStageIndex(sow.day);
-            const overdue = sow.day > GESTATION_DAYS;
-            const fillPct = Math.min(100, (sow.day / GESTATION_DAYS) * 100);
+      {viewMode === "table" ? (
+        /* --- TABLE VIEW --- */
+        <div className="brl-table-container mb-[120px]">
+          <div className="overflow-x-auto">
+            <table className="brl-table">
+              <thead>
+                <tr>
+                  <th>Sow Details</th>
+                  <th>Gestation Day</th>
+                  <th>Timeline</th>
+                  <th>Expected Farrowing</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan="6" className="text-center py-10">
+                      <div className="flex justify-center mb-3"><div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div></div>
+                      <span className="text-sm font-semibold text-slate-500">Loading records...</span>
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="text-center py-12">
+                      <span className="text-sm font-semibold text-slate-500">No sows found</span>
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((sow) => {
+                    const meta = STATUS_META[sow.status];
+                    const overdue = sow.day > GESTATION_DAYS;
+                    const fillPct = Math.min(100, (sow.day / GESTATION_DAYS) * 100);
 
-            return (
-              <div className="brl-card" key={sow.breeding_id || sow.id} style={{ zIndex: openMenu === (sow.breeding_id || sow.id) ? 20 : 1 }}>
-                <GestationRing day={sow.day} status={sow.status} />
-
-                <div className="brl-card-main">
-                  <div className="brl-card-head">
-                    <div>
-                      <p className="brl-sow-name">Sow #{sow.id}</p>
-                      <p className="brl-sow-sub">{sow.parity === 1 ? "1st" : sow.parity === 2 ? "2nd" : sow.parity === 3 ? "3rd" : `${sow.parity}th`} parity · {sow.breed}</p>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span className="brl-status-pill" style={{ background: meta.tint, color: meta.color }}>
-                        {sow.status === "action" && <span className="brl-pulse-dot" />}
-                        {meta.label}
-                      </span>
-                      {activeTab === 'active' && (
-                        <div style={{ position: "relative" }}>
-                          <button className="brl-menu-btn" onClick={() => {
+                    return (
+                      <tr key={sow.breeding_id || sow.id}>
+                        <td>
+                          <p className="brl-table-sow">Sow #{sow.id}</p>
+                          <p className="brl-table-sub">Parity: {sow.parity} • {sow.breed}</p>
+                        </td>
+                        <td>
+                          <span className="font-bold text-slate-800 text-sm">Day {overdue ? GESTATION_DAYS : sow.day}</span>
+                          <span className="text-xs text-slate-400 font-medium"> / {GESTATION_DAYS}</span>
+                        </td>
+                        <td>
+                          <div className="brl-table-timeline">
+                            <div className="brl-table-timeline-bar">
+                              <div className="brl-table-timeline-fill" style={{ width: `${fillPct}%`, background: overdue ? "var(--brick)" : meta.color }} />
+                            </div>
+                            <span className="text-xs font-bold" style={{ color: overdue ? "var(--brick)" : meta.color }}>
+                              {Math.round(fillPct)}%
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="text-sm font-semibold text-slate-800">{sow.dueDate}</span>
+                          {overdue ? (
+                            <p className="text-[10px] font-bold text-rose-600 uppercase mt-0.5">Overdue</p>
+                          ) : (
+                            <p className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">{GESTATION_DAYS - sow.day} days left</p>
+                          )}
+                        </td>
+                        <td>
+                          <span className="brl-status-pill" style={{ background: meta.tint, color: meta.color }}>
+                            {sow.status === "action" && <span className="brl-pulse-dot" />}
+                            {meta.label}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: "right", position: "relative" }}>
+                          <button className="brl-menu-btn ml-auto" onClick={() => {
                             const id = sow.breeding_id || sow.id;
                             setOpenMenu(openMenu === id ? null : id);
                           }}>
                             <MoreVertical size={16} />
                           </button>
                           {openMenu === (sow.breeding_id || sow.id) && (
-                            <div className="brl-menu">
+                            <div className="brl-menu" style={{ right: 20, top: 40 }}>
                               {sow.status !== 'pregnant' && (
                                 <button onClick={() => { setCheckLogData(sow); setShowCheckModal(true); setOpenMenu(null); }}>Log new check</button>
                               )}
@@ -497,61 +551,145 @@ export default function BreedingLogs({ loggedInUser }) {
                               <button onClick={() => { setArchiveLogData(sow); setShowArchiveModal(true); setOpenMenu(null); }} style={{ color: "var(--brick)" }}>Archive record</button>
                             </div>
                           )}
-                        </div>
-                      )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* --- CARD VIEW --- */
+        <div className="brl-list">
+          {loading ? (
+            <div className="flex flex-col gap-3.5">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="brl-card animate-pulse" style={{ pointerEvents: 'none' }}>
+                  <div className="w-[60px] h-[60px] rounded-full bg-slate-100 shrink-0" />
+                  <div className="flex-1 w-full space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-2">
+                        <div className="h-5 w-32 bg-slate-200 rounded-md" />
+                        <div className="h-3 w-48 bg-slate-100 rounded-md" />
+                      </div>
+                      <div className="h-6 w-24 bg-slate-100 rounded-full" />
                     </div>
-                  </div>
-
-                  <div className="brl-timeline">
-                    <div className="brl-timeline-track" />
-                    <div className="brl-timeline-fill" style={{ width: `${fillPct}%`, background: overdue ? "var(--brick)" : meta.color }} />
-                    {STAGES.map((stage, i) => {
-                      const done = sow.day >= stage.day;
-                      const isCurrent = i === stageIdx && !overdue;
-                      const dotColor = overdue ? "var(--brick)" : meta.color;
-                      const isFirst = i === 0;
-                      const isLast = i === STAGES.length - 1;
-                      const milestoneDate = getMilestoneDate(sow.matingDate, stage.day);
-                      return (
-                        <div
-                          key={stage.label}
-                          className="brl-stage"
-                          style={{
-                            left: isLast ? "auto" : `${(stage.day / GESTATION_DAYS) * 100}%`,
-                            right: isLast ? "0" : "auto",
-                            transform: isFirst ? "translateX(0)" : isLast ? "translateX(0)" : "translateX(-50%)",
-                            alignItems: isFirst ? "flex-start" : isLast ? "flex-end" : "center",
-                          }}
-                        >
-                          <div
-                            className={`brl-stage-dot ${done ? "done" : ""} ${isCurrent ? "current" : ""}`}
-                            style={{
-                              "--done-color": dotColor,
-                              "--current-color": dotColor,
-                            }}
-                          />
-                          <span className={`brl-stage-label ${done ? "done" : ""}`}>{stage.label}</span>
-                          {milestoneDate && (
-                            <span className="brl-stage-date">{milestoneDate}</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="brl-card-foot">
-                    <span className="brl-due">
-                      {overdue
-                        ? <>Overdue by <strong style={{ color: "var(--brick)" }}>{sow.day - GESTATION_DAYS} days</strong></>
-                        : <>Expected farrowing: <strong>{sow.dueDate}</strong> · {GESTATION_DAYS - sow.day} days to go</>}
-                    </span>
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full mt-2" />
                   </div>
                 </div>
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-12 text-center text-slate-400">
+              <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
+                <Search size={24} className="text-slate-300" />
               </div>
-          );
-        })
+              <h3 className="text-slate-900 font-semibold mb-1">No sows found</h3>
+              <p className="text-sm">Try adjusting your filters or search query.</p>
+            </div>
+          ) : (
+            filtered.map((sow) => {
+              const meta = STATUS_META[sow.status];
+              const stageIdx = activeStageIndex(sow.day);
+              const overdue = sow.day > GESTATION_DAYS;
+              const fillPct = Math.min(100, (sow.day / GESTATION_DAYS) * 100);
+
+              return (
+                <div className="brl-card" key={sow.breeding_id || sow.id} style={{ zIndex: openMenu === (sow.breeding_id || sow.id) ? 20 : 1 }}>
+                  <GestationRing day={sow.day} status={sow.status} />
+
+                  <div className="brl-card-main">
+                    <div className="brl-card-head">
+                      <div>
+                        <p className="brl-sow-name">Sow #{sow.id}</p>
+                        <p className="brl-sow-sub">{sow.parity === 1 ? "1st" : sow.parity === 2 ? "2nd" : sow.parity === 3 ? "3rd" : `${sow.parity}th`} parity · {sow.breed}</p>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span className="brl-status-pill" style={{ background: meta.tint, color: meta.color }}>
+                          {sow.status === "action" && <span className="brl-pulse-dot" />}
+                          {meta.label}
+                        </span>
+                        {activeTab === 'active' && (
+                          <div style={{ position: "relative" }}>
+                            <button className="brl-menu-btn" onClick={() => {
+                              const id = sow.breeding_id || sow.id;
+                              setOpenMenu(openMenu === id ? null : id);
+                            }}>
+                              <MoreVertical size={16} />
+                            </button>
+                            {openMenu === (sow.breeding_id || sow.id) && (
+                              <div className="brl-menu">
+                                {sow.status !== 'pregnant' && (
+                                  <button onClick={() => { setCheckLogData(sow); setShowCheckModal(true); setOpenMenu(null); }}>Log new check</button>
+                                )}
+                                {sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
+                                  <button style={{ color: 'var(--pine)' }} onClick={() => { setFarrowLogData(sow); setShowFarrowModal(true); setOpenMenu(null); }}>
+                                    Log farrowing
+                                  </button>
+                                )}
+                                <button onClick={() => { setEditLogData(sow); setShowEditModal(true); setOpenMenu(null); }}>Edit mating record</button>
+                                <button onClick={() => { setAbortLogData(sow); setShowAbortModal(true); setOpenMenu(null); }} style={{ color: "var(--wheat)" }}>Report Miscarriage</button>
+                                <button onClick={() => { setArchiveLogData(sow); setShowArchiveModal(true); setOpenMenu(null); }} style={{ color: "var(--brick)" }}>Archive record</button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="brl-timeline">
+                      <div className="brl-timeline-track" />
+                      <div className="brl-timeline-fill" style={{ width: `${fillPct}%`, background: overdue ? "var(--brick)" : meta.color }} />
+                      {STAGES.map((stage, i) => {
+                        const done = sow.day >= stage.day;
+                        const isCurrent = i === stageIdx && !overdue;
+                        const dotColor = overdue ? "var(--brick)" : meta.color;
+                        const isFirst = i === 0;
+                        const isLast = i === STAGES.length - 1;
+                        const milestoneDate = getMilestoneDate(sow.matingDate, stage.day);
+                        return (
+                          <div
+                            key={stage.label}
+                            className="brl-stage"
+                            style={{
+                              left: isLast ? "auto" : `${(stage.day / GESTATION_DAYS) * 100}%`,
+                              right: isLast ? "0" : "auto",
+                              transform: isFirst ? "translateX(0)" : isLast ? "translateX(0)" : "translateX(-50%)",
+                              alignItems: isFirst ? "flex-start" : isLast ? "flex-end" : "center",
+                            }}
+                          >
+                            <div
+                              className={`brl-stage-dot ${done ? "done" : ""} ${isCurrent ? "current" : ""}`}
+                              style={{
+                                "--done-color": dotColor,
+                                "--current-color": dotColor,
+                              }}
+                            />
+                            <span className={`brl-stage-label ${done ? "done" : ""}`}>{stage.label}</span>
+                            {milestoneDate && (
+                              <span className="brl-stage-date">{milestoneDate}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="brl-card-foot">
+                      <span className="brl-due">
+                        {overdue
+                          ? <>Overdue by <strong style={{ color: "var(--brick)" }}>{sow.day - GESTATION_DAYS} days</strong></>
+                          : <>Expected farrowing: <strong>{sow.dueDate}</strong> · {GESTATION_DAYS - sow.day} days to go</>}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+            );
+          })
+        )}
+        </div>
       )}
-      </div>
 
       {/* Add Breeding Log Modal */}
       <AddBreedingLogModal
