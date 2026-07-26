@@ -489,4 +489,148 @@ router.delete('/api/pens/:id', async (req, res) => {
   }
 });
 
+// POST /api/pens/transfer - bulk transfer swine between pens
+router.post('/api/pens/transfer', async (req, res) => {
+  try {
+    const { sourcePenId, destinationPenId, pigIds = [], batchIds = [], creator } = req.body;
+    
+    if (!sourcePenId || !destinationPenId || (pigIds.length === 0 && batchIds.length === 0)) {
+      return res.status(400).json({ error: 'Source, destination, and at least one animal to transfer are required.' });
+    }
+    
+    if (sourcePenId === destinationPenId) {
+      return res.status(400).json({ error: 'Source and destination pens cannot be the same.' });
+    }
+
+    const { data: destPen, error: destPenError } = await db
+      .from('pens')
+      .select('pen_code, max_capacity, pen_type, is_archived')
+      .eq('pen_id', destinationPenId)
+      .single();
+
+    if (destPenError || !destPen) {
+      return res.status(400).json({ error: 'Destination pen not found.' });
+    }
+
+    if (destPen.is_archived) {
+      return res.status(400).json({ error: `Cannot transfer swine to archived pen ${destPen.pen_code}.` });
+    }
+
+    // Fetch the entities to transfer
+    let selectedPigs = [];
+    if (pigIds.length > 0) {
+      const { data } = await db.from('pigs').select('pig_id, pig_tag, gender, status').in('pig_id', pigIds);
+      selectedPigs = data || [];
+    }
+
+    let selectedBatches = [];
+    let incomingBatchHeadCount = 0;
+    if (batchIds.length > 0) {
+      const { data } = await db.from('piglet_batches').select('batch_id, batch_tag, current_count, date_of_birth, status').in('batch_id', batchIds);
+      selectedBatches = data || [];
+      incomingBatchHeadCount = selectedBatches.reduce((acc, b) => acc + (b.current_count || 0), 0);
+    }
+
+    const totalIncoming = selectedPigs.length + incomingBatchHeadCount;
+
+    // Check capacity
+    const occ = await getPenOccupancy(destinationPenId);
+    const currentOccupied = typeof occ === 'number' ? occ : occ.total;
+    const destMaxCap = destPen.max_capacity ?? 20;
+    const remaining = Math.max(0, destMaxCap - currentOccupied);
+
+    if (totalIncoming > remaining) {
+      return res.status(400).json({
+        error: `Pen ${destPen.pen_code} only has ${remaining} slot(s) left, but you are trying to transfer ${totalIncoming} animal(s).`
+      });
+    }
+
+    const penSection = destPen.pen_type || (destPen.pen_code && destPen.pen_code.toUpperCase().startsWith('S') ? 'S' : destPen.pen_code && destPen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
+    const isQPen = penSection === 'Q' || penSection === 'QUARANTINE';
+
+    // Validate Pigs
+    for (const pig of selectedPigs) {
+      const isSow = pig.gender === 'Female' || pig.status?.toLowerCase() === 'sow';
+      const isBoar = pig.gender === 'Male' || pig.status?.toLowerCase() === 'boar';
+      const isSickOrQ = pig.status?.toLowerCase() === 'sick' || pig.status?.toLowerCase() === 'quarantine';
+
+      if (isSow && (penSection === 'B' || penSection === 'BOAR')) {
+        return res.status(400).json({ error: `Cannot transfer female sow #${pig.pig_tag} to boar pen ${destPen.pen_code}.` });
+      }
+      if (isBoar && penSection !== 'B' && penSection !== 'BOAR') {
+        return res.status(400).json({ error: `Cannot transfer male boar #${pig.pig_tag} to ${destPen.pen_code}. Boars must be housed in a Boar pen.` });
+      }
+      if (!isSickOrQ && isQPen) {
+        return res.status(400).json({ error: `Cannot transfer ${pig.status || 'Healthy'} pig #${pig.pig_tag} to Quarantine pen ${destPen.pen_code}.` });
+      }
+      if (isSickOrQ && !isQPen) {
+        return res.status(400).json({ error: `Cannot transfer ${pig.status} pig #${pig.pig_tag} to ${destPen.pen_code}. Sick/Quarantined pigs must go to a Quarantine pen.` });
+      }
+      if (isSow && !isQPen && penSection !== 'S' && penSection !== 'SOW') {
+        return res.status(400).json({ error: `Cannot transfer female sow #${pig.pig_tag} to ${destPen.pen_code}. Sows must be housed in Sow/Farrowing pens.` });
+      }
+    }
+
+    // Validate Sow & Boar Pen constraints (1 per pen)
+    const incomingSowsCount = selectedPigs.filter(p => p.gender === 'Female' || p.status?.toLowerCase() === 'sow').length;
+    const incomingBoarsCount = selectedPigs.filter(p => p.gender === 'Male' || p.status?.toLowerCase() === 'boar').length;
+
+    if ((penSection === 'S' || penSection === 'SOW') && (occ.sowCount + incomingSowsCount > 1 || occ.pigCount + selectedPigs.length > 1)) {
+      return res.status(400).json({ error: `Sow pen ${destPen.pen_code} can only house 1 sow.` });
+    }
+    if ((penSection === 'B' || penSection === 'BOAR') && (occ.boarCount + incomingBoarsCount > 1 || occ.pigCount + selectedPigs.length > 1)) {
+      return res.status(400).json({ error: `Boar pen ${destPen.pen_code} can only house 1 boar.` });
+    }
+    if ((penSection === 'B' || penSection === 'BOAR') && selectedBatches.length > 0) {
+      return res.status(400).json({ error: `Piglet batches cannot be transferred to Boar pen ${destPen.pen_code}.` });
+    }
+
+    // Validate Batches
+    for (const batch of selectedBatches) {
+      const statusStr = (batch.status || '').toLowerCase();
+      let ageInDays = null;
+      if (batch.date_of_birth) {
+        ageInDays = Math.floor((Date.now() - new Date(batch.date_of_birth).getTime()) / (1000 * 60 * 60 * 24));
+      }
+      const isBatchWeaned = statusStr === 'weaned' || (statusStr !== 'suckling' && ageInDays !== null && ageInDays > 28);
+      const isBatchNursing = statusStr === 'suckling' || (statusStr !== 'weaned' && ageInDays !== null && ageInDays <= 28);
+      
+      if (isBatchNursing && penSection !== 'S' && penSection !== 'SOW') {
+        return res.status(400).json({ error: `Nursing piglet batch #${batch.batch_tag} must be transferred to a Sow/Farrowing pen (${destPen.pen_code} is ${penSection}).` });
+      }
+      if (isBatchWeaned && penSection !== 'W' && penSection !== 'WEANED') {
+        return res.status(400).json({ error: `Weaned piglet batch #${batch.batch_tag} must be transferred to a Weaned/Fattening pen (${destPen.pen_code} is ${penSection}).` });
+      }
+    }
+
+    // Process Transfer
+    if (pigIds.length > 0) {
+      const { error: pErr } = await db.from('pigs').update({ pen_id: destinationPenId }).in('pig_id', pigIds);
+      if (pErr) throw pErr;
+    }
+    if (batchIds.length > 0) {
+      const { error: bErr } = await db.from('piglet_batches').update({ pen_id: destinationPenId }).in('batch_id', batchIds);
+      if (bErr) throw bErr;
+    }
+
+    // Log the transfer
+    const creatorInfo = getCreatorDetails(creator);
+    const msg = `Bulk transferred ${pigIds.length} pig(s) and ${batchIds.length} batch(es) to ${destPen.pen_code}.`;
+    await db.from('activity_logs').insert({
+      user_name: creatorInfo.name,
+      user_email: creatorInfo.email,
+      user_initials: creatorInfo.initials,
+      user_bg_color: 'bg-indigo-100 text-indigo-700',
+      event_title: 'Swine Transferred',
+      event_desc: msg,
+      status: 'SUCCESS'
+    });
+
+    res.json({ success: true, message: msg });
+  } catch (error) {
+    console.error('Error transferring swine:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

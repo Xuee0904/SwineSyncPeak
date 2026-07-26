@@ -18,9 +18,11 @@ import {
   RefreshCw,
   LayoutGrid,
   List,
+  ArrowRightLeft,
 } from "lucide-react";
 import toast from "../utils/toast";
 import AddPenModal from "../components/PenManagement/AddPenModal";
+import SwineTransferModal from "../components/PenManagement/SwineTransferModal";
 import EditPenModal from "../components/PenManagement/EditPenModal";
 import ArchivePenModal from "../components/PenManagement/ArchivePenModal";
 import ViewPenModal from "../components/PenManagement/ViewPenModal";
@@ -85,6 +87,7 @@ export default function PenManagement({ loggedInUser }) {
   const [editingPen, setEditingPen] = useState(null);
   const [archivingPen, setArchivingPen] = useState(null);
   const [viewingPen, setViewingPen] = useState(null);
+  const [showTransferModal, setShowTransferModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState("card"); // "card" or "table"
   const menuRef = useRef(null);
@@ -318,8 +321,69 @@ export default function PenManagement({ loggedInUser }) {
         />
       </div>
 
-      {/* Filter Chips, Search Bar & Action Buttons */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+      {/* Search Bar, Action Buttons & Filter Chips */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col gap-4">
+        
+        {/* Top Row: Search & Actions */}
+        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap justify-between w-full">
+          <div className="relative min-w-[220px] flex-1 sm:flex-initial">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search pen code or ID…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 justify-end">
+            <div className="flex bg-slate-200/50 p-1 rounded-xl shrink-0 border border-slate-200/60 shadow-inner">
+              <button
+                onClick={() => setViewMode("card")}
+                className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${viewMode === "card" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5" : "text-slate-400 hover:text-slate-600"}`}
+                title="Card View"
+              >
+                <LayoutGrid size={16} strokeWidth={2.5} />
+              </button>
+              <button
+                onClick={() => setViewMode("table")}
+                className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${viewMode === "table" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5" : "text-slate-400 hover:text-slate-600"}`}
+                title="Table View"
+              >
+                <List size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={fetchPens}
+              disabled={loading}
+              className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer disabled:opacity-50 shrink-0"
+              title="Refresh Pens"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-emerald-600" : ""}`} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowTransferModal(true)}
+              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shrink-0"
+            >
+              <ArrowRightLeft className="w-4 h-4" strokeWidth={2.5} /> Transfer Swine
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" strokeWidth={2.5} /> Add Pen
+            </button>
+          </div>
+        </div>
+
+        {/* Bottom Row: Filter Chips */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
             type="button"
@@ -357,60 +421,12 @@ export default function PenManagement({ loggedInUser }) {
             Archived ({archivedPensCount})
           </button>
         </div>
-
-        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap justify-end">
-          <div className="relative min-w-[220px] flex-1 sm:flex-initial">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search pen code or ID…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all"
-            />
-          </div>
-
-          <div className="flex bg-slate-200/50 p-1 rounded-xl shrink-0 border border-slate-200/60 shadow-inner">
-            <button
-              onClick={() => setViewMode("card")}
-              className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${viewMode === "card" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5" : "text-slate-400 hover:text-slate-600"}`}
-              title="Card View"
-            >
-              <LayoutGrid size={16} strokeWidth={2.5} />
-            </button>
-            <button
-              onClick={() => setViewMode("table")}
-              className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${viewMode === "table" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5" : "text-slate-400 hover:text-slate-600"}`}
-              title="Table View"
-            >
-              <List size={16} strokeWidth={2.5} />
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={fetchPens}
-            disabled={loading}
-            className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer disabled:opacity-50 shrink-0"
-            title="Refresh Pens"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-emerald-600" : ""}`} />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer shrink-0"
-          >
-            <Plus className="w-4 h-4" strokeWidth={2.5} /> Add Pen
-          </button>
-        </div>
       </div>
 
       {/* Pen Cards/Table */}
       {viewMode === "table" ? (
         /* --- TABLE VIEW --- */
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div key="table-view" className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden tab-enter">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -524,7 +540,7 @@ export default function PenManagement({ loggedInUser }) {
         </div>
       ) : (
         /* --- CARD VIEW --- */
-        <>
+        <div key="card-view" className="tab-enter">
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -722,7 +738,7 @@ export default function PenManagement({ loggedInUser }) {
               )}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* Modular Add Pen Modal */}
@@ -769,6 +785,16 @@ export default function PenManagement({ loggedInUser }) {
         }}
         onArchive={(p) => setArchivingPen(p)}
       />
+      {/* Swine Transfer Modal */}
+      {showTransferModal && (
+        <SwineTransferModal
+          isOpen={showTransferModal}
+          onClose={() => setShowTransferModal(false)}
+          pens={pens}
+          onSuccess={fetchPens}
+          user={loggedInUser}
+        />
+      )}
     </div>
   );
 }

@@ -462,7 +462,7 @@ export default function BreedingLogs({ loggedInUser }) {
       {/* Pipeline list */}
       {viewMode === "table" ? (
         /* --- TABLE VIEW --- */
-        <div className="brl-table-container mb-[120px]">
+        <div key="table-view" className="brl-table-container mb-[120px] tab-enter">
           <div className="overflow-x-auto">
             <table className="brl-table">
               <thead>
@@ -562,7 +562,7 @@ export default function BreedingLogs({ loggedInUser }) {
         </div>
       ) : (
         /* --- CARD VIEW --- */
-        <div className="brl-list">
+        <div key="card-view" className="brl-list tab-enter">
           {loading ? (
             <div className="flex flex-col gap-3.5">
               {[1, 2, 3].map((i) => (
