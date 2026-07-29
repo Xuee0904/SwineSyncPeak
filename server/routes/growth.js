@@ -24,6 +24,162 @@ router.get('/api/growth/programs', async (req, res) => {
   }
 });
 
+// POST /api/growth/programs
+// Create a new growth program template with guidelines
+router.post('/api/growth/programs', async (req, res) => {
+  try {
+    const { name, description, guidelines, performed_by } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Program name is required.' });
+    }
+
+    // 1. Insert the program header
+    const { data: program, error: programErr } = await db
+      .from('growth_programs')
+      .insert({ name: name.trim(), description: description?.trim() || null })
+      .select()
+      .single();
+
+    if (programErr) throw programErr;
+
+    // 2. Insert guidelines if provided
+    if (guidelines && guidelines.length > 0) {
+      const guidelineRows = guidelines.map(g => ({
+        program_id: program.program_id,
+        days_after_birth: g.days_after_birth,
+        activity_type: g.activity_type,
+        task_name: g.task_name,
+        daily_consumption_per_head: g.daily_consumption_per_head || 0,
+        dosage_instructions: g.dosage_instructions || null,
+      }));
+
+      const { error: guidelinesErr } = await db
+        .from('growth_program_guidelines')
+        .insert(guidelineRows);
+
+      if (guidelinesErr) throw guidelinesErr;
+    }
+
+    // 3. Log the activity
+    await db.from('activity_logs').insert({
+      user_name: performed_by || 'System',
+      user_email: 'system@swinesync.ag',
+      event_title: 'Growth Program Created',
+      event_desc: `Growth program template "${name.trim()}" was created.`,
+      status: 'SUCCESS',
+    }).then(() => {}).catch(() => {}); // non-blocking
+
+    res.status(201).json({ success: true, program_id: program.program_id });
+  } catch (error) {
+    console.error('Error creating growth program:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT /api/growth/programs/:id
+// Update a growth program template (replaces all guidelines)
+router.put('/api/growth/programs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, guidelines, performed_by } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Program name is required.' });
+    }
+
+    // 1. Update the program header
+    const { error: updateErr } = await db
+      .from('growth_programs')
+      .update({ name: name.trim(), description: description?.trim() || null })
+      .eq('program_id', id);
+
+    if (updateErr) throw updateErr;
+
+    // 2. Delete existing guidelines and re-insert
+    const { error: deleteErr } = await db
+      .from('growth_program_guidelines')
+      .delete()
+      .eq('program_id', id);
+
+    if (deleteErr) throw deleteErr;
+
+    if (guidelines && guidelines.length > 0) {
+      const guidelineRows = guidelines.map(g => ({
+        program_id: id,
+        days_after_birth: g.days_after_birth,
+        activity_type: g.activity_type,
+        task_name: g.task_name,
+        daily_consumption_per_head: g.daily_consumption_per_head || 0,
+        dosage_instructions: g.dosage_instructions || null,
+      }));
+
+      const { error: guidelinesErr } = await db
+        .from('growth_program_guidelines')
+        .insert(guidelineRows);
+
+      if (guidelinesErr) throw guidelinesErr;
+    }
+
+    // 3. Log the activity
+    await db.from('activity_logs').insert({
+      user_name: performed_by || 'System',
+      user_email: 'system@swinesync.ag',
+      event_title: 'Growth Program Updated',
+      event_desc: `Growth program template "${name.trim()}" was updated.`,
+      status: 'SUCCESS',
+    }).then(() => {}).catch(() => {});
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating growth program:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/growth/programs/:id/archive
+// Archive a growth program template
+router.patch('/api/growth/programs/:id/archive', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { performed_by } = req.body;
+
+    // Fetch the program name for the activity log
+    const { data: program, error: fetchErr } = await db
+      .from('growth_programs')
+      .select('name')
+      .eq('program_id', id)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+
+    // Archive: we add an is_archived column logic — since the table doesn't have it, 
+    // we soft-delete by setting a flag via description. 
+    // For now, we physically delete and log it. 
+    // TODO: Add is_archived column to growth_programs table for true soft-delete.
+    const { error: deleteErr } = await db
+      .from('growth_programs')
+      .delete()
+      .eq('program_id', id);
+
+    if (deleteErr) throw deleteErr;
+
+    // Log the activity
+    await db.from('activity_logs').insert({
+      user_name: performed_by || 'System',
+      user_email: 'system@swinesync.ag',
+      event_title: 'Growth Program Archived',
+      event_desc: `Growth program template "${program.name}" was archived/deleted.`,
+      status: 'SUCCESS',
+    }).then(() => {}).catch(() => {});
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error archiving growth program:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/growth/batches
 // Fetch enrolled batches and their progress
 router.get('/api/growth/batches', async (req, res) => {
