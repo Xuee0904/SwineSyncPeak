@@ -4,7 +4,7 @@ import useModalAnimation from "../hooks/useModalAnimation";
 import {
   Plus, ClipboardList, Wheat, Syringe, FlaskConical, Scissors,
   ArrowRight, Activity, AlertTriangle, X, Trash2,
-  ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink
+  ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink, Target
 } from "lucide-react";
 import { toast } from "../utils/toast";
 
@@ -244,6 +244,7 @@ function ActivityRow({ activity, index, onChange, onDelete, onRequestSort }) {
 function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [targetWeight, setTargetWeight] = useState('');
   const [guidelines, setGuidelines] = useState([]);
   const [saving, setSaving] = useState(false);
   const isEdit = !!editProgram;
@@ -253,6 +254,7 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
     if (editProgram) {
       setName(editProgram.name || '');
       setDescription(editProgram.description || '');
+      setTargetWeight(editProgram.target_weight || '');
       setGuidelines(
         (editProgram.guidelines || [])
           .sort((a, b) => a.days_after_birth - b.days_after_birth)
@@ -261,6 +263,7 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
     } else {
       setName('');
       setDescription('');
+      setTargetWeight('');
       setGuidelines([]);
     }
   }, [editProgram, isOpen]);
@@ -310,6 +313,7 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
       const payload = {
         name,
         description,
+        target_weight: targetWeight || null,
         guidelines: guidelines
           .filter(g => !g._isRemoving)
           .map(({ _tempId, _isRemoving, ...g }) => g),
@@ -437,6 +441,20 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
               />
             </div>
 
+            {/* Target Weight */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Target Weight (kg) <span className="normal-case text-slate-400 font-medium">(optional)</span></label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="e.g. 105.00"
+                value={targetWeight}
+                onChange={e => setTargetWeight(e.target.value)}
+                className="w-full text-sm text-slate-800 border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-300 transition-colors"
+              />
+            </div>
+
             {/* Activity Builder */}
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -523,13 +541,10 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
 function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onViewBatches }) {
   const guidelines = program.guidelines || [];
   const sorted = [...guidelines].sort((a, b) => a.days_after_birth - b.days_after_birth);
-  const totalFeed = sorted
-    .filter(g => g.activity_type === 'FEED')
-    .reduce((sum, g) => sum + (g.daily_consumption_per_head || 0), 0);
   const batchCount = program.enrolled_batch_count ?? 0;
 
   return (
-    <article className="bg-white border border-neutral-200 rounded-2xl px-6 pt-[22px] pb-4 shadow-sm hover:shadow-md transition-shadow tab-enter relative overflow-hidden group">
+    <article className="flex flex-col h-full bg-white border border-neutral-200 rounded-2xl px-6 pt-[22px] pb-4 shadow-sm hover:shadow-md transition-shadow tab-enter relative overflow-hidden group">
       <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-800 opacity-0 group-hover:opacity-100 transition-opacity" />
 
       <div className="flex gap-4 items-start min-w-0 w-full">
@@ -538,27 +553,24 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className={`${FONT_DISPLAY} text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-md bg-emerald-800 text-white shadow-sm`}>
-              Template
-            </span>
             <h3 className={`${FONT_DISPLAY} text-lg font-bold tracking-tight text-neutral-900 truncate`}>
               {program.name}
             </h3>
           </div>
-          <p className="mt-1.5 text-[13px] text-neutral-500 line-clamp-2">
+          <p className={`mt-1.5 text-[13px] line-clamp-2 ${program.description ? 'text-neutral-500' : 'text-neutral-400 italic'}`}>
             {program.description || 'No description provided.'}
           </p>
         </div>
       </div>
 
       {/* Timeline */}
-      <div className="bg-neutral-50/80 rounded-xl mt-6 px-4 py-1 border border-neutral-100 overflow-x-auto">
+      <div className="flex-1 bg-neutral-50/80 rounded-xl mt-6 px-4 py-1 border border-neutral-100 overflow-x-auto custom-scrollbar">
         {sorted.length === 0 ? (
           <p className="text-[12.5px] text-neutral-500 italic py-4">No guidelines configured.</p>
         ) : (
-          <div className="relative mt-7 mb-4">
-            <div className="absolute top-5 left-8 right-8 h-0.5 bg-neutral-200" aria-hidden="true" />
+          <div className="mt-7 mb-4">
             <div className="relative flex justify-between gap-2 hide-scrollbar snap-x min-w-max">
+              <div className="absolute top-10 left-10 right-10 h-0.5 bg-neutral-200" aria-hidden="true" />
               {sorted.map((g, idx) => {
                 const style = getActivityStyle(g.activity_type);
                 const Icon = style.icon;
@@ -587,18 +599,17 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-3 mt-4 pt-4 border-t border-neutral-100 flex-wrap">
+      <div className="flex items-center justify-between gap-3 mt-4 pt-4 border-t border-neutral-100 flex-wrap mt-auto">
         <span className="flex items-center gap-3 text-[12px] text-neutral-500">
-          <span className="flex items-center gap-1.5">
-            <ClipboardList className="w-3.5 h-3.5 text-neutral-400" />
-            <strong className="text-neutral-700">{sorted.length} Tasks</strong>
-          </span>
-          <span className="w-1 h-1 rounded-full bg-neutral-300" aria-hidden="true" />
-          <span className="flex items-center gap-1.5">
-            <Wheat className="w-3.5 h-3.5 text-neutral-400" />
-            <strong className="text-neutral-700">{totalFeed > 0 ? totalFeed.toFixed(2) : '0'} kg</strong> total feed/day
-          </span>
-          <span className="w-1 h-1 rounded-full bg-neutral-300" aria-hidden="true" />
+          {program.target_weight && (
+            <>
+              <span className="flex items-center gap-1.5">
+                <Target className="w-3.5 h-3.5 text-neutral-400" />
+                <strong className="text-neutral-700">{program.target_weight} kg</strong> target
+              </span>
+              <span className="w-1 h-1 rounded-full bg-neutral-300" aria-hidden="true" />
+            </>
+          )}
           <button
             onClick={() => onViewBatches(program)}
             className={`inline-flex items-center gap-1.5 transition-colors ${
@@ -1031,6 +1042,11 @@ export default function GrowthProgramManagement() {
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700;800&display=swap');
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .custom-scrollbar::-webkit-scrollbar { height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; margin-bottom: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
       `}</style>
 
       {/* Stat Cards */}

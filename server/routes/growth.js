@@ -41,7 +41,7 @@ router.get('/api/growth/programs', async (req, res) => {
 // Create a new growth program template with guidelines
 router.post('/api/growth/programs', async (req, res) => {
   try {
-    const { name, description, guidelines, performed_by } = req.body;
+    const { name, description, target_weight, guidelines, performed_by } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Program name is required.' });
@@ -50,7 +50,11 @@ router.post('/api/growth/programs', async (req, res) => {
     // 1. Insert the program header
     const { data: program, error: programErr } = await db
       .from('growth_programs')
-      .insert({ name: name.trim(), description: description?.trim() || null })
+      .insert({ 
+        name: name.trim(), 
+        description: description?.trim() || null,
+        target_weight: target_weight ? parseFloat(target_weight) : null
+      })
       .select()
       .single();
 
@@ -95,7 +99,7 @@ router.post('/api/growth/programs', async (req, res) => {
 router.put('/api/growth/programs/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, guidelines, performed_by } = req.body;
+    const { name, description, target_weight, guidelines, performed_by } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Program name is required.' });
@@ -104,7 +108,11 @@ router.put('/api/growth/programs/:id', async (req, res) => {
     // 1. Update the program header
     const { error: updateErr } = await db
       .from('growth_programs')
-      .update({ name: name.trim(), description: description?.trim() || null })
+      .update({ 
+        name: name.trim(), 
+        description: description?.trim() || null,
+        target_weight: target_weight ? parseFloat(target_weight) : null
+      })
       .eq('program_id', id);
 
     if (updateErr) throw updateErr;
