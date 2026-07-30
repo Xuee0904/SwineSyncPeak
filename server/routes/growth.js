@@ -15,13 +15,22 @@ router.get('/api/growth/programs', async (req, res) => {
       .from('growth_programs')
       .select(`
         *,
-        guidelines:growth_program_guidelines(*)
+        guidelines:growth_program_guidelines(*),
+        enrolled_batches:piglet_batches(batch_id)
       `)
       .eq('is_archived', isArchived)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    res.json(programs);
+
+    // Flatten enrolled_batches to just a count for the card display
+    const programsWithCount = programs.map(p => ({
+      ...p,
+      enrolled_batch_count: p.enrolled_batches?.length ?? 0,
+      enrolled_batches: undefined, // strip the raw array, count is enough
+    }));
+
+    res.json(programsWithCount);
   } catch (error) {
     console.error('Error fetching growth programs:', error.message);
     res.status(500).json({ error: error.message });
@@ -216,6 +225,42 @@ router.patch('/api/growth/programs/:id/restore', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error restoring growth program:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/growth/programs/:id/batches
+// Fetch piglet batches currently enrolled in a specific growth program
+router.get('/api/growth/programs/:id/batches', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: batches, error } = await db
+      .from('piglet_batches')
+      .select(`
+        batch_id,
+        batch_tag,
+        current_count,
+        date_of_birth,
+        status,
+        pen:pens(pen_code)
+      `)
+      .eq('assigned_program_id', id)
+      .order('date_of_birth', { ascending: false });
+
+    if (error) throw error;
+
+    // Calculate age in days for each batch
+    const today = new Date();
+    const enriched = batches.map(b => {
+      const dob = b.date_of_birth ? new Date(b.date_of_birth) : null;
+      const ageInDays = dob ? Math.floor((today - dob) / (1000 * 60 * 60 * 24)) : null;
+      return { ...b, age_in_days: ageInDays };
+    });
+
+    res.json(enriched);
+  } catch (error) {
+    console.error('Error fetching batches for program:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

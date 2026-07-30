@@ -36,6 +36,7 @@ const EMPTY_FORM = {
   mummyCount:     '0',
   averageWeight:  '',
   status:         'suckling',
+  assignedProgramId: '',
 };
 
 function generateBatchTag() {
@@ -77,6 +78,7 @@ export function AddPigletBatchForm({
   const [pensState, setPens]   = useState([]);
   const [sows, setSows]        = useState([]);
   const [breedsState, setBreeds] = useState([]);
+  const [programsState, setPrograms] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
   const pens = pensState.length > 0 ? pensState : (propPens || []);
@@ -142,17 +144,19 @@ export function AddPigletBatchForm({
     const fetchData = async () => {
       setIsLoadingData(true);
       try {
-        const [pensRes, sowsRes, breedsRes] = await Promise.all([
+        const [pensRes, sowsRes, breedsRes, programsRes] = await Promise.all([
           fetch(`${API_BASE}/api/pens`),
           fetch(`${API_BASE}/api/sows`),
           fetch(`${API_BASE}/api/breeds`),
+          fetch(`${API_BASE}/api/growth/programs?archived=false`),
         ]);
-        const [pensData, sowsData, breedsData] = await Promise.all([
-          pensRes.json(), sowsRes.json(), breedsRes.json(),
+        const [pensData, sowsData, breedsData, programsData] = await Promise.all([
+          pensRes.json(), sowsRes.json(), breedsRes.json(), programsRes.json(),
         ]);
         setPens(pensData.data   || []);
         setSows(sowsData.data   || []);
         setBreeds(breedsData.data || []);
+        setPrograms(programsData || []);
       } catch (err) {
         console.error('Error loading batch form data:', err);
       } finally {
@@ -350,6 +354,7 @@ export function AddPigletBatchForm({
         mummyCount:     Number(form.mummyCount)     || 0,
         averageWeight:  form.averageWeight ? Number(form.averageWeight) : null,
         status:         form.status,
+        assignedProgramId: form.assignedProgramId || null,
       });
       clearDraft();
       toast.success('Batch Created', `Batch #${form.batchTag.trim()} created with ${Number(form.totalBornAlive) || 0} born alive.`);
@@ -500,6 +505,15 @@ export function AddPigletBatchForm({
                 <Field label="Status" error={errors.status} icon={<Activity />}>
                   <select value={form.status} onChange={handleChange('status')} className={`${inputBase} ${errors.status ? inputErr : inputOk} appearance-none`}>
                     {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                  </select>
+                </Field>
+
+                <Field label="Growth Program (optional)" icon={<Bookmark />}>
+                  <select value={form.assignedProgramId || ''} onChange={handleChange('assignedProgramId')} disabled={isLoadingData || !!initialData?.assignedProgramId} className={`${inputBase} ${inputOk} appearance-none ${!!initialData?.assignedProgramId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
+                    <option value="">{isLoadingData ? 'Loading…' : 'None / Default'}</option>
+                    {programsState.map(p => (
+                      <option key={p.program_id} value={p.program_id}>{p.name}</option>
+                    ))}
                   </select>
                 </Field>
               </div>

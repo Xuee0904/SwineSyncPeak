@@ -4,7 +4,7 @@ import useModalAnimation from "../hooks/useModalAnimation";
 import {
   Plus, ClipboardList, Wheat, Syringe, FlaskConical, Scissors,
   ArrowRight, Activity, AlertTriangle, X, Trash2,
-  ChevronDown, Save, Archive, Pencil, Check, Unlock
+  ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink
 } from "lucide-react";
 import { toast } from "../utils/toast";
 
@@ -520,12 +520,13 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
 /* ---------------------------------------------------------------------- */
 /* Template Card                                                          */
 /* ---------------------------------------------------------------------- */
-function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore }) {
+function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onViewBatches }) {
   const guidelines = program.guidelines || [];
   const sorted = [...guidelines].sort((a, b) => a.days_after_birth - b.days_after_birth);
   const totalFeed = sorted
     .filter(g => g.activity_type === 'FEED')
     .reduce((sum, g) => sum + (g.daily_consumption_per_head || 0), 0);
+  const batchCount = program.enrolled_batch_count ?? 0;
 
   return (
     <article className="bg-white border border-neutral-200 rounded-2xl px-6 pt-[22px] pb-4 shadow-sm hover:shadow-md transition-shadow tab-enter relative overflow-hidden group">
@@ -597,6 +598,19 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore }) {
             <Wheat className="w-3.5 h-3.5 text-neutral-400" />
             <strong className="text-neutral-700">{totalFeed > 0 ? totalFeed.toFixed(2) : '0'} kg</strong> total feed/day
           </span>
+          <span className="w-1 h-1 rounded-full bg-neutral-300" aria-hidden="true" />
+          <button
+            onClick={() => onViewBatches(program)}
+            className={`inline-flex items-center gap-1.5 transition-colors ${
+              batchCount > 0
+                ? 'text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer'
+                : 'text-neutral-400 cursor-default'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <strong className={batchCount > 0 ? 'text-indigo-700' : 'text-neutral-400'}>{batchCount}</strong>
+            {batchCount === 1 ? 'Batch' : 'Batches'}
+          </button>
         </span>
 
         <div className="flex items-center gap-2">
@@ -630,6 +644,123 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore }) {
         </div>
       </div>
     </article>
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Enrolled Batches Modal                                                  */
+/* ---------------------------------------------------------------------- */
+function EnrolledBatchesModal({ program, onClose }) {
+  const [batches, setBatches] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const { shouldRender, requestClose, overlayClassName, panelClassName } = useModalAnimation(!!program, onClose);
+
+  useEffect(() => {
+    if (!program) return;
+    setLoading(true);
+    setBatches([]);
+    fetch(`/api/growth/programs/${program.program_id}/batches`)
+      .then(r => r.json())
+      .then(data => setBatches(Array.isArray(data) ? data : []))
+      .catch(() => toast.error('Failed to load enrolled batches.'))
+      .finally(() => setLoading(false));
+  }, [program]);
+
+  if (!shouldRender || !program) return null;
+
+  const statusColors = {
+    Active:   'bg-emerald-100 text-emerald-700',
+    Weaning:  'bg-amber-100 text-amber-700',
+    Archived: 'bg-slate-100 text-slate-500',
+  };
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
+      onClick={(e) => { if (e.target === e.currentTarget) requestClose(); }}
+    >
+      <style>{`
+        @keyframes modal-panel-in  { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes modal-panel-out { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(16px) scale(0.97); } }
+        .animate-modal-in  { animation: modal-panel-in  220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .animate-modal-out { animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
+      `}</style>
+      <div className={`bg-white rounded-3xl shadow-2xl w-full max-w-md mx-auto overflow-hidden ${panelClassName || 'animate-modal-in'}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <Users className="w-4.5 h-4.5 text-indigo-600" />
+            </div>
+            <div>
+              <h3 className="text-[15px] font-bold text-slate-900 leading-tight">Enrolled Batches</h3>
+              <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[220px]">{program.name}</p>
+            </div>
+          </div>
+          <button
+            onClick={requestClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-4 max-h-[420px] overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-7 h-7 text-indigo-400 animate-spin" />
+            </div>
+          ) : batches.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center">
+                <Users className="w-6 h-6 text-slate-300" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-500">No batches enrolled</p>
+                <p className="text-[12px] text-slate-400 mt-0.5">No piglet batches are currently using this program.</p>
+              </div>
+            </div>
+          ) : (
+            <ul className="space-y-2.5">
+              {batches.map(batch => (
+                <li
+                  key={batch.batch_id}
+                  className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-slate-50 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-sm">
+                    <Users className="w-4 h-4 text-indigo-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13px] font-bold text-slate-800 truncate">{batch.batch_tag || 'Unnamed Batch'}</span>
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wide ${statusColors[batch.status] || 'bg-slate-100 text-slate-500'}`}>
+                        {batch.status || 'Unknown'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {batch.current_count ?? '—'} piglets
+                      {batch.pen?.pen_code ? ` · ${batch.pen.pen_code}` : ''}
+                      {batch.age_in_days != null ? ` · Day ${batch.age_in_days}` : ''}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Footer */}
+        {!loading && batches.length > 0 && (
+          <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60">
+            <p className="text-[11px] text-slate-400 text-center">
+              {batches.length} {batches.length === 1 ? 'batch is' : 'batches are'} currently using this program.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -861,6 +992,7 @@ export default function GrowthProgramManagement() {
   const [editProgram, setEditProgram] = useState(null);
   const [archiveTarget, setArchiveTarget] = useState(null);
   const [restoreTarget, setRestoreTarget] = useState(null);
+  const [batchTarget, setBatchTarget] = useState(null);
   const [viewArchived, setViewArchived] = useState(false);
   const containerRef = useRef(null);
 
@@ -959,6 +1091,7 @@ export default function GrowthProgramManagement() {
               onArchive={setArchiveTarget}
               viewArchived={viewArchived}
               onRestore={setRestoreTarget}
+              onViewBatches={setBatchTarget}
             />
           ))}
         </div>
@@ -990,6 +1123,12 @@ export default function GrowthProgramManagement() {
           fetchPrograms();
         }}
         onCancel={() => setRestoreTarget(null)}
+      />
+
+      {/* Enrolled Batches */}
+      <EnrolledBatchesModal
+        program={batchTarget}
+        onClose={() => setBatchTarget(null)}
       />
     </div>
   );

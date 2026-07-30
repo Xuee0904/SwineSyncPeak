@@ -26,15 +26,20 @@ function getCreatorDetails(creator) {
 // GET /api/sows — lightweight list of active sows for sow_id dropdown
 router.get('/api/sows', async (req, res) => {
   try {
+    const { excludePregnant } = req.query;
     const db = supabaseAdmin || supabase;
-    const { data, error } = await db
+    let query = db
       .from('pigs')
       .select('pig_id, pig_tag, pen_id, breeds(name)')
       .eq('gender', 'Female')
       .eq('is_archived', false)
-      .neq('status', 'Pregnant')
-      .neq('status', 'Inactive')
-      .order('pig_tag', { ascending: true });
+      .neq('status', 'Inactive');
+
+    if (excludePregnant === 'true') {
+      query = query.neq('status', 'Pregnant');
+    }
+
+    const { data, error } = await query.order('pig_tag', { ascending: true });
 
     if (error) throw error;
 

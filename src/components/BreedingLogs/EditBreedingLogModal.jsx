@@ -101,7 +101,7 @@ export default function EditBreedingLogModal({ isOpen, onClose, onSaved, loggedI
     
     // For edit, we fetch both so they are ready if method is natural_mating
     Promise.all([
-      fetch(`${API_BASE}/api/sows`).then(r => r.json()),
+      fetch(`${API_BASE}/api/sows?excludePregnant=true`).then(r => r.json()),
       fetch(`${API_BASE}/api/boars`).then(r => r.json())
     ])
       .then(([sowsRes, boarsRes]) => {

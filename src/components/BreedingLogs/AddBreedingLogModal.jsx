@@ -102,7 +102,7 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
   useEffect(() => {
     if (step !== STEP_FORM) return;
     setLoadingDropdowns(true);
-    const requests = [fetch(`${API_BASE}/api/sows`).then(r => r.json())];
+    const requests = [fetch(`${API_BASE}/api/sows?excludePregnant=true`).then(r => r.json())];
     if (method?.id === 'natural_mating') {
       requests.push(fetch(`${API_BASE}/api/boars`).then(r => r.json()));
     }

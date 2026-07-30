@@ -481,6 +481,7 @@ router.post('/api/pigs/batch', async (req, res) => {
       totalBornAlive, currentCount, stillbornCount, mummyCount,
       averageWeight, status, creator,
       sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date,
+      assignedProgramId,
       // legacy fallback fields from old form
       batchId, penLocation, totalHerdCount,
     } = req.body;
@@ -584,6 +585,7 @@ router.post('/api/pigs/batch', async (req, res) => {
       mummy_count:    parseInt(mummyCount) || 0,
       average_weight: averageWeight ? parseFloat(averageWeight) : null,
       status:         status || 'suckling',
+      assigned_program_id: assignedProgramId || null,
       source_origin:  sourceOrigin || source_origin || 'born_in_farm',
       supplier_name:  supplierName || supplier_name || null,
       arrival_date:   arrivalDate || arrival_date || null,
