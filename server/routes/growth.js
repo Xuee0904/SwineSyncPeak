@@ -8,12 +8,16 @@ const db = supabaseAdmin;
 // Fetch available growth program templates
 router.get('/api/growth/programs', async (req, res) => {
   try {
+    const { archived } = req.query;
+    const isArchived = archived === 'true';
+
     const { data: programs, error } = await db
       .from('growth_programs')
       .select(`
         *,
         guidelines:growth_program_guidelines(*)
       `)
+      .eq('is_archived', isArchived)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -153,16 +157,13 @@ router.patch('/api/growth/programs/:id/archive', async (req, res) => {
 
     if (fetchErr) throw fetchErr;
 
-    // Archive: we add an is_archived column logic — since the table doesn't have it, 
-    // we soft-delete by setting a flag via description. 
-    // For now, we physically delete and log it. 
-    // TODO: Add is_archived column to growth_programs table for true soft-delete.
-    const { error: deleteErr } = await db
+    // Soft-delete by setting is_archived to true
+    const { error: updateErr } = await db
       .from('growth_programs')
-      .delete()
+      .update({ is_archived: true })
       .eq('program_id', id);
 
-    if (deleteErr) throw deleteErr;
+    if (updateErr) throw updateErr;
 
     // Log the activity
     await db.from('activity_logs').insert({
@@ -176,6 +177,45 @@ router.patch('/api/growth/programs/:id/archive', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error archiving growth program:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/growth/programs/:id/restore
+// Restore an archived growth program template
+router.patch('/api/growth/programs/:id/restore', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { performed_by } = req.body;
+
+    const { data: program, error: fetchErr } = await db
+      .from('growth_programs')
+      .select('name')
+      .eq('program_id', id)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+
+    // Restore by setting is_archived to false
+    const { error: updateErr } = await db
+      .from('growth_programs')
+      .update({ is_archived: false })
+      .eq('program_id', id);
+
+    if (updateErr) throw updateErr;
+
+    // Log the activity
+    await db.from('activity_logs').insert({
+      user_name: performed_by || 'System',
+      user_email: 'system@swinesync.ag',
+      event_title: 'Growth Program Restored',
+      event_desc: `Growth program template "${program.name}" was restored to active status.`,
+      status: 'SUCCESS',
+    }).then(() => {}).catch(() => {});
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error restoring growth program:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

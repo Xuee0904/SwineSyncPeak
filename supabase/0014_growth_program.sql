@@ -60,3 +60,9 @@ VALUES
   ((SELECT program_id FROM growth_programs WHERE name = 'Commercial Fast-Track'), 21, 'FEED', 'Grower Feed', 0.80, (SELECT item_id FROM inventory_items WHERE item_name = 'Grower Feed (Premium)')),
   ((SELECT program_id FROM growth_programs WHERE name = 'Commercial Fast-Track'), 3, 'MEDICATION', 'Iron Injection', 0, NULL),
   ((SELECT program_id FROM growth_programs WHERE name = 'Commercial Fast-Track'), 14, 'SUPPLEMENT', 'Vitamin B Complex', 0, NULL);
+
+ALTER TABLE growth_programs ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false;
+
+-- 2. Ensure service_role has permissions
+GRANT ALL ON TABLE public.growth_programs TO service_role;
+GRANT ALL ON TABLE public.growth_program_guidelines TO service_role;

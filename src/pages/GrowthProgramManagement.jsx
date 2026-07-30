@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+import useModalAnimation from "../hooks/useModalAnimation";
 import {
   Plus, ClipboardList, Wheat, Syringe, FlaskConical, Scissors,
   ArrowRight, Activity, AlertTriangle, X, Trash2,
-  ChevronDown, Save, Archive, Pencil
+  ChevronDown, Save, Archive, Pencil, Check, Unlock
 } from "lucide-react";
 import { toast } from "../utils/toast";
 
@@ -516,7 +518,9 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
 /* ---------------------------------------------------------------------- */
 /* Template Card                                                          */
 /* ---------------------------------------------------------------------- */
-function ProgramCard({ program, onEdit, onArchive }) {
+/* Template Card                                                          */
+/* ---------------------------------------------------------------------- */
+function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore }) {
   const guidelines = program.guidelines || [];
   const sorted = [...guidelines].sort((a, b) => a.days_after_birth - b.days_after_birth);
   const totalFeed = sorted
@@ -596,21 +600,33 @@ function ProgramCard({ program, onEdit, onArchive }) {
         </span>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => onEdit(program)}
-            className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-emerald-800 hover:text-emerald-950 transition-colors"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-            Edit
-          </button>
-          <span className="w-px h-4 bg-neutral-200" />
-          <button
-            onClick={() => onArchive(program)}
-            className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-rose-600 hover:text-rose-800 transition-colors"
-          >
-            <Archive className="w-3.5 h-3.5" />
-            Archive
-          </button>
+          {!viewArchived ? (
+            <>
+              <button
+                onClick={() => onEdit(program)}
+                className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-emerald-800 hover:text-emerald-950 transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Edit
+              </button>
+              <span className="w-px h-4 bg-neutral-200" />
+              <button
+                onClick={() => onArchive(program)}
+                className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-rose-600 hover:text-rose-800 transition-colors"
+              >
+                <Archive className="w-3.5 h-3.5" />
+                Archive
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => onRestore(program)}
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+            >
+              <Unlock className="w-3.5 h-3.5" />
+              Restore
+            </button>
+          )}
         </div>
       </div>
     </article>
@@ -620,38 +636,218 @@ function ProgramCard({ program, onEdit, onArchive }) {
 /* ---------------------------------------------------------------------- */
 /* Archive Confirm Modal                                                  */
 /* ---------------------------------------------------------------------- */
-function ArchiveConfirmModal({ program, onConfirm, onCancel, loading }) {
-  if (!program) return null;
-  return (
-    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4 animate-fade-in">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center">
-            <Archive className="w-5 h-5 text-rose-600" />
+function ArchiveConfirmModal({ program, onCancel, onSuccess }) {
+  const [loading, setLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const { shouldRender, requestClose, overlayClassName, panelClassName } = useModalAnimation(!!program, onCancel);
+
+  useEffect(() => {
+    if (program) {
+      setShowSuccess(false);
+      setLoading(false);
+    }
+  }, [program]);
+
+  if (!shouldRender || !program) return null;
+
+  const handleArchive = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/growth/programs/${program.program_id}/archive`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ performed_by: 'Admin' }),
+      });
+      if (!res.ok) throw new Error('Failed to archive program');
+      setShowSuccess(true);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSuccessClose = () => {
+    setShowSuccess(false);
+    if (onSuccess) onSuccess();
+    requestClose();
+  };
+
+  return createPortal(
+    <div 
+      className={`fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !loading) requestClose();
+      }}
+    >
+      <style>{`
+        @keyframes modal-panel-in {
+          from { opacity: 0; transform: translateY(16px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes modal-panel-out {
+          from { opacity: 1; transform: translateY(0) scale(1); }
+          to   { opacity: 0; transform: translateY(16px) scale(0.97); }
+        }
+        .animate-modal-in  { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .animate-modal-out { animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
+      `}</style>
+      <div className={`bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full mx-auto ${panelClassName || 'animate-modal-in'}`}>
+        {!showSuccess ? (
+          <div className="animate-in fade-in duration-300">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
+                <Archive className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="text-[15px] font-bold text-slate-900 leading-tight">Archive Program?</h3>
+                <p className="text-[12px] text-slate-500">This action cannot be undone.</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 bg-slate-50 rounded-xl px-4 py-3 mb-5 border border-slate-100">
+              You are about to permanently remove <strong>"{program.name}"</strong>.
+              Any piglet batches currently using this program may be affected.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={() => { if (!loading) requestClose(); }} 
+                disabled={loading}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleArchive}
+                disabled={loading}
+                className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Archiving...' : 'Yes, Archive'}
+              </button>
+            </div>
           </div>
-          <div>
-            <h3 className="text-[15px] font-bold text-slate-900">Archive Program?</h3>
-            <p className="text-[12px] text-slate-500">This action cannot be undone.</p>
+        ) : (
+          <div className="px-4 py-6 text-center animate-in zoom-in-95 duration-300 flex flex-col items-center">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center mb-6">
+              <Check className="w-8 h-8 text-emerald-500" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Program Archived</h3>
+            <p className="text-sm text-slate-500 mb-8 max-w-[260px]">
+              "{program.name}" has been removed from active templates successfully.
+            </p>
+            <button
+              onClick={handleSuccessClose}
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md shadow-slate-900/10 transition-all"
+            >
+              Done
+            </button>
           </div>
-        </div>
-        <p className="text-sm text-slate-600 bg-slate-50 rounded-xl px-4 py-3 mb-5">
-          You are about to permanently remove <strong>"{program.name}"</strong>.
-          Any piglet batches currently using this program may be affected.
-        </p>
-        <div className="flex gap-3 justify-end">
-          <button onClick={onCancel} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={loading}
-            className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors disabled:opacity-60"
-          >
-            {loading ? 'Archiving...' : 'Yes, Archive'}
-          </button>
-        </div>
+        )}
       </div>
-    </div>
+    </div>,
+    document.body
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Restore Confirm Modal                                                  */
+/* ---------------------------------------------------------------------- */
+function RestoreConfirmModal({ program, onCancel, onSuccess }) {
+  const [loading, setLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const { shouldRender, requestClose, overlayClassName, panelClassName } = useModalAnimation(!!program, onCancel);
+
+  useEffect(() => {
+    if (program) {
+      setShowSuccess(false);
+      setLoading(false);
+    }
+  }, [program]);
+
+  if (!shouldRender || !program) return null;
+
+  const handleRestore = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/growth/programs/${program.program_id}/restore`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ performed_by: 'Admin' }),
+      });
+      if (!res.ok) throw new Error('Failed to restore program');
+      setShowSuccess(true);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSuccessClose = () => {
+    setShowSuccess(false);
+    if (onSuccess) onSuccess();
+    requestClose();
+  };
+
+  return createPortal(
+    <div 
+      className={`fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !loading) requestClose();
+      }}
+    >
+      <div className={`bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full mx-auto ${panelClassName || 'animate-modal-in'}`}>
+        {!showSuccess ? (
+          <div className="animate-in fade-in duration-300">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                <Unlock className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="text-[15px] font-bold text-slate-900 leading-tight">Restore Program?</h3>
+                <p className="text-[12px] text-slate-500">Return to active templates.</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 bg-slate-50 rounded-xl px-4 py-3 mb-5 border border-slate-100">
+              You are about to restore <strong>"{program.name}"</strong>.
+              It will become available for assignment to piglet batches again.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={() => { if (!loading) requestClose(); }} 
+                disabled={loading}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRestore}
+                disabled={loading}
+                className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Restoring...' : 'Yes, Restore'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="px-4 py-6 text-center animate-in zoom-in-95 duration-300 flex flex-col items-center">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center mb-6">
+              <Check className="w-8 h-8 text-emerald-500" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Program Restored</h3>
+            <p className="text-sm text-slate-500 mb-8 max-w-[260px]">
+              "{program.name}" has been restored successfully.
+            </p>
+            <button
+              onClick={handleSuccessClose}
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md shadow-slate-900/10 transition-all"
+            >
+              Done
+            </button>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -664,15 +860,16 @@ export default function GrowthProgramManagement() {
   const [showForm, setShowForm] = useState(false);
   const [editProgram, setEditProgram] = useState(null);
   const [archiveTarget, setArchiveTarget] = useState(null);
-  const [archiving, setArchiving] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState(null);
+  const [viewArchived, setViewArchived] = useState(false);
   const containerRef = useRef(null);
 
-  useEffect(() => { fetchPrograms(); }, []);
+  useEffect(() => { fetchPrograms(); }, [viewArchived]);
 
   const fetchPrograms = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/growth/programs');
+      const res = await fetch(`/api/growth/programs?archived=${viewArchived}`);
       if (!res.ok) throw new Error('Failed to fetch growth programs');
       setPrograms(await res.json());
     } catch (err) {
@@ -691,26 +888,6 @@ export default function GrowthProgramManagement() {
   const handleCloseForm = () => {
     setShowForm(false);
     setEditProgram(null);
-  };
-
-  const handleArchive = async () => {
-    if (!archiveTarget) return;
-    setArchiving(true);
-    try {
-      const res = await fetch(`/api/growth/programs/${archiveTarget.program_id}/archive`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ performed_by: 'Admin' }),
-      });
-      if (!res.ok) throw new Error('Failed to archive program');
-      toast.success(`"${archiveTarget.name}" has been archived.`);
-      setArchiveTarget(null);
-      fetchPrograms();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setArchiving(false);
-    }
   };
 
   const totalTasks = programs.reduce((acc, p) => acc + (p.guidelines?.length || 0), 0);
@@ -733,13 +910,31 @@ export default function GrowthProgramManagement() {
 
       {/* List header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-800">Templates List</h3>
-        <button
-          onClick={() => { setEditProgram(null); setShowForm(true); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
-        >
-          <Plus className="w-3.5 h-3.5" /> Create Template
-        </button>
+        <div className="flex items-center gap-4">
+          <h3 className="text-sm font-bold text-slate-800">Templates List</h3>
+          <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
+            <button
+              onClick={() => setViewArchived(false)}
+              className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${!viewArchived ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => setViewArchived(true)}
+              className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${viewArchived ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Archived
+            </button>
+          </div>
+        </div>
+        {!viewArchived && (
+          <button
+            onClick={() => { setEditProgram(null); setShowForm(true); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" /> Create Template
+          </button>
+        )}
       </div>
 
       {/* Program Cards */}
@@ -762,6 +957,8 @@ export default function GrowthProgramManagement() {
               program={program}
               onEdit={handleEdit}
               onArchive={setArchiveTarget}
+              viewArchived={viewArchived}
+              onRestore={setRestoreTarget}
             />
           ))}
         </div>
@@ -778,9 +975,21 @@ export default function GrowthProgramManagement() {
       {/* Archive Confirm */}
       <ArchiveConfirmModal
         program={archiveTarget}
-        onConfirm={handleArchive}
+        onSuccess={() => {
+          setArchiveTarget(null);
+          fetchPrograms();
+        }}
         onCancel={() => setArchiveTarget(null)}
-        loading={archiving}
+      />
+
+      {/* Restore Confirm */}
+      <RestoreConfirmModal
+        program={restoreTarget}
+        onSuccess={() => {
+          setRestoreTarget(null);
+          fetchPrograms();
+        }}
+        onCancel={() => setRestoreTarget(null)}
       />
     </div>
   );
