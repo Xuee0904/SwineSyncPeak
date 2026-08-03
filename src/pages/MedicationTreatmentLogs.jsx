@@ -16,6 +16,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { toast } from "../utils/toast";
+import AddHealthLogModal from "../components/HealthManagement/AddHealthLogModal";
 
 // ---------------------------------------------------------------------------
 // Data fetched from backend API
@@ -155,7 +156,7 @@ function StatusDistributionBar({ distribution, total }) {
   );
 }
 
-function RowActions() {
+function RowActions({ row, onEdit }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
@@ -179,6 +180,7 @@ function RowActions() {
             </button>
             <button
               type="button"
+              onClick={() => { setOpen(false); onEdit(row); }}
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
             >
               <Pencil className="h-3.5 w-3.5" /> Update status
@@ -208,8 +210,12 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
 
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editRecord, setEditRecord] = useState(null);
+
   const [treatmentLog, setTreatmentLog] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   React.useEffect(() => {
     const fetchData = async () => {
@@ -238,6 +244,7 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
             startDate: start.toLocaleDateString(),
             status: st,
             daysInStatus: Math.max(1, daysDiff),
+            _raw: h,
           };
         });
 
@@ -250,7 +257,12 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
       }
     };
     fetchData();
-  }, []);
+  }, [refreshTrigger]);
+
+  const refreshData = () => {
+    setLoading(true);
+    setRefreshTrigger(prev => prev + 1);
+  };
 
   const criticalCases = useMemo(() => {
     return treatmentLog.filter(t => t.status === "critical").map(t => ({
@@ -348,6 +360,13 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
               >
                 <Download className="h-4 w-4" />
                 Export
+              </button>
+              <button
+                onClick={() => { setEditRecord(null); setModalOpen(true); }}
+                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
+                type="button"
+              >
+                + Add Treatment Record
               </button>
             </div>
           </div>
@@ -462,7 +481,7 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                         <StatusPill status={row.status} />
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <RowActions />
+                        <RowActions row={row} onEdit={(r) => { setEditRecord(r); setModalOpen(true); }} />
                       </td>
                     </tr>
                   ))
@@ -496,6 +515,16 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
           </div>
         </div>
       </div>
+
+      <AddHealthLogModal
+        open={modalOpen}
+        onClose={() => { setModalOpen(false); setEditRecord(null); }}
+        editRecord={editRecord}
+        onSuccess={() => {
+          setModalOpen(false);
+          refreshData();
+        }}
+      />
     </div>
   );
 }

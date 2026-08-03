@@ -12,9 +12,10 @@ import {
   Skull,
   ClipboardList,
   ArrowUpRight,
-  X,
+  Pencil,
 } from "lucide-react";
 import { toast } from "../utils/toast";
+import VaccinationFormModal from "../components/HealthManagement/VaccinationFormModal";
 
 // ---------------------------------------------------------------------------
 // Data fetched from backend API
@@ -139,57 +140,60 @@ export default function HealthManagement({ setActiveTab }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [vetFilter, setVetFilter] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [vacModal, setVacModal] = useState(false);
+  const [editVacRecord, setEditVacRecord] = useState(null);
 
   const [vaccinationRegistry, setVaccinationRegistry] = useState([]);
   const [healthEventsLog, setHealthEventsLog] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [vacRes, healthRes] = await Promise.all([
-          fetch("/api/vaccination-records?t=" + Date.now()),
-          fetch("/api/health-logs?t=" + Date.now())
-        ]);
-        const vacData = await vacRes.json();
-        const healthData = await healthRes.json();
+  const fetchData = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const [vacRes, healthRes] = await Promise.all([
+        fetch("/api/vaccination-records?t=" + Date.now()),
+        fetch("/api/health-logs?t=" + Date.now())
+      ]);
+      const vacData = await vacRes.json();
+      const healthData = await healthRes.json();
 
-        setVaccinationRegistry((vacData.data || []).map(v => {
-          const isOverdue = v.booster_due_date && new Date(v.booster_due_date) < new Date();
-          return {
-            id: v.vaccination_id.substring(0, 8),
-            pigHerdId: v.pig_id ? `Pig ${v.pig_id.substring(0, 8)}` : `Batch ${v.batch_id?.substring(0, 8)}`,
-            pigType: v.pig_id ? "Individual" : "Batch",
-            vaccineName: v.vaccine_name,
-            dateGiven: new Date(v.administered_date).toLocaleDateString(),
-            nextDue: v.booster_due_date ? (isOverdue ? "Overdue" : new Date(v.booster_due_date).toLocaleDateString()) : "N/A",
-            nextDueDate: v.booster_due_date,
-            vet: v.administered_by || "Unknown",
-            dosage: v.dosage,
-            status: isOverdue ? "alert" : "logged"
-          };
-        }));
+      setVaccinationRegistry((vacData.data || []).map(v => {
+        const isOverdue = v.booster_due_date && new Date(v.booster_due_date) < new Date();
+        return {
+          id: v.vaccination_id.substring(0, 8),
+          pigHerdId: v.pigs?.pig_tag || v.piglet_batches?.batch_tag || (v.pig_id ? `Pig ${v.pig_id.substring(0, 8)}` : `Batch ${v.batch_id?.substring(0, 8)}`),
+          pigType: v.pig_id ? "Individual" : "Batch",
+          vaccineName: v.vaccine_name,
+          dateGiven: new Date(v.administered_date).toLocaleDateString(),
+          nextDue: v.booster_due_date ? (isOverdue ? "Overdue" : new Date(v.booster_due_date).toLocaleDateString()) : "N/A",
+          nextDueDate: v.booster_due_date,
+          vet: v.administered_by || "Unknown",
+          dosage: v.dosage,
+          status: isOverdue ? "alert" : "logged",
+          _raw: v,
+        };
+      }));
 
-        setHealthEventsLog((healthData.data || []).map(h => ({
-          date: new Date(h.log_date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
-          swineId: h.pig_id ? `Pig ${h.pig_id.substring(0, 8)}` : `Batch ${h.batch_id?.substring(0, 8)}`,
-          eventType: h.treatment ? "Treatment" : h.diagnosis ? "Check-up" : "Log",
-          medication: h.medication_name || "None",
-          vet: h.recorded_by || "System"
-        })));
-      } catch (err) {
-        console.error(err);
-        toast.error("Failed to load health data");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+      setHealthEventsLog((healthData.data || []).map(h => ({
+        date: new Date(h.log_date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
+        swineId: h.pigs?.pig_tag || h.piglet_batches?.batch_tag || (h.pig_id ? `Pig ${h.pig_id.substring(0, 8)}` : `Batch ${h.batch_id?.substring(0, 8)}`),
+        eventType: h.treatment ? "Treatment" : h.diagnosis ? "Check-up" : "Log",
+        medication: h.medication_name || "None",
+        vet: h.recorded_by || "System"
+      })));
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load health data");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  React.useEffect(() => { fetchData(); }, [fetchData]);
 
   const vets = useMemo(
     () => Array.from(new Set(vaccinationRegistry.map((r) => r.vet))),
-    []
+    [vaccinationRegistry]
   );
 
   const filteredRegistry = useMemo(() => {
@@ -204,7 +208,7 @@ export default function HealthManagement({ setActiveTab }) {
       const matchesVet = vetFilter === "all" || row.vet === vetFilter;
       return matchesQuery && matchesStatus && matchesVet;
     });
-  }, [query, statusFilter, vetFilter]);
+  }, [vaccinationRegistry, query, statusFilter, vetFilter]);
 
   const overdueCount = vaccinationRegistry.filter((r) => r.nextDue === "Overdue").length;
   const dueSoonCount = vaccinationRegistry.filter((r) => r.nextDue === "Tomorrow").length;
@@ -300,12 +304,13 @@ export default function HealthManagement({ setActiveTab }) {
                 Export
               </button>
               <button
-                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
-                type="button"
-              >
-                <Plus className="h-4 w-4" />
-                Add Vaccination Schedule
-              </button>
+                  className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
+                  type="button"
+                  onClick={() => { setEditVacRecord(null); setVacModal(true); }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Vaccination Schedule
+                </button>
             </div>
           </div>
 
@@ -372,7 +377,6 @@ export default function HealthManagement({ setActiveTab }) {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
-                  <th className="px-5 py-3 font-medium">Vaccination ID</th>
                   <th className="px-5 py-3 font-medium">Pig/Herd ID</th>
                   <th className="px-5 py-3 font-medium">Vaccine name</th>
                   <th className="px-5 py-3 font-medium">Date given</th>
@@ -380,13 +384,13 @@ export default function HealthManagement({ setActiveTab }) {
                   <th className="px-5 py-3 font-medium">Veterinarian</th>
                   <th className="px-5 py-3 font-medium">Dosage</th>
                   <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
                 {loading ? (
                   [1, 2, 3, 4, 5].map((i) => (
                     <tr key={i} className="animate-pulse">
-                      <td className="px-5 py-4"><div className="h-4 w-32 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-4 w-20 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded"></div></td>
@@ -405,7 +409,6 @@ export default function HealthManagement({ setActiveTab }) {
                 ) : (
                   filteredRegistry.map((row) => (
                     <tr key={row.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                      <td className="px-5 py-4 font-medium text-slate-800">{row.id}</td>
                       <td className="px-5 py-4">
                         <div className="text-slate-800">{row.pigHerdId}</div>
                         <div className="text-xs text-slate-400">{row.pigType}</div>
@@ -419,6 +422,14 @@ export default function HealthManagement({ setActiveTab }) {
                       <td className="px-5 py-4 text-slate-600">{row.dosage}</td>
                       <td className="px-5 py-4">
                         <StatusPill status={row.status} />
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <button
+                          onClick={() => { setEditVacRecord(row); setVacModal(true); }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-emerald-300 transition-colors"
+                        >
+                          <Pencil className="h-3 w-3" /> Edit
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -486,6 +497,13 @@ export default function HealthManagement({ setActiveTab }) {
           </div>
         </div>
       </div>
+
+      <VaccinationFormModal
+        open={vacModal}
+        onClose={() => { setVacModal(false); setEditVacRecord(null); }}
+        editRecord={editVacRecord}
+        onSuccess={fetchData}
+      />
     </div>
   );
 }

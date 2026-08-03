@@ -1,0 +1,3 @@
+ALTER TABLE health_logs ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false;
+ALTER TABLE vaccination_records ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false;
+ALTER TABLE mortality_logs ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false;
