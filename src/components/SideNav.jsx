@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   LayoutDashboard, Users, TrendingUp, Activity,
   Baby, ClipboardList, Receipt, Settings, LogOut, X, ChevronRight,
-  Grid3X3,
+  Grid3X3, Skull,
 } from 'lucide-react';
 
 export const NAV_ITEMS = [
@@ -19,7 +19,13 @@ export const NAV_ITEMS = [
       { id: 'growth_analytics', label: 'Growth Analytics', icon: Activity },
     ]
   },
-  { id: 'health_management', label: 'Health Management', icon: Activity, sub: true },
+  { 
+    id: 'health_management', label: 'Health Management', icon: Activity, sub: true,
+    children: [
+      { id: 'medication_treatment', label: 'Medication Logs', icon: ClipboardList },
+      { id: 'mortality_record', label: 'Mortality Records', icon: Skull },
+    ]
+  },
   { id: 'breeding_logs', label: 'Breeding Logs', icon: Baby },
   { id: 'inventory', label: 'Inventory Mgmt', icon: ClipboardList, sub: true },
   { id: 'transactions', label: 'Transaction Records', icon: Receipt, sub: true },

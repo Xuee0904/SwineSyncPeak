@@ -4,7 +4,7 @@ import useModalAnimation from "../hooks/useModalAnimation";
 import {
   Plus, ClipboardList, Wheat, Syringe, FlaskConical, Scissors,
   ArrowRight, Activity, AlertTriangle, X, Trash2,
-  ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink, Target
+  ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink, Target, Pill
 } from "lucide-react";
 import { toast } from "../utils/toast";
 
@@ -12,7 +12,8 @@ const FONT_DISPLAY = "font-['Space_Grotesk',_sans-serif]";
 
 const ACTIVITY_TYPES = [
   { value: 'FEED',       label: 'Feed',       icon: Wheat,        bg: 'bg-[#fbf0dd]', text: 'text-[#b8791f]', border: 'border-[#f2ddba]', dot: 'bg-[#b8791f]' },
-  { value: 'MEDICATION', label: 'Medication', icon: Syringe,      bg: 'bg-[#fbeae6]', text: 'text-[#a8412a]', border: 'border-[#f2c9bf]', dot: 'bg-[#a8412a]' },
+  { value: 'MEDICATION', label: 'Medication', icon: Pill,         bg: 'bg-[#fbeae6]', text: 'text-[#a8412a]', border: 'border-[#f2c9bf]', dot: 'bg-[#a8412a]' },
+  { value: 'VACCINATION',label: 'Vaccination',icon: Syringe,      bg: 'bg-blue-50',   text: 'text-blue-700',  border: 'border-blue-200',  dot: 'bg-blue-600' },
   { value: 'SUPPLEMENT', label: 'Supplement', icon: FlaskConical, bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', dot: 'bg-emerald-600' },
   { value: 'PROCEDURE',  label: 'Procedure',  icon: Scissors,     bg: 'bg-indigo-50',  text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-600' },
 ];
@@ -1087,8 +1088,27 @@ export default function GrowthProgramManagement() {
 
       {/* Program Cards */}
       {loading ? (
-        <div className="flex items-center justify-center min-h-[300px]">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-800" />
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {[1, 2, 3, 4].map((i) => (
+            <article key={i} className="flex flex-col h-[280px] bg-white border border-neutral-200 rounded-2xl px-6 pt-[22px] pb-4 shadow-sm animate-pulse">
+              <div className="flex gap-4 items-start min-w-0 w-full mb-6">
+                <div className="w-12 h-12 rounded-xl bg-slate-200 shrink-0" />
+                <div className="flex-1 w-full space-y-3 pt-1">
+                  <div className="h-5 w-48 bg-slate-200 rounded-md" />
+                  <div className="h-4 w-32 bg-slate-200 rounded-md" />
+                </div>
+              </div>
+              <div className="flex-1 space-y-3">
+                <div className="h-3 w-full bg-slate-200 rounded-md" />
+                <div className="h-3 w-3/4 bg-slate-200 rounded-md" />
+                <div className="h-3 w-5/6 bg-slate-200 rounded-md" />
+              </div>
+              <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between">
+                <div className="h-8 w-24 bg-slate-200 rounded-lg" />
+                <div className="h-8 w-32 bg-slate-200 rounded-lg" />
+              </div>
+            </article>
+          ))}
         </div>
       ) : programs.length === 0 ? (
         <div className="text-center py-20 bg-white border border-neutral-200 rounded-2xl shadow-sm">

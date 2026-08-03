@@ -7,6 +7,9 @@ import PenManagement from './PenManagement';
 import BreedingLogs from './BreedingLogs';
 import GrowthProgramManagement from './GrowthProgramManagement';
 import GrowthAnalytics from './GrowthAnalytics';
+import HealthManagement from './HealthManagement';
+import MedicationTreatmentLogs from './MedicationTreatmentLogs';
+import MortalityRecord from './MortalityRecord';
 import {
   Sparkles, Database, ArrowUpRight, ChevronRight,
   AlertTriangle, CheckSquare, Square,
@@ -423,7 +426,25 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && activeTab !== 'breeding_logs' && activeTab !== 'growth' && activeTab !== 'growth_analytics' && (
+          {activeTab === 'health_management' && (
+            <main>
+              <HealthManagement loggedInUser={loggedInUser} setActiveTab={setActiveTab} />
+            </main>
+          )}
+
+          {activeTab === 'medication_treatment' && (
+            <main>
+              <MedicationTreatmentLogs loggedInUser={loggedInUser} setActiveTab={setActiveTab} />
+            </main>
+          )}
+
+          {activeTab === 'mortality_record' && (
+            <main>
+              <MortalityRecord loggedInUser={loggedInUser} setActiveTab={setActiveTab} />
+            </main>
+          )}
+
+          {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && activeTab !== 'breeding_logs' && activeTab !== 'growth' && activeTab !== 'growth_analytics' && activeTab !== 'health_management' && activeTab !== 'medication_treatment' && activeTab !== 'mortality_record' && (
             <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
               <div className="text-center space-y-4 max-w-xs mx-auto animate-fade-in">
                 <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">

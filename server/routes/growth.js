@@ -37,6 +37,138 @@ router.get('/api/growth/programs', async (req, res) => {
   }
 });
 
+// GET /api/growth/analytics
+// Fetch analytics and DSS data for active batches assigned to a growth program
+router.get('/api/growth/analytics', async (req, res) => {
+  try {
+    const { data: batches, error } = await db
+      .from('piglet_batches')
+      .select(`
+        batch_id,
+        batch_tag,
+        date_of_birth,
+        status,
+        current_count,
+        total_born_alive,
+        assigned_program_id,
+        growth_programs (
+          name,
+          target_weight,
+          growth_program_guidelines (
+            days_after_birth,
+            activity_type,
+            daily_consumption_per_head
+          )
+        )
+      `)
+      .not('assigned_program_id', 'is', null);
+
+    if (error) throw error;
+
+    const STANDARD_ADG = 0.75; // kg/day
+    const BIRTH_WEIGHT = 1.5; // kg
+    const today = new Date();
+
+    const analytics = batches.map(batch => {
+      const dob = new Date(batch.date_of_birth);
+      const ageInDays = Math.max(0, Math.floor((today - dob) / (1000 * 60 * 60 * 24)));
+      
+      const program = batch.growth_programs;
+      const targetWeight = program.target_weight || 105;
+
+      // DSS Math (S-Curve Approximation)
+      const milestones = [
+        { day: 0, weight: 1.5 },
+        { day: 21, weight: 7.0 },
+        { day: 49, weight: 20.0 },
+        { day: 90, weight: 50.0 },
+        { day: 150, weight: 105.0 }
+      ];
+      
+      let rawEstWeight = 1.5;
+      if (ageInDays >= 150) {
+        rawEstWeight = 105.0 + ((ageInDays - 150) * 0.85); // 850g ADG in late finisher
+      } else {
+        for (let i = 0; i < milestones.length - 1; i++) {
+          const start = milestones[i];
+          const end = milestones[i+1];
+          if (ageInDays >= start.day && ageInDays < end.day) {
+            const fraction = (ageInDays - start.day) / (end.day - start.day);
+            rawEstWeight = start.weight + fraction * (end.weight - start.weight);
+            break;
+          }
+        }
+      }
+      
+      // Scale based on the specific program's target weight
+      const scaleFactor = targetWeight / 105.0;
+      const estimatedCurrentWeight = rawEstWeight * scaleFactor;
+      
+      let cumulativeFeed = 0;
+      if (program.growth_program_guidelines) {
+        const sorted = [...program.growth_program_guidelines].sort((a,b) => a.days_after_birth - b.days_after_birth);
+        for (let i = 0; i < sorted.length; i++) {
+          const g = sorted[i];
+          if (g.activity_type !== 'FEED') continue;
+          
+          const startDay = g.days_after_birth;
+          if (startDay > ageInDays) break;
+
+          let endDay = ageInDays;
+          for (let j = i + 1; j < sorted.length; j++) {
+            if (sorted[j].activity_type === 'FEED') {
+              endDay = Math.min(ageInDays, sorted[j].days_after_birth);
+              break;
+            }
+          }
+          const daysOnFeed = endDay - startDay;
+          cumulativeFeed += (daysOnFeed * g.daily_consumption_per_head * batch.current_count);
+        }
+      }
+
+      // DSS Alerts
+      const alerts = [];
+      let status = 'on-track';
+      
+      if (estimatedCurrentWeight >= targetWeight) {
+        alerts.push(`Market Ready: Estimated weight (${estimatedCurrentWeight.toFixed(1)}kg) has reached the target of ${targetWeight}kg. Schedule sale.`);
+        status = 'alert';
+      } else if (ageInDays > 160 && estimatedCurrentWeight < targetWeight) {
+        alerts.push(`Slow Growth: Batch is ${ageInDays} days old but under target weight. Review feed quality or health.`);
+        status = 'alert';
+      }
+
+      const totalBorn = batch.total_born_alive || batch.current_count || 1; // avoid division by 0
+      const mortalityRate = Math.max(0, ((totalBorn - batch.current_count) / totalBorn) * 100);
+
+      if (mortalityRate > 5) {
+        alerts.push(`High Mortality: Batch has ${mortalityRate.toFixed(1)}% mortality rate.`);
+        status = 'alert';
+      }
+
+      return {
+        id: batch.batch_id,
+        batchTag: batch.batch_tag,
+        ageInDays,
+        programName: program.name,
+        targetWeight,
+        estimatedCurrentWeight: Number(estimatedCurrentWeight.toFixed(2)),
+        cumulativeFeed: Number(cumulativeFeed.toFixed(2)),
+        mortalityRate: Number(mortalityRate.toFixed(2)),
+        alerts,
+        status,
+        statusLabel: status === 'alert' ? 'Needs Attention' : 'On Track'
+      };
+    });
+
+    res.json(analytics);
+  } catch (error) {
+    console.error('Error fetching growth analytics:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 // POST /api/growth/programs
 // Create a new growth program template with guidelines
 router.post('/api/growth/programs', async (req, res) => {
@@ -430,6 +562,34 @@ router.post('/api/growth/logs', async (req, res) => {
     }).select().single();
 
     if (error) throw error;
+
+    // Fetch the task name from the guideline if available
+    let taskName = activity_type;
+    if (guideline_id) {
+      const { data: g } = await db.from('growth_program_guidelines').select('task_name, dosage_instructions').eq('guideline_id', guideline_id).single();
+      if (g) taskName = g.task_name || activity_type;
+    }
+
+    // Integrate with Health & Vaccination modules
+    if (activity_type === 'VACCINATION') {
+      await db.from('vaccination_records').insert({
+        batch_id,
+        vaccine_name: taskName,
+        dosage: amount_given > 0 ? `${amount_given}` : 'Standard',
+        administered_by: performed_by || 'System',
+        administered_date: new Date().toISOString()
+      });
+    } else if (activity_type === 'MEDICATION') {
+      await db.from('health_logs').insert({
+        batch_id,
+        status: 'healthy',
+        diagnosis: 'Routine Program Medication',
+        treatment: taskName,
+        symptoms: 'None observed',
+        recorded_by: performed_by || 'System',
+        log_date: new Date().toISOString()
+      });
+    }
 
     res.json({ success: true, log: data });
   } catch (error) {
