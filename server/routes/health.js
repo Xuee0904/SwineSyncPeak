@@ -7,9 +7,6 @@ const router = express.Router();
 router.get('/api/health-logs', async (req, res) => {
   try {
     const { pig_id, batch_id } = req.query;
-    if (!pig_id && !batch_id) {
-      return res.status(400).json({ error: 'You must provide either pig_id or batch_id.' });
-    }
 
     let dbQuery = supabase.from('health_logs').select('*');
     if (pig_id) {
@@ -31,9 +28,6 @@ router.get('/api/health-logs', async (req, res) => {
 router.get('/api/vaccination-records', async (req, res) => {
   try {
     const { pig_id, batch_id } = req.query;
-    if (!pig_id && !batch_id) {
-      return res.status(400).json({ error: 'You must provide either pig_id or batch_id.' });
-    }
 
     let dbQuery = supabase.from('vaccination_records').select('*');
     if (pig_id) {
