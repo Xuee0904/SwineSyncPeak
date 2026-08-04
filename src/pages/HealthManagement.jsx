@@ -13,6 +13,8 @@ import {
   ClipboardList,
   ArrowUpRight,
   Pencil,
+  Archive,
+  X,
 } from "lucide-react";
 import { toast } from "../utils/toast";
 import VaccinationFormModal from "../components/HealthManagement/VaccinationFormModal";
@@ -144,20 +146,25 @@ export default function HealthManagement({ setActiveTab }) {
   const [editVacRecord, setEditVacRecord] = useState(null);
 
   const [vaccinationRegistry, setVaccinationRegistry] = useState([]);
+  const [archivedRegistry, setArchivedRegistry] = useState([]);
   const [healthEventsLog, setHealthEventsLog] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivingId, setArchivingId] = useState(null);
 
   const fetchData = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [vacRes, healthRes] = await Promise.all([
+      const [vacRes, vacArchivedRes, healthRes] = await Promise.all([
         fetch("/api/vaccination-records?t=" + Date.now()),
+        fetch("/api/vaccination-records?archived=true&t=" + Date.now()),
         fetch("/api/health-logs?t=" + Date.now())
       ]);
       const vacData = await vacRes.json();
+      const vacArchivedData = await vacArchivedRes.json();
       const healthData = await healthRes.json();
 
-      setVaccinationRegistry((vacData.data || []).map(v => {
+      const mapVacRow = (v) => {
         const isOverdue = v.booster_due_date && new Date(v.booster_due_date) < new Date();
         return {
           id: v.vaccination_id.substring(0, 8),
@@ -172,7 +179,10 @@ export default function HealthManagement({ setActiveTab }) {
           status: isOverdue ? "alert" : "logged",
           _raw: v,
         };
-      }));
+      };
+
+      setVaccinationRegistry((vacData.data || []).map(mapVacRow));
+      setArchivedRegistry((vacArchivedData.data || []).map(mapVacRow));
 
       setHealthEventsLog((healthData.data || []).map(h => ({
         date: new Date(h.log_date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
@@ -289,7 +299,44 @@ export default function HealthManagement({ setActiveTab }) {
         {/* Vaccination Registry */}
         <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-base font-semibold text-slate-900">Vaccination Registry</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-base font-semibold text-slate-900">Vaccination Registry</h2>
+              {/* Active / Archived toggle */}
+              <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setShowArchived(false)}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
+                    !showArchived
+                      ? 'bg-white shadow-sm text-slate-800'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Active
+                  {!showArchived && (
+                    <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
+                      {vaccinationRegistry.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowArchived(true)}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
+                    showArchived
+                      ? 'bg-white shadow-sm text-slate-800'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Archived
+                  {showArchived && (
+                    <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                      {archivedRegistry.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -300,17 +347,19 @@ export default function HealthManagement({ setActiveTab }) {
                   className="w-56 rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                 />
               </div>
-              <button
-                onClick={() => setFiltersOpen((v) => !v)}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                type="button"
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                Filters
-                <ChevronDown
-                  className={`h-3.5 w-3.5 transition-transform ${filtersOpen ? "rotate-180" : ""}`}
-                />
-              </button>
+              {!showArchived && (
+                <button
+                  onClick={() => setFiltersOpen((v) => !v)}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  type="button"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Filters
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 transition-transform ${filtersOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+              )}
               <button
                 className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
                 type="button"
@@ -318,19 +367,21 @@ export default function HealthManagement({ setActiveTab }) {
                 <Download className="h-4 w-4" />
                 Export
               </button>
-              <button
-                  className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
-                  type="button"
-                  onClick={() => { setEditVacRecord(null); setVacModal(true); }}
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Vaccination Schedule
-                </button>
+              {!showArchived && (
+                <button
+                    className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
+                    type="button"
+                    onClick={() => { setEditVacRecord(null); setVacModal(true); }}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Vaccination Schedule
+                  </button>
+              )}
             </div>
           </div>
 
-          {/* Filter panel */}
-          {filtersOpen && (
+          {/* Filter panel — only shown in Active view */}
+          {filtersOpen && !showArchived && (
             <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
               <div className="flex items-center gap-2">
                 <label className="text-xs font-medium text-slate-500">Status</label>
@@ -395,26 +446,47 @@ export default function HealthManagement({ setActiveTab }) {
                   <th className="px-5 py-3 font-medium">Pig/Herd ID</th>
                   <th className="px-5 py-3 font-medium">Vaccine name</th>
                   <th className="px-5 py-3 font-medium">Date given</th>
-                  <th className="px-5 py-3 font-medium">Next due date</th>
+                  {!showArchived && <th className="px-5 py-3 font-medium">Next due date</th>}
                   <th className="px-5 py-3 font-medium">Veterinarian</th>
                   <th className="px-5 py-3 font-medium">Dosage</th>
-                  <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium text-right">Actions</th>
+                  {!showArchived && <th className="px-5 py-3 font-medium">Status</th>}
+                  {!showArchived && <th className="px-5 py-3 font-medium text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
                 {loading ? (
                   [1, 2, 3, 4, 5].map((i) => (
                     <tr key={i} className="animate-pulse">
-                      <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded"></div></td>
-                      <td className="px-5 py-4"><div className="h-4 w-20 bg-slate-200 rounded"></div></td>
-                      <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded"></div></td>
-                      <td className="px-5 py-4"><div className="h-4 w-16 bg-slate-200 rounded"></div></td>
-                      <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded"></div></td>
-                      <td className="px-5 py-4"><div className="h-4 w-16 bg-slate-200 rounded"></div></td>
-                      <td className="px-5 py-4"><div className="h-6 w-16 bg-slate-200 rounded-full"></div></td>
+                      <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded" /></td>
+                      <td className="px-5 py-4"><div className="h-4 w-20 bg-slate-200 rounded" /></td>
+                      <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded" /></td>
+                      {!showArchived && <td className="px-5 py-4"><div className="h-4 w-16 bg-slate-200 rounded" /></td>}
+                      <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded" /></td>
+                      <td className="px-5 py-4"><div className="h-4 w-16 bg-slate-200 rounded" /></td>
+                      {!showArchived && <td className="px-5 py-4"><div className="h-6 w-16 bg-slate-200 rounded-full" /></td>}
                     </tr>
                   ))
+                ) : showArchived ? (
+                  archivedRegistry.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-12 text-center text-sm text-slate-400">
+                        No archived records yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    archivedRegistry.map((row) => (
+                      <tr key={row.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                        <td className="px-5 py-4">
+                          <div className="text-slate-800">{row.pigHerdId}</div>
+                          <div className="text-xs text-slate-400">{row.pigType}</div>
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">{row.vaccineName}</td>
+                        <td className="px-5 py-4 text-slate-600">{row.dateGiven}</td>
+                        <td className="px-5 py-4 text-slate-600">{row.vet}</td>
+                        <td className="px-5 py-4 text-slate-600">{row.dosage}</td>
+                      </tr>
+                    ))
+                  )
                 ) : filteredRegistry.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">
@@ -439,12 +511,38 @@ export default function HealthManagement({ setActiveTab }) {
                         <StatusPill status={row.status} />
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <button
-                          onClick={() => { setEditVacRecord(row); setVacModal(true); }}
-                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-emerald-300 transition-colors"
-                        >
-                          <Pencil className="h-3 w-3" /> Edit
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => { setEditVacRecord(row); setVacModal(true); }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-emerald-300 transition-colors"
+                          >
+                            <Pencil className="h-3 w-3" /> Edit
+                          </button>
+                          <button
+                            disabled={archivingId === row._raw.vaccination_id}
+                            onClick={async () => {
+                              if (!confirm(`Archive vaccination record for ${row.pigHerdId}?`)) return;
+                              setArchivingId(row._raw.vaccination_id);
+                              try {
+                                const res = await fetch(`/api/vaccination-records/${row._raw.vaccination_id}/archive`, {
+                                  method: "PATCH",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ performed_by: "Admin" }),
+                                });
+                                if (!res.ok) throw new Error("Failed to archive");
+                                toast.success("Record archived.");
+                                fetchData();
+                              } catch (e) {
+                                toast.error(e.message);
+                              } finally {
+                                setArchivingId(null);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                          >
+                            <Archive className="h-3 w-3" /> Archive
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

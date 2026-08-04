@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Archive, ChevronDown, Loader2 } from "lucide-react";
+import { X, Archive, ChevronDown, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "../../utils/toast";
 import useModalAnimation from "../../hooks/useModalAnimation";
+import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
@@ -58,6 +59,9 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
   const [archiving, setArchiving] = useState(false);
   const [archiveReason, setArchiveReason] = useState("");
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [successInfo, setSuccessInfo] = useState(null);
+
+  const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(Boolean(successInfo));
 
   // Dropdown data
   const [pigs, setPigs] = useState([]);
@@ -169,9 +173,13 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to save");
       
-      toast.success(editRecord ? "Health log updated!" : "Health log added!");
       onSuccess();
-      requestClose();
+      setSuccessInfo({
+        message: editRecord
+          ? "Your changes have been saved. The health log is now up to date."
+          : "The health log has been added. You can view it in the treatment list.",
+        isArchive: false
+      });
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -195,9 +203,12 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to archive");
-      toast.success("Health log archived.");
+      
       onSuccess();
-      requestClose();
+      setSuccessInfo({
+        message: "This health log has been removed from the active list. You can still find it in the archived records.",
+        isArchive: true
+      });
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -218,23 +229,53 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
       className={`fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm ${overlayClassName}`}
       onClick={(e) => { if (e.target === e.currentTarget && !saving && !archiving) requestClose(); }}
     >
-      <div className={`w-full max-w-2xl rounded-2xl bg-white shadow-2xl ${panelClassName || "animate-modal-in"}`}>
+      <div 
+        ref={containerRef}
+        style={stepTransitionStyle}
+        className={`w-full ${successInfo ? 'max-w-md' : 'max-w-2xl'} overflow-hidden rounded-2xl bg-white shadow-2xl ${panelClassName || "animate-modal-in"}`}
+      >
 
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <h2 className="text-base font-semibold text-slate-900">
-            {editRecord ? "Edit Health Log" : "Add Health Log"}
-          </h2>
-          <button
-            onClick={() => requestClose()}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        {/* Header — hidden on success screen */}
+        {!successInfo && (
+          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <h2 className="text-base font-semibold text-slate-900">
+              {editRecord ? "Edit Health Log" : "Add Health Log"}
+            </h2>
+            <button
+              onClick={() => requestClose()}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {/* Body */}
-        {confirmArchive ? (
+        {successInfo ? (
+          <div className="flex flex-col items-center justify-center p-10 text-center animate-fade-in">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+              <CheckCircle2 className="h-8 w-8" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-800">
+              {successInfo.isArchive ? 'Log Removed!' : (editRecord ? 'Changes Saved!' : 'Log Added!')}
+            </h3>
+            <p className="mt-2 text-sm text-slate-500 max-w-sm">
+              {successInfo.message}
+            </p>
+            <div className="mt-8 flex gap-3 w-full max-w-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setSuccessInfo(null);
+                  requestClose();
+                }}
+                className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 transition-all cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        ) : confirmArchive ? (
           <div className="px-6 py-6">
             <p className="text-sm font-medium text-slate-700 mb-3">
               Are you sure you want to archive this health log? This will hide it from the active pipeline.
@@ -472,7 +513,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         )}
 
         {/* Footer */}
-        {!confirmArchive && (
+        {!confirmArchive && !successInfo && (
           <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4">
             <div>
               {editRecord && (

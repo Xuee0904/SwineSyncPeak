@@ -232,25 +232,26 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
   const [editRecord, setEditRecord] = useState(null);
 
   const [treatmentLog, setTreatmentLog] = useState([]);
+  const [archivedLog, setArchivedLog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [showArchived, setShowArchived] = useState(false);
 
   React.useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch("/api/health-logs?t=" + Date.now());
-        const json = await res.json();
+        const [activeRes, archivedRes] = await Promise.all([
+          fetch("/api/health-logs?t=" + Date.now()),
+          fetch("/api/health-logs?archived=true&t=" + Date.now()),
+        ]);
+        const activeJson = await activeRes.json();
+        const archivedJson = await archivedRes.json();
 
-        // Show all health logs — not just ones with medication
-        const treatments = (json.data || []).map(h => {
+        const mapRow = (h) => {
           const start = new Date(h.log_date);
           const daysDiff = Math.floor((Date.now() - start.getTime()) / (1000 * 3600 * 24));
-
           let st = "monitoring";
-          if (["sick", "monitoring", "resolved"].includes(h.status)) {
-            st = h.status;
-          }
-
+          if (["sick", "monitoring", "resolved"].includes(h.status)) st = h.status;
           return {
             treatmentId: "TX-" + h.health_id.substring(0, 6).toUpperCase(),
             pigId: h.pigs?.pig_tag || h.piglet_batches?.batch_tag || (h.pig_id ? `Pig ${h.pig_id.substring(0, 8)}` : `Batch ${h.batch_id?.substring(0, 8)}`),
@@ -262,9 +263,10 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
             daysInStatus: Math.max(1, daysDiff),
             _raw: h,
           };
-        });
+        };
 
-        setTreatmentLog(treatments);
+        setTreatmentLog((activeJson.data || []).map(mapRow));
+        setArchivedLog((archivedJson.data || []).map(mapRow));
       } catch (err) {
         console.error(err);
         toast.error("Failed to load treatments");
@@ -355,7 +357,40 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
         {/* Treatment Log */}
         <div id="treatment-log-table" className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-base font-semibold text-slate-900">Treatment Log</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-base font-semibold text-slate-900">Treatment Log</h2>
+              {/* Active / Archived toggle */}
+              <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => { setShowArchived(false); setPage(1); }}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
+                    !showArchived ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Active
+                  {!showArchived && (
+                    <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
+                      {treatmentLog.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowArchived(true); setPage(1); }}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
+                    showArchived ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Archived
+                  {showArchived && (
+                    <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
+                      {archivedLog.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -365,21 +400,23 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                     setQuery(e.target.value);
                     setPage(1);
                   }}
-                  placeholder="Search pig ID, diagnosis..."
+                  placeholder={showArchived ? "Search archived logs..." : "Search pig ID, diagnosis..."}
                   className="w-56 rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                 />
               </div>
-              <button
-                onClick={() => setFiltersOpen((v) => !v)}
-                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                type="button"
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                Filters
-                <ChevronDown
-                  className={`h-3.5 w-3.5 transition-transform ${filtersOpen ? "rotate-180" : ""}`}
-                />
-              </button>
+              {!showArchived && (
+                <button
+                  onClick={() => setFiltersOpen((v) => !v)}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  type="button"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Filters
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 transition-transform ${filtersOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+              )}
               <button
                 className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
                 type="button"
@@ -387,17 +424,19 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                 <Download className="h-4 w-4" />
                 Export
               </button>
-              <button
-                onClick={() => { setEditRecord(null); setModalOpen(true); }}
-                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
-                type="button"
-              >
-                + Add Treatment Record
-              </button>
+              {!showArchived && (
+                <button
+                  onClick={() => { setEditRecord(null); setModalOpen(true); }}
+                  className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
+                  type="button"
+                >
+                  + Add Treatment Record
+                </button>
+              )}
             </div>
           </div>
 
-          {filtersOpen && (
+          {filtersOpen && !showArchived && (
             <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
               <div className="flex items-center gap-2">
                 <label className="text-xs font-medium text-slate-500">Status</label>
@@ -455,7 +494,7 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                   <th className="px-5 py-3 font-medium">Start date</th>
                   <th className="px-5 py-3 font-medium">Duration</th>
                   <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium text-right">Actions</th>
+                  {!showArchived && <th className="px-5 py-3 font-medium text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -469,9 +508,36 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                       <td className="px-5 py-4"><div className="h-4 w-20 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-4 w-16 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-6 w-20 bg-slate-200 rounded-full"></div></td>
-                      <td className="px-5 py-4"><div className="h-6 w-8 bg-slate-200 rounded float-right"></div></td>
                     </tr>
                   ))
+                ) : showArchived ? (
+                  archivedLog.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-400">
+                        No archived treatment records yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    archivedLog.filter(row =>
+                      query.trim() === '' ||
+                      [row.pigId, row.diagnosis, row.medication].join(' ').toLowerCase().includes(query.toLowerCase())
+                    ).map((row) => (
+                      <tr key={row.treatmentId} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 transition-colors">
+                        <td className="px-5 py-4 font-medium text-slate-800">{row.pigId}</td>
+                        <td className="px-5 py-4 text-slate-600">{row.diagnosis}</td>
+                        <td className="px-5 py-4 text-slate-600">
+                          <span className="inline-flex items-center gap-2 text-slate-700">
+                            <span className={`h-2 w-2 rounded-full ${medicationDotColor[row.medication] ?? "bg-slate-400"}`} />
+                            {row.medication}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-slate-600">{row.dosage}</td>
+                        <td className="px-5 py-4 text-slate-600">{row.startDate}</td>
+                        <td className="px-5 py-4 text-slate-600">{row.daysInStatus} {row.daysInStatus === 1 ? 'day' : 'days'}</td>
+                        <td className="px-5 py-4"><StatusPill status={row.status} /></td>
+                      </tr>
+                    ))
+                  )
                 ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">
@@ -514,7 +580,9 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
 
           <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-slate-400">
-              Showing {filtered.length} of {treatmentLog.length} active treatments
+              {showArchived
+                ? `${archivedLog.length} archived record${archivedLog.length !== 1 ? 's' : ''}`
+                : `Showing ${filtered.length} of ${treatmentLog.length} active treatments`}
             </p>
             <div className="flex items-center gap-1">
               <button
