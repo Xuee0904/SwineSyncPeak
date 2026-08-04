@@ -179,7 +179,8 @@ export default function HealthManagement({ setActiveTab }) {
         swineId: h.pigs?.pig_tag || h.piglet_batches?.batch_tag || (h.pig_id ? `Pig ${h.pig_id.substring(0, 8)}` : `Batch ${h.batch_id?.substring(0, 8)}`),
         eventType: h.treatment ? "Treatment" : h.diagnosis ? "Check-up" : "Log",
         medication: h.medication_name || "None",
-        vet: h.recorded_by || "System"
+        vet: h.recorded_by || "System",
+        status: h.status
       })));
     } catch (err) {
       console.error(err);
@@ -210,8 +211,22 @@ export default function HealthManagement({ setActiveTab }) {
     });
   }, [vaccinationRegistry, query, statusFilter, vetFilter]);
 
-  const overdueCount = vaccinationRegistry.filter((r) => r.nextDue === "Overdue").length;
-  const dueSoonCount = vaccinationRegistry.filter((r) => r.nextDue === "Tomorrow").length;
+  const overdueCount = vaccinationRegistry.filter((r) => {
+    if (!r.nextDueDate) return false;
+    return new Date(r.nextDueDate) < new Date();
+  }).length;
+
+  const dueSoonCount = vaccinationRegistry.filter((r) => {
+    if (!r.nextDueDate) return false;
+    const due = new Date(r.nextDueDate);
+    const now = new Date();
+    const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 7;
+  }).length;
+
+  const activeTreatmentsCount = healthEventsLog.filter(h => 
+    ["sick", "monitoring"].includes(h.status)
+  ).length;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -222,7 +237,7 @@ export default function HealthManagement({ setActiveTab }) {
           <StatCard
             icon={Syringe}
             label="Vaccinations logged"
-            value="1,248"
+            value={String(vaccinationRegistry.length)}
             tone="emerald"
             hint="This quarter"
             loading={loading}
@@ -230,7 +245,7 @@ export default function HealthManagement({ setActiveTab }) {
           <StatCard
             icon={CalendarClock}
             label="Upcoming schedules"
-            value={String(dueSoonCount + 6)}
+            value={String(dueSoonCount)}
             tone="sky"
             hint="Next 7 days"
             loading={loading}
@@ -246,7 +261,7 @@ export default function HealthManagement({ setActiveTab }) {
           <StatCard
             icon={Stethoscope}
             label="Active treatments"
-            value="9"
+            value={String(activeTreatmentsCount)}
             tone="amber"
             hint="Currently ongoing"
             loading={loading}

@@ -191,9 +191,17 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
               <Menu className="w-5 h-5" />
             </button>
             <h1 className="text-sm font-extrabold text-slate-900 tracking-tight">
-              {activeTab === 'pen_management'
-                ? 'Pen Management'
-                : NAV_ITEMS.find(n => n.id === activeTab)?.label ?? 'Dashboard'}
+
+              {(() => {
+                for (const item of NAV_ITEMS) {
+                  if (item.id === activeTab) return item.label;
+                  if (item.children) {
+                    const child = item.children.find(c => c.id === activeTab);
+                    if (child) return child.label;
+                  }
+                }
+                return 'Dashboard';
+              })()}
             </h1>
           </div>
           <div className="flex items-center gap-2">

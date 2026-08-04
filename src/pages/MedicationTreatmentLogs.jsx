@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Search,
   Download,
@@ -24,25 +25,12 @@ import AddHealthLogModal from "../components/HealthManagement/AddHealthLogModal"
 
 // Pipeline-wide distribution across all 128 active treatments, not just the
 // rows visible in this page of the table.
-const statusDistribution = [
-  { status: "critical", count: 8 },
-  { status: "monitoring", count: 35 },
-  { status: "recovering", count: 42 },
-  { status: "healthy", count: 43 },
-];
-
 const statusMeta = {
-  critical: {
-    label: "Critical",
+  sick: {
+    label: "Sick / Treatment",
     cls: "bg-rose-50 text-rose-700 ring-rose-600/20",
     bar: "#e11d48",
     rowAccent: "border-l-4 border-l-rose-400",
-  },
-  recovering: {
-    label: "Recovering",
-    cls: "bg-sky-50 text-sky-700 ring-sky-600/20",
-    bar: "#0284c7",
-    rowAccent: "border-l-4 border-l-transparent",
   },
   monitoring: {
     label: "Monitoring",
@@ -50,8 +38,8 @@ const statusMeta = {
     bar: "#d97706",
     rowAccent: "border-l-4 border-l-amber-300",
   },
-  healthy: {
-    label: "Healthy",
+  resolved: {
+    label: "Resolved",
     cls: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
     bar: "#059669",
     rowAccent: "border-l-4 border-l-transparent",
@@ -70,7 +58,7 @@ const medicationDotColor = {
 // ---------------------------------------------------------------------------
 
 function StatusPill({ status }) {
-  const s = statusMeta[status] ?? statusMeta.healthy;
+  const s = statusMeta[status] ?? statusMeta.resolved;
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${s.cls}`}
@@ -103,18 +91,18 @@ function CriticalCaseCard({ item }) {
   );
 }
 
-function RecoveryRateCard() {
+function RecoveryRateCard({ rate, resolvedCount, totalCount }) {
   return (
     <div className="min-w-[240px] flex-1 rounded-2xl bg-emerald-600 p-5 text-white shadow-sm">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-emerald-50">Overall Recovery Rate</p>
         <ArrowUpRight className="h-4 w-4 text-emerald-100" />
       </div>
-      <p className="mt-2 text-4xl font-semibold tracking-tight">92.4%</p>
+      <p className="mt-2 text-4xl font-semibold tracking-tight">{rate.toFixed(1)}%</p>
       <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-emerald-500/50">
-        <div className="h-full w-[92%] rounded-full bg-white" />
+        <div className="h-full rounded-full bg-white" style={{ width: `${rate}%` }} />
       </div>
-      <p className="mt-2 text-xs font-medium text-emerald-100">+2.1% from last week</p>
+      <p className="mt-2 text-xs font-medium text-emerald-100">{resolvedCount} resolved out of {totalCount} total cases</p>
     </div>
   );
 }
@@ -156,43 +144,75 @@ function StatusDistributionBar({ distribution, total }) {
   );
 }
 
-function RowActions({ row, onEdit }) {
+function RowActions({ row, onEdit, onRefresh }) {
   const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
+  const btnRef = useRef(null);
+
+  const handleOpen = () => {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setMenuPos({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
+    }
+    setOpen((v) => !v);
+  };
+
+  // Close on scroll
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('scroll', close, true);
+    return () => window.removeEventListener('scroll', close, true);
+  }, [open]);
+
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={btnRef}
+        onClick={handleOpen}
         className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
         type="button"
         aria-label="Row actions"
       >
         <MoreVertical className="h-4 w-4" />
       </button>
-      {open && (
+      {open && createPortal(
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-            >
-              <Eye className="h-3.5 w-3.5" /> View details
-            </button>
+          <div className="fixed inset-0 z-[200]" onClick={() => setOpen(false)} />
+          <div
+            className="fixed z-[201] w-44 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+            style={{ top: menuPos.top, right: menuPos.right }}
+          >
             <button
               type="button"
               onClick={() => { setOpen(false); onEdit(row); }}
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
             >
-              <Pencil className="h-3.5 w-3.5" /> Update status
+              <Pencil className="h-3.5 w-3.5" /> Edit / Update status
             </button>
             <button
               type="button"
+              onClick={async () => {
+                setOpen(false);
+                // Quick status update to "resolved"
+                const r = row._raw;
+                await fetch(`/api/health-logs/${r.health_id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'resolved', performed_by: r.recorded_by || 'Admin' }),
+                });
+                if (onRefresh) onRefresh();
+              }}
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-emerald-600 hover:bg-emerald-50"
             >
-              <CheckCircle2 className="h-3.5 w-3.5" /> Mark recovered
+              <CheckCircle2 className="h-3.5 w-3.5" /> Mark resolved
             </button>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
@@ -201,8 +221,6 @@ function RowActions({ row, onEdit }) {
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
-
-const TOTAL_ACTIVE = 128;
 
 export default function MedicationTreatmentLogs({ setActiveTab }) {
   const [query, setQuery] = useState("");
@@ -223,21 +241,19 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
         const res = await fetch("/api/health-logs?t=" + Date.now());
         const json = await res.json();
 
-        // Only include logs that have a medication/treatment or specific status
-        const treatments = (json.data || []).filter(h => h.medication_name || h.treatment || ["critical", "monitoring", "recovering", "sick"].includes(h.status)).map(h => {
+        // Show all health logs — not just ones with medication
+        const treatments = (json.data || []).map(h => {
           const start = new Date(h.log_date);
           const daysDiff = Math.floor((Date.now() - start.getTime()) / (1000 * 3600 * 24));
 
           let st = "monitoring";
-          if (["critical", "recovering", "healthy", "monitoring"].includes(h.status)) {
+          if (["sick", "monitoring", "resolved"].includes(h.status)) {
             st = h.status;
-          } else if (h.status === "sick") {
-            st = "critical";
           }
 
           return {
             treatmentId: "TX-" + h.health_id.substring(0, 6).toUpperCase(),
-            pigId: h.pig_id ? `Pig ${h.pig_id.substring(0, 8)}` : `Batch ${h.batch_id?.substring(0, 8)}`,
+            pigId: h.pigs?.pig_tag || h.piglet_batches?.batch_tag || (h.pig_id ? `Pig ${h.pig_id.substring(0, 8)}` : `Batch ${h.batch_id?.substring(0, 8)}`),
             diagnosis: h.diagnosis || "Unknown",
             medication: h.medication_name || "None",
             dosage: h.dosage || "N/A",
@@ -264,8 +280,8 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  const criticalCases = useMemo(() => {
-    return treatmentLog.filter(t => t.status === "critical").map(t => ({
+  const sickCases = useMemo(() => {
+    return treatmentLog.filter(t => t.status === "sick").map(t => ({
       id: t.treatmentId,
       pigId: t.pigId,
       pen: "Unknown",
@@ -287,7 +303,11 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
       const matchesStatus = statusFilter === "all" || row.status === statusFilter;
       return matchesQuery && matchesStatus;
     });
-  }, [query, statusFilter]);
+  }, [treatmentLog, query, statusFilter]);
+
+  const resolvedCount = treatmentLog.filter(t => t.status === 'resolved').length;
+  const totalCount = treatmentLog.length;
+  const recoveryRate = totalCount > 0 ? (resolvedCount / totalCount) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -296,29 +316,35 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
         {/* Critical Cases */}
         <div className="mt-2">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-rose-600">
-              <ShieldAlert className="h-4 w-4" />
-              Critical Cases
-            </h2>
-            <button
-              type="button"
-              className="text-xs font-medium text-emerald-600 hover:text-emerald-700"
-            >
-              View All Critical
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-4">
-            {criticalCases.map((c) => (
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-rose-600">
+                <ShieldAlert className="h-4 w-4" />
+                Active Sick Cases
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilter("sick");
+                  setFiltersOpen(true);
+                  // Scroll to table
+                  document.getElementById("treatment-log-table")?.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="text-xs font-medium text-emerald-600 hover:text-emerald-700"
+              >
+                View All Sick
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              {sickCases.map((c) => (
               <CriticalCaseCard key={c.id} item={c} />
             ))}
-            <RecoveryRateCard />
+            <RecoveryRateCard rate={recoveryRate} resolvedCount={resolvedCount} totalCount={totalCount} />
           </div>
         </div>
 
         {/* Treatment pipeline overview across all active treatments */}
         <div className="mt-4">
-          <StatusDistributionBar
-            distribution={["critical", "monitoring", "recovering", "healthy"].map(st => ({
+            <StatusDistributionBar
+              distribution={["sick", "monitoring", "resolved"].map(st => ({
               status: st,
               count: treatmentLog.filter(t => t.status === st).length
             }))}
@@ -327,7 +353,7 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
         </div>
 
         {/* Treatment Log */}
-        <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div id="treatment-log-table" className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-semibold text-slate-900">Treatment Log</h2>
             <div className="flex flex-wrap items-center gap-3">
@@ -384,10 +410,9 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                   className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                 >
                   <option value="all">All</option>
-                  <option value="critical">Critical</option>
-                  <option value="recovering">Recovering</option>
+                  <option value="sick">Sick / Treatment</option>
                   <option value="monitoring">Monitoring</option>
-                  <option value="healthy">Healthy</option>
+                  <option value="resolved">Resolved</option>
                 </select>
               </div>
               <div className="flex items-center gap-2">
@@ -423,7 +448,6 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400">
-                  <th className="px-5 py-3 font-medium">Treatment ID</th>
                   <th className="px-5 py-3 font-medium">Pig ID</th>
                   <th className="px-5 py-3 font-medium">Diagnosis</th>
                   <th className="px-5 py-3 font-medium">Medication</th>
@@ -439,7 +463,6 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                   [1, 2, 3, 4].map((i) => (
                     <tr key={i} className="animate-pulse">
                       <td className="px-5 py-4"><div className="h-4 w-20 bg-slate-200 rounded"></div></td>
-                      <td className="px-5 py-4"><div className="h-4 w-20 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-4 w-32 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-4 w-16 bg-slate-200 rounded"></div></td>
@@ -451,7 +474,7 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                   ))
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-400">
+                    <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">
                       No treatments match your filters.
                     </td>
                   </tr>
@@ -461,7 +484,6 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                       key={row.treatmentId}
                       className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 transition-colors ${statusMeta[row.status]?.rowAccent || ""}`}
                     >
-                      <td className="px-5 py-4 font-medium text-emerald-600">{row.treatmentId}</td>
                       <td className="px-5 py-4 font-medium text-slate-800">{row.pigId}</td>
                       <td className="px-5 py-4 text-slate-600">{row.diagnosis}</td>
                       <td className="px-5 py-4 text-slate-600">
@@ -481,7 +503,7 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                         <StatusPill status={row.status} />
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <RowActions row={row} onEdit={(r) => { setEditRecord(r); setModalOpen(true); }} />
+                        <RowActions row={row} onEdit={(r) => { setEditRecord(r); setModalOpen(true); }} onRefresh={refreshData} />
                       </td>
                     </tr>
                   ))
@@ -492,7 +514,7 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
 
           <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs text-slate-400">
-              Showing {filtered.length} of {TOTAL_ACTIVE} active treatments
+              Showing {filtered.length} of {treatmentLog.length} active treatments
             </p>
             <div className="flex items-center gap-1">
               <button

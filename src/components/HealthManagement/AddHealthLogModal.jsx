@@ -7,12 +7,9 @@ import useModalAnimation from "../../hooks/useModalAnimation";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
 const STATUS_OPTIONS = [
-  { value: "monitoring", label: "Monitoring" },
-  { value: "critical", label: "Critical" },
-  { value: "recovering", label: "Recovering" },
   { value: "sick", label: "Sick" },
-  { value: "healthy", label: "Healthy" },
-  { value: "quarantine", label: "Quarantine" },
+  { value: "monitoring", label: "Monitoring" },
+  { value: "resolved", label: "Resolved" },
 ];
 
 const MEDICATION_OPTIONS = [
@@ -48,7 +45,7 @@ const EMPTY_FORM = {
   medication_name: "",
   medication_name_custom: "",
   dosage: "",
-  status: "monitoring",
+  status: "sick",
   notes: "",
 };
 
@@ -104,7 +101,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         medication_name: isCustomMed ? "Other" : (editRecord._raw.medication_name || ""),
         medication_name_custom: isCustomMed ? editRecord._raw.medication_name : "",
         dosage: editRecord._raw.dosage || "",
-        status: editRecord._raw.status || "monitoring",
+        status: editRecord._raw.status || "sick",
         notes: editRecord._raw.notes || "",
       });
     } else {
