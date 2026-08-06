@@ -65,6 +65,36 @@ router.get('/api/health-logs', async (req, res) => {
   }
 });
 
+// Helper to map health log status to pig/batch status
+const syncSwineStatus = async (healthStatus, pig_id, batch_id) => {
+  if (!healthStatus) return;
+  const statusLower = healthStatus.toLowerCase();
+  
+  let pigStatus = '';
+  let batchStatus = '';
+  
+  if (statusLower === 'sick') {
+    pigStatus = 'Sick';
+    batchStatus = 'sick';
+  } else if (statusLower === 'monitoring') {
+    pigStatus = 'Quarantine';
+    batchStatus = 'quarantine';
+  } else if (statusLower === 'resolved') {
+    pigStatus = 'Healthy';
+    batchStatus = 'healthy';
+  }
+
+  try {
+    if (pig_id && pigStatus) {
+      await supabaseAdmin.from('pigs').update({ status: pigStatus }).eq('pig_id', pig_id);
+    } else if (batch_id && batchStatus) {
+      await supabaseAdmin.from('piglet_batches').update({ status: batchStatus }).eq('batch_id', batch_id);
+    }
+  } catch (err) {
+    console.error('Failed to sync swine status from health log:', err);
+  }
+};
+
 // POST /api/health-logs
 router.post('/api/health-logs', async (req, res) => {
   try {
@@ -89,6 +119,10 @@ router.post('/api/health-logs', async (req, res) => {
       event_title: 'Health Log Added',
       event_desc: `Recorded new health log${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}. Diagnosis: ${diagnosis || 'N/A'}.`,
     });
+
+    if (status) {
+      await syncSwineStatus(status, pig_id, batch_id);
+    }
 
     res.json({ data: data[0] });
   } catch (error) {
@@ -116,6 +150,10 @@ router.patch('/api/health-logs/:id', async (req, res) => {
       event_title: 'Health Log Updated',
       event_desc: `Updated health log ${id.substring(0, 8)}.`,
     });
+
+    if (updates.status) {
+      await syncSwineStatus(updates.status, data[0].pig_id, data[0].batch_id);
+    }
 
     res.json({ data: data[0] });
   } catch (error) {

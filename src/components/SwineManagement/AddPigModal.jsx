@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle, Bookmark, CheckCircle2 } from 'lucide-react';
+import { X, ChevronLeft, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle, Bookmark, CheckCircle2, Syringe, Trash2, Plus } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import useSmoothStepTransition from '../../hooks/useSmoothStepTransition';
 import useFormDraft, { fetchDraftPayload } from '../../hooks/useFormDraft';
 import DraftBanner from '../DraftBanner';
 import toast from '../../utils/toast';
+import { useAutoAnimate } from '@formkit/auto-animate/react';
 import { formatTimestamp } from '../../utils/formatTimestamp';
 import AddPigletBatchModal, { AddPigletBatchForm } from './AddPigletBatchModal';
 import { supabase } from '../../supabaseClient';
@@ -13,6 +14,19 @@ import { supabase } from '../../supabaseClient';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
+
+const COMMON_VACCINES = [
+  'FMD Vaccine',
+  'CSF Vaccine (Hog Cholera)',
+  'PRRS Vaccine',
+  'PCV2 Vaccine (Circovirus)',
+  'Mycoplasma hyopneumoniae',
+  'Parvovirus / Erysipelas / Lepto (PLE)',
+  'E. coli / Clostridium (Scours)',
+  'Swine Influenza (SIV)',
+  'APP Vaccine',
+  'Iron Dextran (Piglets)',
+];
 
 const SOURCE_OPTIONS = [
   { value: 'born_in_farm', label: 'Born in Farm', hint: 'Internal breeding cycle' },
@@ -33,7 +47,7 @@ const EMPTY_FORM = {
   arrivalDate: '',
 };
 
-export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
+export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, loggedInUser }) {
   // useModalAnimation handles mounting/unmounting and exit timings
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
@@ -60,6 +74,12 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [autoRestoreBatch, setAutoRestoreBatch] = useState(false);
   const [batchDraftInfo, setBatchDraftInfo] = useState(null);
+  const [savedPigId, setSavedPigId] = useState(null);
+  const [savedBatchId, setSavedBatchId] = useState(null);
+  const [vaccinations, setVaccinations] = useState([{ vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
+  const [isSavingVaccinations, setIsSavingVaccinations] = useState(false);
+  const [openVaccineIdx, setOpenVaccineIdx] = useState(null);
+  const [animationParent] = useAutoAnimate();
 
   const checkBatchDraft = useCallback(async () => {
     try {
@@ -230,8 +250,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
     setSubmitError(null);
     try {
       const breedToSave = form.breed.trim();
-      
-      await onSave?.({
+      const result = await onSave?.({
         ...form,
         breed: breedToSave,
         weight: Number(form.weight),
@@ -240,13 +259,16 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
         type: gender === 'Female' ? 'Sow' : 'Boar',
       });
       clearDraft();
+      // Store the new pig's ID so we can attach vaccinations, then go to vaccination step
+      setSavedPigId(result?.id || result?.pig_id || result?.data?.id || null);
+      setSavedBatchId(null);
       setSuccessInfo({
         type: gender === 'Female' ? 'Sow' : 'Boar',
         tag: form.tagNumber.trim(),
         message: `${gender === 'Female' ? 'Sow' : 'Boar'} #${form.tagNumber.trim()} added to your swine inventory.`
       });
-      setStep('success');
-      toast.success(`${gender === 'Female' ? 'Sow' : 'Boar'} #${form.tagNumber.trim()} added successfully!`);
+      setVaccinations([{ vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
+      setStep('vaccinations');
     } catch (err) {
       if (isOffline || err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network')) {
         saveDraft(form, { step, gender });
@@ -254,6 +276,40 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
       setSubmitError(err.message || 'Something went wrong while saving. Please try again.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveVaccinations = async () => {
+    // Filter out completely empty rows
+    const filledRows = vaccinations.filter(v => (v.vaccine_name && v.vaccine_name !== 'Other...') || (v.vaccine_name === 'Other...' && v.custom_name.trim()));
+    if (filledRows.length === 0) {
+      setStep('success');
+      return;
+    }
+    setIsSavingVaccinations(true);
+    try {
+      await Promise.all(
+        filledRows.map(v =>
+          fetch(`${API_BASE}/api/vaccination-records`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              // Use batch_id for batch records, pig_id for individual pigs
+              ...(savedBatchId ? { batch_id: savedBatchId } : { pig_id: savedPigId }),
+              vaccine_name: v.vaccine_name === 'Other...' ? v.custom_name.trim() : v.vaccine_name.trim(),
+              administered_date: v.administered_date,
+              dosage: v.dosage.trim() || undefined,
+              administered_by: loggedInUser?.name || loggedInUser || 'Admin',
+            }),
+          }).then(r => { if (!r.ok) throw new Error('Failed to save a vaccination record'); })
+        )
+      );
+      setStep('success');
+    } catch (err) {
+      // Non-blocking — vaccinations are optional, proceed to success and show a soft warning
+      setStep('success');
+    } finally {
+      setIsSavingVaccinations(false);
     }
   };
 
@@ -303,7 +359,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
             } ${panelClassName}`}
           >
             {/* Header */}
-            {step !== 'batch' && step !== 'success' && (
+            {step !== 'batch' && step !== 'success' && step !== 'vaccinations' && (
               <div className="px-8 pt-8 pb-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   {step === 'form' ? (
@@ -328,7 +384,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
               </div>
             )}
 
-            {step !== 'batch' && step !== 'success' && (
+            {step !== 'batch' && step !== 'success' && step !== 'vaccinations' && (
               <div className="px-8 pt-2 space-y-2">
               <DraftBanner
                 hasDraft={hasDraft && (step === 'select' || (step === 'form' && (!draftInfo?.extraMeta?.gender || draftInfo.extraMeta.gender === gender)))}
@@ -505,10 +561,126 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                     </button>
                     <button type="submit" disabled={isSaving || isLoadingData} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50">
                       {isSaving && <Loader2 size={16} className="animate-spin" />}
-                      Save Swine
+                      Next: Add Vaccinations
                     </button>
                   </div>
                 </form>
+              )}
+
+              {step === 'vaccinations' && (
+                <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                  {/* Vaccination Step Header */}
+                  <div className="px-8 pt-8 pb-4 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                        <Syringe size={20} />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-900">Log Vaccinations</h3>
+                        <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Optional — you can skip this</p>
+                      </div>
+                    </div>
+                    <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors">
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  {/* Info banner */}
+                  <div className="mx-8 mb-4 p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl flex items-start gap-2 shrink-0">
+                    <Syringe size={14} className="shrink-0 mt-0.5" />
+                    <span>{successInfo?.type} <strong>#{successInfo?.tag}</strong> has been saved. Add any vaccinations this animal has received, or skip to finish.</span>
+                  </div>
+
+                  {/* Vaccine rows */}
+                  <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-4 space-y-3" ref={animationParent}>
+                    {vaccinations.map((vac, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_1fr_auto_auto] gap-3 items-start">
+                        <div className="space-y-1.5 flex flex-col justify-end h-full">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                            {idx === 0 ? 'Vaccine Name *' : 'Vaccine Name *'}
+                          </label>
+                          <select
+                            value={vac.vaccine_name}
+                            onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, vaccine_name: e.target.value } : v))}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 transition-all appearance-none"
+                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1em' }}
+                          >
+                            <option value="" disabled>Select Vaccine...</option>
+                            {COMMON_VACCINES.map(b => <option key={b} value={b}>{b}</option>)}
+                            <option value="Other...">Other (Specify)</option>
+                          </select>
+                          {vac.vaccine_name === 'Other...' && (
+                            <input
+                              type="text"
+                              value={vac.custom_name}
+                              onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, custom_name: e.target.value } : v))}
+                              placeholder="Type custom vaccine..."
+                              className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 mt-1.5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400 transition-all animate-in fade-in slide-in-from-top-1"
+                            />
+                          )}
+                        </div>
+                        <div className="space-y-1.5 flex flex-col justify-end h-full">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Date Given *</label>
+                          <input
+                            type="date"
+                            value={vac.administered_date}
+                            max={new Date().toISOString().split('T')[0]}
+                            onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, administered_date: e.target.value } : v))}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 transition-all"
+                          />
+                        </div>
+                        <div className="space-y-1.5 flex flex-col justify-end h-full">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dosage</label>
+                          <input
+                            type="text"
+                            value={vac.dosage}
+                            onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, dosage: e.target.value } : v))}
+                            placeholder="e.g. 2ml"
+                            className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400 transition-all"
+                          />
+                        </div>
+                        <div className="flex flex-col justify-end h-full pb-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setVaccinations(prev => prev.filter((_, i) => i !== idx))}
+                            disabled={vaccinations.length === 1}
+                            className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Remove row"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setVaccinations(prev => [...prev, { vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }])}
+                      className="flex items-center gap-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700 mt-1 transition-colors"
+                    >
+                      <Plus size={14} /> Add Another Vaccine
+                    </button>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setStep('success')}
+                      className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                    >
+                      Skip &amp; Finish
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveVaccinations}
+                      disabled={isSavingVaccinations || !vaccinations.some(v => v.vaccine_name.trim())}
+                      className="flex-2 flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingVaccinations && <Loader2 size={16} className="animate-spin" />}
+                      Save &amp; Finish
+                    </button>
+                  </div>
+                </div>
               )}
 
               {step === 'batch' && (
@@ -522,10 +694,14 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch }) {
                   }}
                   onClose={resetAndClose}
                   onSave={onSaveBatch}
-                  onSuccess={(info) => {
+                  onSuccess={(info, batchResult) => {
                     setAutoRestoreBatch(false);
                     setSuccessInfo(info);
-                    setStep('success');
+                    // Capture batch ID and clear pig ID so vaccination uses batch_id
+                    setSavedBatchId(batchResult?.batch_id || batchResult?.id || null);
+                    setSavedPigId(null);
+                    setVaccinations([{ vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
+                    setStep('vaccinations');
                   }}
                   pens={pens}
                   breeds={breeds}

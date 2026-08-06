@@ -313,11 +313,6 @@ export default function HealthManagement({ setActiveTab }) {
                   }`}
                 >
                   Active
-                  {!showArchived && (
-                    <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
-                      {vaccinationRegistry.length}
-                    </span>
-                  )}
                 </button>
                 <button
                   type="button"
@@ -329,11 +324,6 @@ export default function HealthManagement({ setActiveTab }) {
                   }`}
                 >
                   Archived
-                  {showArchived && (
-                    <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
-                      {archivedRegistry.length}
-                    </span>
-                  )}
                 </button>
               </div>
             </div>

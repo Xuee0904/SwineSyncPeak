@@ -4,10 +4,12 @@ import {
   X, PackagePlus, Loader2, Tag, Calendar, Home, Heart,
   AlertCircle, Baby, Weight, Activity, PlusCircle, Hash,
   Shuffle, BarChart2, Bookmark, ChevronLeft, CheckCircle2, Users,
+  Syringe, Trash2, Plus,
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import useSmoothStepTransition from '../../hooks/useSmoothStepTransition';
-import useFormDraft from '../../hooks/useFormDraft';
+import useFormDraft, { fetchDraftPayload } from '../../hooks/useFormDraft';
+import { useAutoAnimate } from '@formkit/auto-animate/react';
 import DraftBanner from '../DraftBanner';
 import toast from '../../utils/toast';
 
@@ -20,6 +22,19 @@ const SOURCE_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = ['suckling', 'weaned', 'healthy', 'sick', 'quarantine'];
+
+const COMMON_VACCINES = [
+  'FMD Vaccine',
+  'CSF Vaccine (Hog Cholera)',
+  'PRRS Vaccine',
+  'PCV2 Vaccine (Circovirus)',
+  'Mycoplasma hyopneumoniae',
+  'Parvovirus / Erysipelas / Lepto (PLE)',
+  'E. coli / Clostridium (Scours)',
+  'Swine Influenza (SIV)',
+  'APP Vaccine',
+  'Iron Dextran (Piglets)',
+];
 
 const EMPTY_FORM = {
   batchTag:       '',
@@ -339,7 +354,7 @@ export function AddPigletBatchForm({
     setIsSaving(true);
     setSubmitError(null);
     try {
-      await onSave?.({
+      const result = await onSave?.({
         batchTag:       form.batchTag.trim(),
         sowId:          form.sowId      || null,
         penId:          form.penId      || null,
@@ -363,7 +378,7 @@ export function AddPigletBatchForm({
           type: 'Piglet Batch',
           tag: form.batchTag.trim(),
           message: `Piglet Batch #${form.batchTag.trim()} created with ${Number(form.totalBornAlive) || 0} born alive.`
-        });
+        }, result); // pass result so outer modal can capture batch_id
       } else {
         resetAndClose();
       }
@@ -661,7 +676,7 @@ export function AddPigletBatchForm({
             className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50"
           >
             {isSaving && <Loader2 size={14} className="animate-spin" />}
-            Save Batch
+            Next: Add Vaccinations
           </button>
         </div>
       </div>
@@ -674,14 +689,46 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
 
   const [step, setStep] = useState('form');
   const [successInfo, setSuccessInfo] = useState(null);
+  const [savedBatchId, setSavedBatchId] = useState(null);
+  const [vaccinations, setVaccinations] = useState([{ vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
+  const [isSavingVaccinations, setIsSavingVaccinations] = useState(false);
+  const [animationParent] = useAutoAnimate();
   const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(step);
 
   useEffect(() => {
     if (!isOpen) {
       setStep('form');
       setSuccessInfo(null);
+      setSavedBatchId(null);
+      setVaccinations([{ vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
     }
   }, [isOpen]);
+
+  const handleSaveVaccinations = async () => {
+    const filledRows = vaccinations.filter(v => (v.vaccine_name && v.vaccine_name !== 'Other...') || (v.vaccine_name === 'Other...' && v.custom_name.trim()));
+    if (filledRows.length === 0) { setStep('success'); return; }
+    setIsSavingVaccinations(true);
+    try {
+      await Promise.all(
+        filledRows.map(v =>
+          fetch(`${API_BASE}/api/vaccination-records`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              batch_id: savedBatchId,
+              vaccine_name: v.vaccine_name === 'Other...' ? v.custom_name.trim() : v.vaccine_name.trim(),
+              administered_date: v.administered_date,
+              dosage: v.dosage.trim() || undefined,
+              administered_by: 'Admin',
+            }),
+          }).then(r => { if (!r.ok) throw new Error('Failed to save a vaccination record'); })
+        )
+      );
+    } catch (_) { /* non-blocking */ } finally {
+      setIsSavingVaccinations(false);
+      setStep('success');
+    }
+  };
 
   if (!shouldRender) return null;
 
@@ -697,7 +744,9 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
       <div
         ref={containerRef}
         style={stepTransitionStyle}
-        className={`flex max-h-[86vh] w-full ${step === 'success' ? 'max-w-md' : 'max-w-4xl'} flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden transition-[max-width] duration-300 ease-in-out ${panelClassName}`}
+        className={`flex max-h-[86vh] w-full ${
+          step === 'success' ? 'max-w-md' : step === 'vaccinations' ? 'max-w-2xl' : 'max-w-4xl'
+        } flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden transition-[max-width] duration-300 ease-in-out ${panelClassName}`}
       >
         {step === 'success' ? (
           <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">
@@ -736,14 +785,129 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
               </button>
             </div>
           </div>
+        ) : step === 'vaccinations' ? (
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            {/* Vaccination Step Header */}
+            <div className="px-8 pt-8 pb-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                  <Syringe size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Log Vaccinations</h3>
+                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Optional — you can skip this</p>
+                </div>
+              </div>
+              <button type="button" onClick={handleModalClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Info banner */}
+            <div className="mx-8 mb-4 p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl flex items-start gap-2 shrink-0">
+              <Syringe size={14} className="shrink-0 mt-0.5" />
+              <span>Batch <strong>#{successInfo?.tag}</strong> has been saved. Add any vaccinations this batch has received, or skip to finish.</span>
+            </div>
+
+            {/* Vaccine rows */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-4 space-y-3" ref={animationParent}>
+              {vaccinations.map((vac, idx) => (
+                <div key={idx} className="grid grid-cols-[1fr_1fr_auto_auto] gap-3 items-start">
+                  <div className="space-y-1.5 flex flex-col justify-end h-full">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Vaccine Name *</label>
+                    <select
+                      value={vac.vaccine_name}
+                      onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, vaccine_name: e.target.value } : v))}
+                      className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 transition-all appearance-none"
+                      style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1em' }}
+                    >
+                      <option value="" disabled>Select Vaccine...</option>
+                      {COMMON_VACCINES.map(b => <option key={b} value={b}>{b}</option>)}
+                      <option value="Other...">Other (Specify)</option>
+                    </select>
+                    {vac.vaccine_name === 'Other...' && (
+                      <input
+                        type="text"
+                        value={vac.custom_name}
+                        onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, custom_name: e.target.value } : v))}
+                        placeholder="Type custom vaccine..."
+                        className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 mt-1.5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400 transition-all animate-in fade-in slide-in-from-top-1"
+                      />
+                    )}
+                  </div>
+                  <div className="space-y-1.5 flex flex-col justify-end h-full">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Date Given *</label>
+                    <input
+                      type="date"
+                      value={vac.administered_date}
+                      max={new Date().toISOString().split('T')[0]}
+                      onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, administered_date: e.target.value } : v))}
+                      className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5 flex flex-col justify-end h-full">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dosage</label>
+                    <input
+                      type="text"
+                      value={vac.dosage}
+                      onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, dosage: e.target.value } : v))}
+                      placeholder="e.g. 2ml"
+                      className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400 transition-all"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-end h-full pb-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setVaccinations(prev => prev.filter((_, i) => i !== idx))}
+                      disabled={vaccinations.length === 1}
+                      className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Remove row"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setVaccinations(prev => [...prev, { vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }])}
+                className="flex items-center gap-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700 mt-1 transition-colors"
+              >
+                <Plus size={14} /> Add Another Vaccine
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setStep('success')}
+                className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                Skip & Finish
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveVaccinations}
+                disabled={isSavingVaccinations || !vaccinations.some(v => v.vaccine_name.trim())}
+                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isSavingVaccinations && <Loader2 size={16} className="animate-spin" />}
+                Save & Finish
+              </button>
+            </div>
+          </div>
         ) : (
           <AddPigletBatchForm
             isOpen={isOpen}
             onClose={handleModalClose}
             onSave={onSave}
-            onSuccess={(info) => {
+            onSuccess={(info, batchResult) => {
               setSuccessInfo(info);
-              setStep('success');
+              setSavedBatchId(batchResult?.id || batchResult?.batch_id || null);
+              setVaccinations([{ vaccine_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
+              setStep('vaccinations');
             }}
             pens={pens}
             breeds={breeds}

@@ -369,11 +369,6 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                   }`}
                 >
                   Active
-                  {!showArchived && (
-                    <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">
-                      {treatmentLog.length}
-                    </span>
-                  )}
                 </button>
                 <button
                   type="button"
@@ -383,11 +378,6 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
                   }`}
                 >
                   Archived
-                  {showArchived && (
-                    <span className="ml-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">
-                      {archivedLog.length}
-                    </span>
-                  )}
                 </button>
               </div>
             </div>
