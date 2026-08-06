@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { AlertTriangle, Zap, Target } from "lucide-react";
+import { AlertTriangle, TrendingUp, Target, Activity, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "../utils/toast";
 
 const FONT_DISPLAY = "font-['Space_Grotesk',_sans-serif]";
@@ -74,6 +74,18 @@ function GrowthCurveChart({ batch }) {
           );
         })}
 
+        {/* X-axis (Age/Days) */}
+        {[0, 30, 60, 90, 120, 150].map((days) => {
+          if (days > maxDays) return null;
+          const x = getX(days);
+          return (
+            <g key={`x-${days}`}>
+              <line x1={x} x2={x} y1={PAD.top} y2={PAD.top + plotH} stroke="#e2e6df" strokeWidth="1" strokeDasharray="4 4" />
+              <text x={x} y={PAD.top + plotH + 18} textAnchor="middle" fontSize="10.5" fill="#5c6b62">{days}d</text>
+            </g>
+          );
+        })}
+
         {/* Target Point */}
         <circle cx={targetX} cy={targetY} r="6" fill="#d4d9d1" />
         <text x={targetX} y={targetY - 12} textAnchor="middle" fontSize="11" fontWeight="600" fill="#5c6b62">Target ({batch.targetWeight}kg)</text>
@@ -138,6 +150,18 @@ function InventoryDistributionChart({ programs }) {
           );
         })}
 
+        {/* X-axis (Age/Days) */}
+        {[0, 30, 60, 90, 120, 150].map((days) => {
+          if (days > maxDays) return null;
+          const x = getX(days);
+          return (
+            <g key={`x-${days}`}>
+              <line x1={x} x2={x} y1={PAD.top} y2={PAD.top + plotH} stroke="#e2e6df" strokeWidth="1" strokeDasharray="4 4" />
+              <text x={x} y={PAD.top + plotH + 18} textAnchor="middle" fontSize="10.5" fill="#5c6b62">{days}d</text>
+            </g>
+          );
+        })}
+
         {/* Shaded Area for Standard Curve */}
         <path
           d={`${standardPath} L ${getX(150)} ${getY(0)} L ${getX(0)} ${getY(0)} Z`}
@@ -148,20 +172,35 @@ function InventoryDistributionChart({ programs }) {
         <text x={getX(150)} y={getY(105) - 10} textAnchor="middle" fontSize="10" fill="#22c55e" fontWeight="600">Standard 105kg Target</text>
 
         {/* Batch Points */}
-        {programs.map(batch => {
-          const cx = getX(batch.ageInDays);
-          const cy = getY(batch.estimatedCurrentWeight);
+        {programs.map((batch, idx) => {
+          // Detect identical or near-identical coordinates to apply a small visual jitter
+          const overlapping = programs.filter((p, i) => i < idx && Math.abs(p.ageInDays - batch.ageInDays) < 3 && Math.abs(p.estimatedCurrentWeight - batch.estimatedCurrentWeight) < 5).length;
+
+          // Apply a small diagonal jitter (4px per overlapping item) so clustered dots remain visible
+          const cx = getX(batch.ageInDays) + (overlapping * 4);
+          const cy = getY(batch.estimatedCurrentWeight) - (overlapping * 4);
+          const textYOffset = -12;
+
+          const isAlert = batch.status === 'alert';
+          const dotColor = isAlert ? '#6366f1' : '#1c6b4c'; // Indigo vs Emerald
+          const textColor = isAlert ? '#312e81' : '#064e3b';
+
           return (
-            <g key={batch.id} className="cursor-pointer transition-transform hover:scale-110 origin-center" style={{ transformOrigin: `${cx}px ${cy}px` }}>
+            <g key={batch.id} className="cursor-pointer group transition-transform hover:scale-110 origin-center" style={{ transformOrigin: `${cx}px ${cy}px` }}>
               <circle
                 cx={cx}
                 cy={cy}
                 r="7"
-                fill={batch.status === 'alert' ? '#f97316' : '#1c6b4c'}
+                fill={dotColor}
                 stroke="#fff"
                 strokeWidth="2"
+                className={isAlert ? 'animate-pulse' : ''}
               />
-              <text x={cx} y={cy - 12} textAnchor="middle" fontSize="10" fontWeight="700" fill={batch.status === 'alert' ? '#9a3412' : '#064e3b'}>
+              {/* White background stroke for readability - hidden by default unless it's an alert */}
+              <text x={cx} y={cy + textYOffset} className={`${isAlert ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity pointer-events-none`} textAnchor="middle" fontSize="10" fontWeight="700" fill="white" stroke="white" strokeWidth="3" strokeLinejoin="round">
+                {batch.batchTag}
+              </text>
+              <text x={cx} y={cy + textYOffset} className={`${isAlert ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity pointer-events-none`} textAnchor="middle" fontSize="10" fontWeight="700" fill={textColor}>
                 {batch.batchTag}
               </text>
             </g>
@@ -229,20 +268,29 @@ function SegmentedToggle({ value, onChange }) {
 /* Overview: cross-batch comparison                                        */
 /* ---------------------------------------------------------------------- */
 function OverviewView({ programs, view, setView }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
+
   const onTrackCount = programs.filter((p) => p.status === "on-track").length;
   const alertCount = programs.length - onTrackCount;
 
   const totalCumulativeFeed = programs.reduce((sum, p) => sum + (p.cumulativeFeed || 0), 0);
   const marketReadyBatches = programs.filter(p => p.estimatedCurrentWeight >= p.targetWeight).length;
-  
+
   const avgMortalityRate = programs.length > 0
     ? programs.reduce((sum, p) => sum + (p.mortalityRate || 0), 0) / programs.length
     : 0;
 
-  // Aggregate all DSS alerts
-  const dssAlerts = programs.flatMap(p =>
+  // Aggregate all Insights
+  const insights = programs.flatMap(p =>
     (p.alerts || []).map(a => ({ batchTag: p.batchTag, text: a }))
   );
+
+  // Pagination Logic
+  const totalPages = Math.ceil(programs.length / ITEMS_PER_PAGE);
+  const indexOfLastItem = currentPage * ITEMS_PER_PAGE;
+  const indexOfFirstItem = indexOfLastItem - ITEMS_PER_PAGE;
+  const currentPrograms = programs.slice(indexOfFirstItem, indexOfLastItem);
 
   return (
     <div className="flex flex-col gap-5 tab-enter">
@@ -272,19 +320,19 @@ function OverviewView({ programs, view, setView }) {
         <SegmentedToggle value={view} onChange={setView} />
       </div>
 
-      {/* DSS Action Center */}
-      {dssAlerts.length > 0 && (
-        <div className="bg-orange-50/80 border border-orange-200/60 rounded-2xl p-5 shadow-sm">
-          <h3 className={`${FONT_DISPLAY} text-[15px] font-bold text-orange-900 flex items-center gap-2 mb-3`}>
-            <Zap className="w-4 h-4 text-orange-500 fill-orange-500" />
-            Decision Support System (DSS) Alerts
+      {/* Performance Insights Center */}
+      {insights.length > 0 && (
+        <div className="bg-indigo-50/80 border border-indigo-200/60 rounded-2xl p-5 shadow-sm">
+          <h3 className={`${FONT_DISPLAY} text-[15px] font-bold text-indigo-900 flex items-center gap-2 mb-3`}>
+            <TrendingUp className="w-4 h-4 text-indigo-500" />
+            Growth Performance Insights
           </h3>
           <div className="flex flex-col gap-2.5">
-            {dssAlerts.map((alert, idx) => (
-              <div key={idx} className="flex items-start gap-3 bg-white/60 border border-orange-200/50 rounded-xl p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                <AlertTriangle className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
+            {insights.map((alert, idx) => (
+              <div key={idx} className="flex items-start gap-3 bg-white/60 border border-indigo-200/50 rounded-xl p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                <Activity className="w-4 h-4 text-indigo-500 mt-0.5 shrink-0" />
                 <p className="text-[13.5px] font-semibold text-neutral-800 leading-snug flex flex-col sm:block">
-                  <span className="text-orange-700 mr-2 font-bold uppercase tracking-wide text-[11px] px-2 py-0.5 rounded bg-orange-100/50 self-start sm:inline-block mb-1 sm:mb-0">{alert.batchTag}</span>
+                  <span className="text-indigo-700 mr-2 font-bold uppercase tracking-wide text-[11px] px-2 py-0.5 rounded bg-indigo-100/50 self-start sm:inline-block mb-1 sm:mb-0">{alert.batchTag}</span>
                   {alert.text}
                 </p>
               </div>
@@ -296,20 +344,17 @@ function OverviewView({ programs, view, setView }) {
       {/* Inventory Distribution Chart */}
       <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-sm">
         <div className="flex items-center justify-between mb-1">
-          <h3 className={`${FONT_DISPLAY} text-[15.5px] font-semibold`}>Inventory Distribution Map</h3>
+          <h3 className={`${FONT_DISPLAY} text-[15.5px] font-semibold`}>Growth Trajectory (All Batches)</h3>
         </div>
-        <p className="text-[12.5px] text-neutral-500 mb-3">
-          A bird's-eye view of all active batches mapped along the standard growth timeline.
-        </p>
         <InventoryDistributionChart programs={programs} />
       </div>
 
-      <div className="bg-white border border-neutral-200 rounded-2xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white border border-neutral-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+        <div className="overflow-x-auto w-full relative">
           <table className="w-full text-left border-collapse min-w-[560px]">
-            <thead>
-              <tr className="border-b border-neutral-200">
-                {["Batch ID", "Program", "Age", "Estimated Weight", "Target Weight", "Est. Feed Consumed", "Status"].map((h) => (
+            <thead className="bg-neutral-50 border-b border-neutral-200">
+              <tr>
+                {["Batch ID", "Program", "Age", "Estimated Weight", "Target Weight", "Est. Feed Consumed"].map((h) => (
                   <th
                     key={h}
                     className="text-[10.5px] font-semibold uppercase tracking-wide text-neutral-500 px-5 py-3 whitespace-nowrap"
@@ -317,10 +362,13 @@ function OverviewView({ programs, view, setView }) {
                     {h}
                   </th>
                 ))}
+                <th className="text-[10.5px] font-semibold uppercase tracking-wide text-neutral-500 pl-5 pr-10 py-3 whitespace-nowrap">
+                  Status
+                </th>
               </tr>
             </thead>
             <tbody>
-              {programs.map((program) => (
+              {currentPrograms.map((program) => (
                 <tr key={program.id} className="border-b border-neutral-100 last:border-0 hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-3.5 text-sm font-bold text-neutral-800 whitespace-nowrap">
                     {program.batchTag}
@@ -340,7 +388,7 @@ function OverviewView({ programs, view, setView }) {
                   <td className="px-5 py-3.5 text-sm text-neutral-800 font-semibold whitespace-nowrap">
                     {program.cumulativeFeed} kg
                   </td>
-                  <td className="px-5 py-3.5 whitespace-nowrap">
+                  <td className="pl-5 pr-10 py-3.5 whitespace-nowrap">
                     <StatusPill status={program.status}>{program.statusLabel}</StatusPill>
                   </td>
                 </tr>
@@ -348,6 +396,34 @@ function OverviewView({ programs, view, setView }) {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Footer */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-neutral-200 bg-neutral-50/50">
+            <span className="text-[12px] font-medium text-neutral-500">
+              Showing <span className="font-bold text-neutral-700">{indexOfFirstItem + 1}</span> to <span className="font-bold text-neutral-700">{Math.min(indexOfLastItem, programs.length)}</span> of <span className="font-bold text-neutral-700">{programs.length}</span> batches
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="p-1 rounded-md text-neutral-500 hover:bg-neutral-200 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-[12px] font-semibold text-neutral-700 mx-1">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="p-1 rounded-md text-neutral-500 hover:bg-neutral-200 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -392,10 +468,10 @@ function DetailView({ programs, selectedId, onSelect, view, setView }) {
       </div>
 
       {program.alerts && program.alerts.length > 0 && (
-        <div className="bg-orange-50/80 border border-orange-200/60 rounded-xl p-4 flex items-start gap-3 shadow-sm">
-          <Zap className="w-5 h-5 text-orange-500 fill-orange-500 shrink-0 mt-0.5" />
-          <p className="text-[14px] font-semibold text-orange-900 leading-snug">
-            <span className="font-bold uppercase tracking-wider text-[11px] mr-2 opacity-80">DSS Recommendation</span>
+        <div className="bg-indigo-50/80 border border-indigo-200/60 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+          <TrendingUp className="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" />
+          <p className="text-[14px] font-semibold text-indigo-900 leading-snug">
+            <span className="font-bold uppercase tracking-wider text-[11px] mr-2 opacity-80">Insight</span>
             <br className="sm:hidden" />
             {program.alerts[0]}
           </p>
@@ -404,11 +480,8 @@ function DetailView({ programs, selectedId, onSelect, view, setView }) {
 
       <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-sm">
         <div className="flex items-center justify-between mb-1">
-          <h3 className={`${FONT_DISPLAY} text-[15.5px] font-semibold`}>Estimated Growth Trajectory (Digital Twin)</h3>
+          <h3 className={`${FONT_DISPLAY} text-[15.5px] font-semibold`}>Growth Trajectory (Specific Batch)</h3>
         </div>
-        <p className="text-[12.5px] text-neutral-500 mb-3">
-          Predictive model showing estimated current weight against the target market date.
-        </p>
         <GrowthCurveChart batch={program} />
       </div>
     </div>

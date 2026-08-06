@@ -131,10 +131,10 @@ router.get('/api/growth/analytics', async (req, res) => {
       let status = 'on-track';
       
       if (estimatedCurrentWeight >= targetWeight) {
-        alerts.push(`Market Ready: Estimated weight (${estimatedCurrentWeight.toFixed(1)}kg) has reached the target of ${targetWeight}kg. Schedule sale.`);
+        alerts.push(`Target Reached: Batch has achieved its target weight of ${targetWeight}kg (Estimated: ${estimatedCurrentWeight.toFixed(1)}kg).`);
         status = 'alert';
       } else if (ageInDays > 160 && estimatedCurrentWeight < targetWeight) {
-        alerts.push(`Slow Growth: Batch is ${ageInDays} days old but under target weight. Review feed quality or health.`);
+        alerts.push(`Below Curve: Batch is ${ageInDays} days old and is tracking below its target growth curve.`);
         status = 'alert';
       }
 
@@ -142,7 +142,7 @@ router.get('/api/growth/analytics', async (req, res) => {
       const mortalityRate = Math.max(0, ((totalBorn - batch.current_count) / totalBorn) * 100);
 
       if (mortalityRate > 5) {
-        alerts.push(`High Mortality: Batch has ${mortalityRate.toFixed(1)}% mortality rate.`);
+        alerts.push(`Elevated Mortality: Batch is showing an above-average mortality rate of ${mortalityRate.toFixed(1)}%.`);
         status = 'alert';
       }
 
