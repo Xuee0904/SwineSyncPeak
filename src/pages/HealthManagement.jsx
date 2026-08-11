@@ -15,9 +15,11 @@ import {
   Pencil,
   Archive,
   X,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "../utils/toast";
 import VaccinationFormModal from "../components/HealthManagement/VaccinationFormModal";
+import AddHealthLogModal from "../components/HealthManagement/AddHealthLogModal";
 
 // ---------------------------------------------------------------------------
 // Data fetched from backend API
@@ -144,10 +146,15 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [vacModal, setVacModal] = useState(false);
   const [editVacRecord, setEditVacRecord] = useState(null);
+  const [prefillVac, setPrefillVac] = useState(null);
+  const [healthModal, setHealthModal] = useState(false);
+  const [prefillHealth, setPrefillHealth] = useState(null);
+  const [activeGrowthTask, setActiveGrowthTask] = useState(null);
 
   const [vaccinationRegistry, setVaccinationRegistry] = useState([]);
   const [archivedRegistry, setArchivedRegistry] = useState([]);
   const [healthEventsLog, setHealthEventsLog] = useState([]);
+  const [growthTasks, setGrowthTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
   const [archivingId, setArchivingId] = useState(null);
@@ -155,14 +162,16 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
   const fetchData = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [vacRes, vacArchivedRes, healthRes] = await Promise.all([
+      const [vacRes, vacArchivedRes, healthRes, tasksRes] = await Promise.all([
         fetch("/api/vaccination-records?t=" + Date.now()),
         fetch("/api/vaccination-records?archived=true&t=" + Date.now()),
-        fetch("/api/health-logs?t=" + Date.now())
+        fetch("/api/health-logs?t=" + Date.now()),
+        fetch("/api/growth-tasks?status=pending&t=" + Date.now())
       ]);
       const vacData = await vacRes.json();
       const vacArchivedData = await vacArchivedRes.json();
       const healthData = await healthRes.json();
+      const tasksData = await tasksRes.json();
 
       const mapVacRow = (v) => {
         const isOverdue = v.booster_due_date && new Date(v.booster_due_date) < new Date();
@@ -192,6 +201,8 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         vet: h.recorded_by || "System",
         status: h.status
       })));
+
+      setGrowthTasks(tasksData.data || []);
     } catch (err) {
       console.error(err);
       toast.error("Failed to load health data");
@@ -295,6 +306,74 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
             onClick={() => setActiveTab?.('mortality_record')}
           />
         </div>
+
+        {/* Growth Program Tasks (To-Do List) */}
+        {growthTasks.length > 0 && (
+          <div className="mt-8 rounded-2xl border border-emerald-100 bg-white shadow-sm overflow-hidden">
+            <div className="bg-emerald-50/50 p-4 border-b border-emerald-100 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-emerald-800">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <h3 className="font-semibold">Growth Program Tasks</h3>
+                <span className="bg-emerald-200 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full ml-2">
+                  {growthTasks.length} PENDING
+                </span>
+              </div>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {growthTasks.map(task => {
+                const isOverdue = new Date(task.due_date) < new Date();
+                const dueText = isOverdue ? 'Overdue' : 'Due ' + new Date(task.due_date).toLocaleDateString();
+                
+                return (
+                  <div key={task.task_id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 w-2 h-2 rounded-full ${isOverdue ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{task.task_name}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {task.activity_type} &middot; Batch: <span className="font-medium text-slate-700">{task.piglet_batches?.batch_tag}</span> &middot; Program: {task.growth_programs?.name}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className={`text-xs font-semibold ${isOverdue ? 'text-rose-600' : 'text-slate-500'}`}>
+                        {dueText}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setActiveGrowthTask(task);
+                          if (task.activity_type === 'VACCINATION') {
+                            setPrefillVac({
+                              targetType: 'batch',
+                              batch_id: task.batch_id,
+                              vaccine_name: task.task_name,
+                              administered_date: new Date().toISOString().split('T')[0]
+                            });
+                            setVacModal(true);
+                          } else {
+                            setPrefillHealth({
+                              targetType: 'batch',
+                              batch_id: task.batch_id,
+                              treatment: task.task_name,
+                              isProcedure: task.activity_type === 'PROCEDURE',
+                              medication_name: task.activity_type === 'MEDICATION' ? task.task_name : '',
+                              status: task.activity_type === 'PROCEDURE' ? 'healthy' : 'sick',
+                              log_date: new Date().toISOString().split('T')[0] + 'T09:00'
+                            });
+                            setHealthModal(true);
+                          }
+                        }}
+                        className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                      >
+                        Log It
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Vaccination Registry */}
         <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -601,12 +680,49 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         </div>
       </div>
 
+      {/* Modals */}
       <VaccinationFormModal
         open={vacModal}
-        onClose={() => { setVacModal(false); setEditVacRecord(null); }}
+        onClose={() => {
+          setVacModal(false);
+          setEditVacRecord(null);
+          setPrefillVac(null);
+          setActiveGrowthTask(null);
+        }}
         editRecord={editVacRecord}
+        prefillData={prefillVac}
         currentUser={loggedInUser}
-        onSuccess={fetchData}
+        onSuccess={async (createdLog) => {
+          if (activeGrowthTask) {
+            await fetch(`/api/growth-tasks/${activeGrowthTask.task_id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'completed', linked_vaccination_id: createdLog?.vaccination_id })
+            });
+          }
+          fetchData();
+        }}
+      />
+
+      <AddHealthLogModal
+        open={healthModal}
+        onClose={() => {
+          setHealthModal(false);
+          setPrefillHealth(null);
+          setActiveGrowthTask(null);
+        }}
+        prefillData={prefillHealth}
+        currentUser={loggedInUser}
+        onSuccess={async (createdLog) => {
+          if (activeGrowthTask) {
+            await fetch(`/api/growth-tasks/${activeGrowthTask.task_id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'completed', linked_health_id: createdLog?.health_id })
+            });
+          }
+          fetchData();
+        }}
       />
     </div>
   );

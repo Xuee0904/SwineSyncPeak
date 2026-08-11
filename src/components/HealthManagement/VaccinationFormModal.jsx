@@ -73,7 +73,7 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
     const fetchOptions = async () => {
       setLoadingDropdowns(true);
       try {
-        const res = await fetch(`${API_BASE}/api/pigs?archived=false`);
+        const res = await fetch(`${API_BASE}/api/pigs?archived=false&limit=1000`);
         const json = await res.json();
         const all = json.data || [];
         setPigs(all.filter((x) => x.category !== "Piglet Batch"));
@@ -109,12 +109,15 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
         recorded_by: editRecord._raw.recorded_by || userName,
       });
     } else if (prefillData) {
+      const isCustomVac = prefillData.vaccine_name && !VACCINE_OPTIONS.some(v => v.name === prefillData.vaccine_name);
       setForm({
         ...EMPTY_FORM,
-        targetType: prefillData.targetType,
-        pig_id: prefillData.targetType === "pig" ? prefillData.id : "",
-        batch_id: prefillData.targetType === "batch" ? prefillData.id : "",
-        administered_date: new Date().toISOString().slice(0, 10),
+        targetType: prefillData.targetType || "batch",
+        pig_id: prefillData.targetType === "pig" ? (prefillData.pig_id || prefillData.id || "") : "",
+        batch_id: prefillData.targetType === "batch" ? (prefillData.batch_id || prefillData.id || "") : "",
+        administered_date: prefillData.administered_date || new Date().toISOString().slice(0, 10),
+        vaccine_name: isCustomVac ? "Other" : (prefillData.vaccine_name || ""),
+        vaccine_name_custom: isCustomVac ? prefillData.vaccine_name : "",
         recorded_by: userName,
       });
     } else {
@@ -326,9 +329,9 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
             </div>
           </div>
         ) : (
-          <div className="flex max-h-[calc(100vh-16rem)] flex-col overflow-y-auto px-6 py-4">
+          <div className="px-6 py-5 grid grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
             {apiError && (
-              <div className="mb-4 p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+              <div className="col-span-2 mb-4 p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
                 <AlertCircle size={14} className="text-rose-500 shrink-0" />
                 <span>{apiError}</span>
               </div>
@@ -362,7 +365,7 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                 {form.targetType === "pig" ? "Pig" : "Piglet Batch"} *
               </label>
               <div className="relative">
-                {loadingDropdowns && !prefillData ? (
+                {loadingDropdowns ? (
                   <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400">
                     <Loader2 className="h-4 w-4 animate-spin" /> Loading...
                   </div>
@@ -376,8 +379,7 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                       className={`${selectCls} ${prefillData ? "bg-slate-50 text-slate-500 cursor-not-allowed" : ""} ${fieldErrors.pig_id || fieldErrors.batch_id ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                     >
                       <option value="">— Select {form.targetType === "pig" ? "a pig" : "a batch"} —</option>
-                      {prefillData && <option value={prefillData.id}>{prefillData.tag} — {prefillData.category}</option>}
-                      {!prefillData && currentOptions.map((item) => (
+                      {currentOptions.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.pig_tag || item.batch_tag} — {item.category} ({item.status})
                         </option>

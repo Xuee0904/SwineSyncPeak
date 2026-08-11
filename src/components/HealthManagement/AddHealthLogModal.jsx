@@ -11,6 +11,7 @@ const STATUS_OPTIONS = [
   { value: "sick", label: "Sick" },
   { value: "monitoring", label: "Monitoring" },
   { value: "resolved", label: "Resolved" },
+  { value: "healthy", label: "Healthy / Routine" },
 ];
 
 const MEDICATION_OPTIONS = [
@@ -77,7 +78,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
     const fetchOptions = async () => {
       setLoadingDropdowns(true);
       try {
-        const res = await fetch(`${API_BASE}/api/pigs?archived=false`);
+        const res = await fetch(`${API_BASE}/api/pigs?archived=false&limit=1000`);
         const json = await res.json();
         const all = json.data || [];
         setPigs(all.filter((x) => x.category !== "Piglet Batch"));
@@ -116,10 +117,13 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
     } else if (prefillData) {
       setForm({
         ...EMPTY_FORM,
-        targetType: prefillData.targetType,
-        pig_id: prefillData.targetType === "pig" ? prefillData.id : "",
-        batch_id: prefillData.targetType === "batch" ? prefillData.id : "",
-        log_date: formatDateTime(new Date()),
+        targetType: prefillData.targetType || "batch",
+        pig_id: prefillData.targetType === "pig" ? (prefillData.pig_id || prefillData.id || "") : "",
+        batch_id: prefillData.targetType === "batch" ? (prefillData.batch_id || prefillData.id || "") : "",
+        log_date: prefillData.log_date || formatDateTime(new Date()),
+        treatment: prefillData.treatment || "",
+        medication_name: prefillData.medication_name || "",
+        status: prefillData.status || "sick",
         recorded_by: userName,
       });
     } else {
@@ -131,6 +135,8 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
   }, [editRecord, prefillData, currentUser, open]);
 
   if (!shouldRender) return null;
+
+  const isProcedure = prefillData?.isProcedure;
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -361,7 +367,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                 {form.targetType === "pig" ? "Pig" : "Piglet Batch"} *
               </label>
               <div className="relative">
-                {loadingDropdowns && !prefillData ? (
+                {loadingDropdowns ? (
                   <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400">
                     <Loader2 className="h-4 w-4 animate-spin" /> Loading...
                   </div>
@@ -375,8 +381,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                       className={`${selectCls} ${prefillData ? "bg-slate-50 text-slate-500 cursor-not-allowed" : ""} ${fieldErrors.pig_id || fieldErrors.batch_id ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                     >
                       <option value="">— Select {form.targetType === "pig" ? "a pig" : "a batch"} —</option>
-                      {prefillData && <option value={prefillData.id}>{prefillData.tag} — {prefillData.category}</option>}
-                      {!prefillData && currentOptions.map((item) => (
+                      {currentOptions.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.pig_tag || item.batch_tag} — {item.category} ({item.status})
                         </option>
@@ -394,28 +399,30 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
             </div>
 
             {/* Status */}
-            <div className="col-span-2 sm:col-span-1">
-              <label className={labelCls}>Status *</label>
-              <div className="relative">
-                <select
-                  name="status"
-                  value={form.status}
-                  onChange={handleChange}
-                  className={`${selectCls} ${fieldErrors.status ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
-                >
-                  <option value="">— Select status —</option>
-                  {STATUS_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            {!isProcedure && (
+              <div className="col-span-2 sm:col-span-1">
+                <label className={labelCls}>Status *</label>
+                <div className="relative">
+                  <select
+                    name="status"
+                    value={form.status}
+                    onChange={handleChange}
+                    className={`${selectCls} ${fieldErrors.status ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
+                  >
+                    <option value="">— Select status —</option>
+                    {STATUS_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                </div>
+                {fieldErrors.status && (
+                  <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                    <AlertCircle size={11} /> {fieldErrors.status}
+                  </p>
+                )}
               </div>
-              {fieldErrors.status && (
-                <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
-                  <AlertCircle size={11} /> {fieldErrors.status}
-                </p>
-              )}
-            </div>
+            )}
 
             {/* Date Administered */}
             <div className="col-span-2 sm:col-span-1">
@@ -434,52 +441,57 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
               )}
             </div>
 
-            {/* Symptoms & Diagnosis */}
-            <div className="col-span-2">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 sm:col-span-1">
-                  <label className={labelCls}>Diagnosis</label>
-                  <input
-                    name="diagnosis"
-                    value={form.diagnosis}
-                    onChange={handleChange}
-                    placeholder="e.g. Swine Respiratory Disease"
-                    className={inputCls}
-                  />
+            {!isProcedure && (
+              <>
+                {/* Symptoms & Diagnosis */}
+                <div className="col-span-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className={labelCls}>Diagnosis</label>
+                      <input
+                        name="diagnosis"
+                        value={form.diagnosis}
+                        onChange={handleChange}
+                        placeholder="e.g. Swine Respiratory Disease"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className={labelCls}>Symptoms</label>
+                      <textarea
+                        rows={2}
+                        name="symptoms"
+                        value={form.symptoms}
+                        onChange={handleChange}
+                        placeholder="e.g. Coughing, lethargy, mild fever"
+                        className={`${inputCls} resize-none`}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="col-span-2 sm:col-span-1">
-                  <label className={labelCls}>Symptoms</label>
-                  <textarea
-                    rows={2}
-                    name="symptoms"
-                    value={form.symptoms}
-                    onChange={handleChange}
-                    placeholder="e.g. Coughing, lethargy, mild fever"
-                    className={`${inputCls} resize-none`}
-                  />
-                </div>
-              </div>
-            </div>
 
-            <div className="col-span-2 border-t border-slate-100 my-1" />
+                <div className="col-span-2 border-t border-slate-100 my-1" />
+              </>
+            )}
 
             {/* Treatment & Medication */}
             <div className="col-span-2">
               <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 sm:col-span-1">
-                  <label className={labelCls}>Treatment / Action</label>
+                <div className={`col-span-2 ${isProcedure ? "" : "sm:col-span-1"}`}>
+                  <label className={labelCls}>{isProcedure ? "Procedure / Action" : "Treatment / Action"}</label>
                   <textarea
                     rows={2}
                     name="treatment"
                     value={form.treatment}
                     onChange={handleChange}
-                    placeholder="e.g. Injectable antibiotics & separation"
+                    placeholder={isProcedure ? "e.g. Teeth clipping" : "e.g. Injectable antibiotics & separation"}
                     className={`${inputCls} resize-none`}
                   />
                 </div>
                 
-                <div className="col-span-2 sm:col-span-1">
-                  <label className={labelCls}>Medication Name</label>
+                {!isProcedure && (
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className={labelCls}>Medication Name</label>
                   <div className="relative">
                     <select
                       name="medication_name"
@@ -519,12 +531,14 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                     )}
                   </div>
                 </div>
+                )}
               </div>
             </div>
 
             {/* Dosage & Recorded By */}
-            <div className="col-span-2 sm:col-span-1">
-              <label className={labelCls}>Dosage (if applicable)</label>
+            {!isProcedure && (
+              <div className="col-span-2 sm:col-span-1">
+                <label className={labelCls}>Dosage (if applicable)</label>
               <input
                 name="dosage"
                 value={form.dosage}
@@ -533,8 +547,9 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                 className={inputCls}
               />
             </div>
+            )}
             
-            <div className="col-span-2 sm:col-span-1">
+            <div className={`col-span-2 ${isProcedure ? "" : "sm:col-span-1"}`}>
               <label className={labelCls}>Examined By *</label>
               <input
                 name="examined_by"

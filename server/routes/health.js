@@ -442,4 +442,54 @@ router.patch('/api/mortality-logs/:id/archive', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GROWTH TASKS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/growth-tasks
+router.get('/api/growth-tasks', async (req, res) => {
+  try {
+    const { batch_id, status } = req.query;
+    let dbQuery = supabaseAdmin.from('growth_tasks').select('*, piglet_batches(batch_tag), growth_programs(name)');
+    
+    if (batch_id) dbQuery = dbQuery.eq('batch_id', batch_id);
+    if (status) dbQuery = dbQuery.eq('status', status);
+    
+    dbQuery = dbQuery.order('due_date', { ascending: true });
+    
+    const { data, error } = await dbQuery;
+    if (error) throw error;
+    
+    res.json({ data: data ?? [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/growth-tasks/:id
+router.patch('/api/growth-tasks/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, linked_health_id, linked_vaccination_id } = req.body;
+
+    const { data, error } = await supabaseAdmin
+      .from('growth_tasks')
+      .update({ 
+        status, 
+        linked_health_id: linked_health_id || null, 
+        linked_vaccination_id: linked_vaccination_id || null,
+        completed_at: status === 'completed' ? new Date().toISOString() : null
+      })
+      .eq('task_id', id)
+      .select();
+
+    if (error) throw error;
+    if (!data || data.length === 0) return res.status(404).json({ error: 'Task not found.' });
+
+    res.json({ data: data[0] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

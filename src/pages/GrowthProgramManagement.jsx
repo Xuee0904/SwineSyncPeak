@@ -18,6 +18,34 @@ const ACTIVITY_TYPES = [
   { value: 'PROCEDURE',  label: 'Procedure',  icon: Scissors,     bg: 'bg-indigo-50',  text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-600' },
 ];
 
+const VACCINE_OPTIONS = [
+  "Erysipelas Vaccine",
+  "Circovirus (PCV2)",
+  "Mycoplasma Hyopneumoniae",
+  "Iron Injection & Mycoplasma",
+  "Circovirus Vaccine (Weaning)",
+  "PRRS Vaccine",
+  "Foot & Mouth Disease (FMD)",
+  "Parvovirus Vaccine",
+  "Leptospirosis Vaccine",
+  "TGE / Coronavirus Vaccine",
+  "Streptococcus suis Vaccine",
+  "Salmonella Vaccine",
+  "Iron Dextran Injection",
+  "Vitamin B Complex",
+];
+
+const MEDICATION_OPTIONS = [
+  "Tylosin",
+  "Meloxicam",
+  "Enrofloxacin",
+  "Penicillin",
+  "Flunixin",
+  "Amoxicillin",
+  "Oxytetracycline",
+  "Lincomycin",
+];
+
 function getActivityStyle(type) {
   return ACTIVITY_TYPES.find(a => a.value === type) || ACTIVITY_TYPES[3];
 }
@@ -195,13 +223,45 @@ function ActivityRow({ activity, index, onChange, onDelete, onRequestSort }) {
           {/* Task Name */}
           <div className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Task / Product Name</label>
-            <input
-              type="text"
-              placeholder={isFeed ? 'e.g. Pre-Starter Feed' : 'e.g. Iron Injection'}
-              value={activity.task_name}
-              onChange={e => onChange({ ...activity, task_name: e.target.value })}
-              className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 placeholder:text-slate-300"
-            />
+            {activity.activity_type === 'VACCINATION' ? (
+              <div className="relative">
+                <select
+                  value={activity.task_name}
+                  onChange={e => onChange({ ...activity, task_name: e.target.value })}
+                  className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg pl-2 pr-8 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 appearance-none"
+                >
+                  <option value="" disabled>Select vaccine...</option>
+                  {VACCINE_OPTIONS.map(v => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                  <option value="Other">Other (Custom)</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+              </div>
+            ) : activity.activity_type === 'MEDICATION' ? (
+              <div className="relative">
+                <select
+                  value={activity.task_name}
+                  onChange={e => onChange({ ...activity, task_name: e.target.value })}
+                  className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg pl-2 pr-8 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 appearance-none"
+                >
+                  <option value="" disabled>Select medication...</option>
+                  {MEDICATION_OPTIONS.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                  <option value="Other">Other (Custom)</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+              </div>
+            ) : (
+              <input
+                type="text"
+                placeholder={isFeed ? 'e.g. Pre-Starter Feed' : 'e.g. Iron Injection'}
+                value={activity.task_name}
+                onChange={e => onChange({ ...activity, task_name: e.target.value })}
+                className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 placeholder:text-slate-300"
+              />
+            )}
           </div>
         </div>
 

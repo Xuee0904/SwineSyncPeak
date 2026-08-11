@@ -6,7 +6,7 @@ import {
   AlertCircle, ChevronRight, CheckCircle2,
   PlusCircle, Home, Weight, Baby, Hash, Shuffle, Ruler, ArrowLeft,
   Syringe, ShieldCheck, Stethoscope, Pill, FileText, Clock, User, AlertTriangle, RotateCcw,
-  Heart, XCircle, Baby as BabyIcon
+  Heart, XCircle, Baby as BabyIcon, Target
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import StatusBadge from '../../components/StatusBadge';
@@ -53,6 +53,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
   const [healthLogs, setHealthLogs] = useState([]);
   const [vaccinations, setVaccinations] = useState([]);
   const [breedingHistory, setBreedingHistory] = useState([]);
+  const [growthTasks, setGrowthTasks] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [error, setError] = useState(null);
@@ -103,9 +104,10 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
         fetch(`${API_BASE}/api/health-logs?${paramName}=${pigData.id}`).catch(() => null),
         fetch(`${API_BASE}/api/vaccination-records?${paramName}=${pigData.id}`).catch(() => null),
         isSow ? fetch(`${API_BASE}/api/breeding-logs/by-sow/${pigData.id}`).catch(() => null) : Promise.resolve(null),
+        isBatch ? fetch(`${API_BASE}/api/growth-tasks?batch_id=${pigData.id}`).catch(() => null) : Promise.resolve(null),
       ];
 
-      const [res, healthRes, vaccRes, breedRes] = await Promise.all(requests);
+      const [res, healthRes, vaccRes, breedRes, tasksRes] = await Promise.all(requests);
 
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Failed to load details (status ${res.status})`);
@@ -113,6 +115,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
       let fLogs = [];
       let fVaccs = [];
       let fBreeding = [];
+      let fTasks = [];
       if (healthRes && healthRes.ok) {
         const hBody = await healthRes.json().catch(() => ({ data: [] }));
         fLogs = hBody.data || [];
@@ -125,11 +128,16 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
         const bBody = await breedRes.json().catch(() => ({ data: [] }));
         fBreeding = bBody.data || [];
       }
+      if (tasksRes && tasksRes.ok) {
+        const tBody = await tasksRes.json().catch(() => ({ data: [] }));
+        fTasks = tBody.data || [];
+      }
 
       setDetail(body.data || pigData);
       setHealthLogs(fLogs);
       setVaccinations(fVaccs);
       setBreedingHistory(fBreeding);
+      setGrowthTasks(fTasks);
     } catch (err) {
       setError(err.message || 'Could not fetch full details.');
       setDetail(pigData);
@@ -404,6 +412,19 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                             </span>
                           )}
                         </button>
+                        {/* Growth Program Tab (Batches Only) */}
+                        {isBatch && (
+                          <button
+                            onClick={() => setActiveTab('growth')}
+                            className={`flex-1 py-2 px-3 rounded-lg text-[11px] font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${activeTab === 'growth'
+                              ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-400/30 shadow-[0_2px_10px_-3px_rgba(251,191,36,0.3)]'
+                              : 'bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-700 shadow-sm border border-slate-100'
+                              }`}
+                          >
+                            <Target className={`w-3.5 h-3.5 ${activeTab === 'growth' ? 'text-amber-600' : 'text-slate-400'}`} />
+                            GROWTH
+                          </button>
+                        )}
                       </div>
 
                       {/* TAB 1: OVERVIEW */}
@@ -1016,6 +1037,61 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                                   This swine profile has no logged vaccinations or scheduled booster records in the immunization registry.
                                 </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Growth Program Content (Batches Only) */}
+                      {activeTab === 'growth' && isBatch && (
+                        <div className="space-y-4 animate-in fade-in duration-300">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                              <Target className="w-4 h-4 text-amber-500" />
+                              Program Progress
+                            </h3>
+                          </div>
+                          
+                          {growthTasks.length === 0 ? (
+                            <div className="p-10 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 flex flex-col items-center">
+                              <Layers className="w-8 h-8 text-slate-300 mb-3" />
+                              <p className="text-sm font-semibold text-slate-700">No Growth Program</p>
+                              <p className="text-xs text-slate-500 mt-1 max-w-[200px]">This batch has not been assigned to a Growth Program yet.</p>
+                            </div>
+                          ) : (
+                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+                              <div className="relative pl-6 space-y-6">
+                                <div className="absolute top-2 bottom-2 left-[11px] w-[2px] bg-slate-100 rounded-full" />
+                                
+                                {growthTasks.map((task, idx) => {
+                                  const isDone = task.status === 'completed';
+                                  const isOverdue = !isDone && new Date(task.due_date) < new Date();
+                                  
+                                  return (
+                                    <div key={task.task_id} className="relative">
+                                      <div className={`absolute -left-[30px] top-1 w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center z-10
+                                        ${isDone ? 'border-emerald-500' : isOverdue ? 'border-rose-500' : 'border-slate-300'}`}
+                                      >
+                                        {isDone && <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />}
+                                      </div>
+                                      
+                                      <div className={`flex flex-col ${isDone ? 'opacity-70' : ''}`}>
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                            {task.activity_type}
+                                          </span>
+                                          <span className={`text-[11px] font-bold ${isDone ? 'text-emerald-600' : isOverdue ? 'text-rose-600' : 'text-slate-400'}`}>
+                                            {isDone ? 'Completed' : isOverdue ? 'Overdue' : 'Due ' + new Date(task.due_date).toLocaleDateString()}
+                                          </span>
+                                        </div>
+                                        <p className={`text-sm font-bold ${isDone ? 'text-slate-600 line-through decoration-slate-300' : 'text-slate-900'}`}>
+                                          {task.task_name}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
