@@ -98,7 +98,7 @@ const syncSwineStatus = async (healthStatus, pig_id, batch_id) => {
 // POST /api/health-logs
 router.post('/api/health-logs', async (req, res) => {
   try {
-    const { pig_id, batch_id, recorded_by, symptoms, diagnosis, treatment, medication_name, dosage, status, notes } = req.body;
+    const { pig_id, batch_id, recorded_by, examined_by, symptoms, diagnosis, treatment, medication_name, dosage, status, notes } = req.body;
 
     if (!pig_id && !batch_id) {
       return res.status(400).json({ error: 'Must provide pig_id or batch_id.' });
@@ -109,7 +109,7 @@ router.post('/api/health-logs', async (req, res) => {
 
     const { data, error } = await supabaseAdmin
       .from('health_logs')
-      .insert([{ pig_id, batch_id, recorded_by, symptoms, diagnosis, treatment, medication_name, dosage, status, notes }])
+      .insert([{ pig_id, batch_id, recorded_by, examined_by: examined_by || null, symptoms, diagnosis, treatment, medication_name, dosage, status, notes }])
       .select();
 
     if (error) throw error;
@@ -117,7 +117,7 @@ router.post('/api/health-logs', async (req, res) => {
     await logActivity({
       creator: recorded_by,
       event_title: 'Health Log Added',
-      event_desc: `Recorded new health log${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}. Diagnosis: ${diagnosis || 'N/A'}.`,
+      event_desc: `Recorded new health log${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}. Diagnosis: ${diagnosis || 'N/A'}.${examined_by ? ` Examined by: ${examined_by}.` : ''}`,
     });
 
     if (status) {
@@ -148,7 +148,7 @@ router.patch('/api/health-logs/:id', async (req, res) => {
     await logActivity({
       creator: performed_by,
       event_title: 'Health Log Updated',
-      event_desc: `Updated health log ${id.substring(0, 8)}.`,
+      event_desc: `Updated health log ${id.substring(0, 8)}.${updates.examined_by ? ` Examined by: ${updates.examined_by}.` : ''}`,
     });
 
     if (updates.status) {
@@ -222,7 +222,7 @@ router.get('/api/vaccination-records', async (req, res) => {
 // POST /api/vaccination-records
 router.post('/api/vaccination-records', async (req, res) => {
   try {
-    const { pig_id, batch_id, vaccine_name, administered_date, dosage, lot_number, booster_due_date, administered_by } = req.body;
+    const { pig_id, batch_id, vaccine_name, administered_date, dosage, lot_number, booster_due_date, administered_by, recorded_by } = req.body;
 
     if (!pig_id && !batch_id) {
       return res.status(400).json({ error: 'Must provide pig_id or batch_id.' });
@@ -230,17 +230,37 @@ router.post('/api/vaccination-records', async (req, res) => {
     if (!vaccine_name) return res.status(400).json({ error: 'vaccine_name is required.' });
     if (!administered_date) return res.status(400).json({ error: 'administered_date is required.' });
 
+    if (booster_due_date) {
+      if (new Date(booster_due_date) <= new Date(administered_date)) {
+        return res.status(400).json({ error: 'Booster due date must be strictly after the administered date.' });
+      }
+    }
+
+    // Fetch birth_date to ensure vaccination isn't before birth
+    let birthDate = null;
+    if (pig_id) {
+      const { data: pig } = await supabaseAdmin.from('pigs').select('date_of_birth').eq('pig_id', pig_id).single();
+      if (pig && pig.date_of_birth) birthDate = pig.date_of_birth;
+    } else if (batch_id) {
+      const { data: batch } = await supabaseAdmin.from('piglet_batches').select('date_of_birth').eq('batch_id', batch_id).single();
+      if (batch && batch.date_of_birth) birthDate = batch.date_of_birth;
+    }
+
+    if (birthDate && new Date(administered_date) < new Date(birthDate)) {
+      return res.status(400).json({ error: "Vaccination date cannot precede the swine's birthdate." });
+    }
+
     const { data, error } = await supabaseAdmin
       .from('vaccination_records')
-      .insert([{ pig_id, batch_id, vaccine_name, administered_date, dosage, lot_number, booster_due_date, administered_by }])
+      .insert([{ pig_id, batch_id, vaccine_name, administered_date, dosage, lot_number, booster_due_date, administered_by, recorded_by }])
       .select();
 
     if (error) throw error;
 
     await logActivity({
-      creator: administered_by,
+      creator: recorded_by || administered_by,
       event_title: 'Vaccination Recorded',
-      event_desc: `Recorded ${vaccine_name} vaccination${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}.`,
+      event_desc: `Recorded ${vaccine_name} vaccination${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}.${administered_by ? ` Administered by: ${administered_by}.` : ''}`,
     });
 
     res.json({ data: data[0] });
@@ -267,7 +287,7 @@ router.patch('/api/vaccination-records/:id', async (req, res) => {
     await logActivity({
       creator: performed_by,
       event_title: 'Vaccination Record Updated',
-      event_desc: `Updated vaccination record ${id.substring(0, 8)}.`,
+      event_desc: `Updated vaccination record ${id.substring(0, 8)}.${updates.administered_by ? ` Administered by: ${updates.administered_by}.` : ''}`,
     });
 
     res.json({ data: data[0] });

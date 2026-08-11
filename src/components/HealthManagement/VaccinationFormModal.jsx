@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Archive, ChevronDown, Loader2, CheckCircle2 } from "lucide-react";
+import { X, Archive, ChevronDown, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "../../utils/toast";
 import useModalAnimation from "../../hooks/useModalAnimation";
 import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
@@ -36,6 +36,7 @@ const EMPTY_FORM = {
   lot_number: "",
   booster_due_date: "",
   administered_by: "",
+  recorded_by: "",
 };
 
 function addDays(dateStr, days) {
@@ -46,7 +47,7 @@ function addDays(dateStr, days) {
   return d.toISOString().split("T")[0];
 }
 
-export default function VaccinationFormModal({ open, onClose, editRecord, onSuccess }) {
+export default function VaccinationFormModal({ open, onClose, editRecord, onSuccess, prefillData, currentUser }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(open, onClose);
 
@@ -56,6 +57,8 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
   const [archiveReason, setArchiveReason] = useState("");
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [successInfo, setSuccessInfo] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [apiError, setApiError] = useState(null);
 
   const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(Boolean(successInfo));
 
@@ -76,7 +79,7 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
         setPigs(all.filter((x) => x.category !== "Piglet Batch"));
         setBatches(all.filter((x) => x.category === "Piglet Batch"));
       } catch {
-        toast.error("Failed to load pigs/batches.");
+        setApiError("Failed to load pigs/batches.");
       } finally {
         setLoadingDropdowns(false);
       }
@@ -86,6 +89,7 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
 
   // Populate form when editing
   useEffect(() => {
+    const userName = currentUser?.name || currentUser?.email?.split('@')[0] || "";
     if (editRecord) {
       setForm({
         targetType: editRecord._raw.pig_id ? "pig" : "batch",
@@ -102,13 +106,24 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
         lot_number: editRecord._raw.lot_number || "",
         booster_due_date: editRecord._raw.booster_due_date || "",
         administered_by: editRecord._raw.administered_by || "",
+        recorded_by: editRecord._raw.recorded_by || userName,
+      });
+    } else if (prefillData) {
+      setForm({
+        ...EMPTY_FORM,
+        targetType: prefillData.targetType,
+        pig_id: prefillData.targetType === "pig" ? prefillData.id : "",
+        batch_id: prefillData.targetType === "batch" ? prefillData.id : "",
+        administered_date: new Date().toISOString().slice(0, 10),
+        recorded_by: userName,
       });
     } else {
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, recorded_by: userName });
     }
+    setFieldErrors({});
     setConfirmArchive(false);
     setArchiveReason("");
-  }, [editRecord, open]);
+  }, [editRecord, prefillData, currentUser, open]);
 
   if (!shouldRender) return null;
 
@@ -129,23 +144,30 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
 
       return next;
     });
+    // Clear the error for this field as user types
+    setFieldErrors((prev) => ({ ...prev, [name]: undefined }));
   };
 
   const effectiveVaccineName =
     form.vaccine_name === "Other" ? form.vaccine_name_custom : form.vaccine_name;
 
   const validate = () => {
-    if (!effectiveVaccineName.trim()) return "Vaccine name is required.";
-    if (!form.administered_date) return "Date administered is required.";
-    if (!form.administered_by.trim()) return "Administered by is required.";
-    if (form.targetType === "pig" && !form.pig_id) return "Please select a pig.";
-    if (form.targetType === "batch" && !form.batch_id) return "Please select a batch.";
-    return null;
+    const errs = {};
+    if (!effectiveVaccineName.trim()) errs.vaccine_name = "Vaccine name is required.";
+    if (!form.administered_date) errs.administered_date = "Date administered is required.";
+    if (!form.administered_by.trim()) errs.administered_by = "Administered by is required.";
+    if (form.targetType === "pig" && !form.pig_id) errs.pig_id = "Please select a pig.";
+    if (form.targetType === "batch" && !form.batch_id) errs.batch_id = "Please select a batch.";
+    if (form.vaccine_name === "Other" && !form.vaccine_name_custom.trim()) errs.vaccine_name_custom = "Please specify the vaccine name.";
+    return errs;
   };
 
-  const handleSave = async () => {
-    const err = validate();
-    if (err) { toast.error(err); return; }
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const errs = validate();
+    if (Object.keys(errs).length > 0) { setFieldErrors(errs); return; }
+    setFieldErrors({});
+    setApiError(null);
     setSaving(true);
     try {
       const payload = {
@@ -155,9 +177,10 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
         lot_number: form.lot_number || null,
         booster_due_date: form.booster_due_date || null,
         administered_by: form.administered_by,
+        recorded_by: form.recorded_by,
         pig_id: form.targetType === "pig" ? form.pig_id : null,
         batch_id: form.targetType === "batch" ? form.batch_id : null,
-        performed_by: form.administered_by,
+        performed_by: form.recorded_by,
       };
       const url = editRecord
         ? `${API_BASE}/api/vaccination-records/${editRecord._raw.vaccination_id}`
@@ -179,7 +202,7 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
         isArchive: false
       });
     } catch (e) {
-      toast.error(e.message);
+      setApiError(e.message);
     } finally {
       setSaving(false);
     }
@@ -208,7 +231,7 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
         isArchive: true
       });
     } catch (e) {
-      toast.error(e.message);
+      setApiError(e.message);
     } finally {
       setArchiving(false);
     }
@@ -303,9 +326,15 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
             </div>
           </div>
         ) : (
-          <div className="px-6 py-5 grid grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
+          <div className="flex max-h-[calc(100vh-16rem)] flex-col overflow-y-auto px-6 py-4">
+            {apiError && (
+              <div className="mb-4 p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+                <AlertCircle size={14} className="text-rose-500 shrink-0" />
+                <span>{apiError}</span>
+              </div>
+            )}
 
-            {/* Record for toggle */}
+            {/* Target Type Toggle */}
             <div className="col-span-2">
               <label className={labelCls}>Record for</label>
               <div className="flex gap-3">
@@ -313,26 +342,27 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                   <button
                     key={t}
                     type="button"
+                    disabled={!!prefillData}
                     onClick={() => setForm((f) => ({ ...f, targetType: t, pig_id: "", batch_id: "" }))}
                     className={`flex-1 rounded-lg border py-2 text-sm font-medium capitalize transition ${
                       form.targetType === t
                         ? "border-emerald-500 bg-emerald-50 text-emerald-700"
                         : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
+                    } ${prefillData ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
-                    {t === "pig" ? "Individual Pig" : "Piglet Batch"}
+                    {t === "pig" ? "Pig" : "Batch"}
                   </button>
                 ))}
               </div>
             </div>
 
             {/* Pig / Batch dropdown */}
-            <div className="col-span-2">
+            <div className="col-span-2 sm:col-span-1">
               <label className={labelCls}>
                 {form.targetType === "pig" ? "Pig" : "Piglet Batch"} *
               </label>
               <div className="relative">
-                {loadingDropdowns ? (
+                {loadingDropdowns && !prefillData ? (
                   <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400">
                     <Loader2 className="h-4 w-4 animate-spin" /> Loading...
                   </div>
@@ -342,10 +372,12 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                       name={form.targetType === "pig" ? "pig_id" : "batch_id"}
                       value={form.targetType === "pig" ? form.pig_id : form.batch_id}
                       onChange={handleChange}
-                      className={selectCls}
+                      disabled={!!prefillData}
+                      className={`${selectCls} ${prefillData ? "bg-slate-50 text-slate-500 cursor-not-allowed" : ""} ${fieldErrors.pig_id || fieldErrors.batch_id ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                     >
                       <option value="">— Select {form.targetType === "pig" ? "a pig" : "a batch"} —</option>
-                      {currentOptions.map((item) => (
+                      {prefillData && <option value={prefillData.id}>{prefillData.tag} — {prefillData.category}</option>}
+                      {!prefillData && currentOptions.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.pig_tag || item.batch_tag} — {item.category} ({item.status})
                         </option>
@@ -355,6 +387,11 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                   </>
                 )}
               </div>
+              {(fieldErrors.pig_id || fieldErrors.batch_id) && (
+                <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                  <AlertCircle size={11} /> {fieldErrors.pig_id || fieldErrors.batch_id}
+                </p>
+              )}
             </div>
 
             {/* Vaccine name dropdown */}
@@ -365,7 +402,7 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                   name="vaccine_name"
                   value={form.vaccine_name}
                   onChange={handleChange}
-                  className={selectCls}
+                  className={`${selectCls} ${fieldErrors.vaccine_name ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                 >
                   <option value="">— Select a vaccine —</option>
                   {VACCINE_OPTIONS.map((v) => (
@@ -375,6 +412,11 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               </div>
+              {fieldErrors.vaccine_name && (
+                <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                  <AlertCircle size={11} /> {fieldErrors.vaccine_name}
+                </p>
+              )}
               <div
                 style={{
                   maxHeight: form.vaccine_name === "Other" ? "80px" : "0px",
@@ -389,9 +431,14 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                   value={form.vaccine_name_custom}
                   onChange={handleChange}
                   placeholder="Enter vaccine name..."
-                  className={inputCls}
+                  className={`${inputCls} ${fieldErrors.vaccine_name_custom ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                 />
               </div>
+              {fieldErrors.vaccine_name_custom && (
+                <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                  <AlertCircle size={11} /> {fieldErrors.vaccine_name_custom}
+                </p>
+              )}
               {form.vaccine_name && form.vaccine_name !== "Other" && (() => {
                 const match = VACCINE_OPTIONS.find((v) => v.name === form.vaccine_name);
                 return match?.boosterDays ? (
@@ -412,8 +459,13 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                 name="administered_date"
                 value={form.administered_date}
                 onChange={handleChange}
-                className={inputCls}
+                className={`${inputCls} ${fieldErrors.administered_date ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
               />
+              {fieldErrors.administered_date && (
+                <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                  <AlertCircle size={11} /> {fieldErrors.administered_date}
+                </p>
+              )}
             </div>
             <div>
               <label className={labelCls}>
@@ -459,8 +511,13 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                 value={form.administered_by}
                 onChange={handleChange}
                 placeholder="e.g. Dr. Rachel Vance"
-                className={inputCls}
+                className={`${inputCls} ${fieldErrors.administered_by ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
               />
+              {fieldErrors.administered_by && (
+                <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                  <AlertCircle size={11} /> {fieldErrors.administered_by}
+                </p>
+              )}
             </div>
           </div>
         )}

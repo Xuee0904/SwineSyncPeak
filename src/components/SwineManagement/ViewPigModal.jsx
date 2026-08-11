@@ -12,6 +12,8 @@ import useModalAnimation from '../../hooks/useModalAnimation';
 import StatusBadge from '../../components/StatusBadge';
 import toast from '../../utils/toast';
 import { PigEditView } from './EditPigModal';
+import AddHealthLogModal from '../HealthManagement/AddHealthLogModal';
+import VaccinationFormModal from '../HealthManagement/VaccinationFormModal';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
@@ -39,7 +41,7 @@ const formatLogDateTime = (dateStr) => {
   }
 };
 
-export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUnarchive, pigData }) {
+export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUnarchive, pigData, loggedInUser }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
@@ -54,6 +56,8 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [error, setError] = useState(null);
+  const [showAddHealth, setShowAddHealth] = useState(false);
+  const [showAddVaccine, setShowAddVaccine] = useState(false);
 
   // Animated content height
   const tabContentRef = useRef(null);
@@ -539,13 +543,24 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                   <p className="text-xs text-slate-400 italic py-3">No health logs recorded yet.</p>
                                 )}
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => setActiveTab('health')}
-                                className="mt-3.5 w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                              >
-                                View All Health Logs ({healthLogs.length}) <ChevronRight className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="mt-3.5 flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTab('health')}
+                                  className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                >
+                                  View All <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                                {!isArchived && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowAddHealth(true)}
+                                    className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                  >
+                                    <PlusCircle className="w-3.5 h-3.5" /> Add Log
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             {/* Vaccine Summary Card */}
@@ -586,13 +601,24 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                   <p className="text-xs text-slate-400 italic py-3">No vaccinations recorded yet.</p>
                                 )}
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => setActiveTab('vaccinations')}
-                                className="mt-3.5 w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                              >
-                                View All Vaccinations ({vaccinations.length}) <ChevronRight className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="mt-3.5 flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTab('vaccinations')}
+                                  className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                >
+                                  View All <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                                {!isArchived && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowAddVaccine(true)}
+                                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                  >
+                                    <PlusCircle className="w-3.5 h-3.5" /> Add Vaccine
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -762,9 +788,21 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                 Detailed log of clinical diagnoses, treatments, medications, and observed symptoms.
                               </p>
                             </div>
-                            <span className="text-xs font-bold px-3 py-1 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100">
-                              {healthLogs.length} {healthLogs.length === 1 ? 'Record' : 'Records'}
-                            </span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-bold px-3 py-1 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100 hidden sm:inline-block">
+                                {healthLogs.length} {healthLogs.length === 1 ? 'Record' : 'Records'}
+                              </span>
+                              {!isArchived && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddHealth(true)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-sm"
+                                >
+                                  <PlusCircle className="w-3.5 h-3.5" />
+                                  Add Log
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           {isLoadingLogs ? (
@@ -875,9 +913,21 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                 Complete record of administered vaccines, dosages, lot numbers, and scheduled booster dates.
                               </p>
                             </div>
-                            <span className="text-xs font-bold px-3 py-1 bg-indigo-50 text-indigo-800 rounded-xl border border-indigo-100">
-                              {vaccinations.length} {vaccinations.length === 1 ? 'Dose' : 'Doses'}
-                            </span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-bold px-3 py-1 bg-indigo-50 text-indigo-800 rounded-xl border border-indigo-100 hidden sm:inline-block">
+                                {vaccinations.length} {vaccinations.length === 1 ? 'Dose' : 'Doses'}
+                              </span>
+                              {!isArchived && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddVaccine(true)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-sm"
+                                >
+                                  <PlusCircle className="w-3.5 h-3.5" />
+                                  Add Vaccine
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           {isLoadingLogs ? (
@@ -1009,6 +1059,29 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
 
           </div>{/* end contentRef */}
         </div>
+        
+        {/* --- Health & Vaccine Modals --- */}
+        <AddHealthLogModal
+          open={showAddHealth}
+          onClose={() => setShowAddHealth(false)}
+          prefillData={pigData ? { id: pigData.id, tag: tag, category: pigData.category || (isBatch ? 'Piglet Batch' : 'Pig'), targetType: isBatch ? 'batch' : 'pig' } : null}
+          currentUser={loggedInUser}
+          onSuccess={() => {
+            fetchDetail(true);
+            setShowAddHealth(false);
+          }}
+        />
+
+        <VaccinationFormModal
+          open={showAddVaccine}
+          onClose={() => setShowAddVaccine(false)}
+          prefillData={pigData ? { id: pigData.id, tag: tag, category: pigData.category || (isBatch ? 'Piglet Batch' : 'Pig'), targetType: isBatch ? 'batch' : 'pig' } : null}
+          currentUser={loggedInUser}
+          onSuccess={() => {
+            fetchDetail(true);
+            setShowAddVaccine(false);
+          }}
+        />
       </div>,
       document.body
     );

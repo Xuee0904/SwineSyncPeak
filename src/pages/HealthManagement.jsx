@@ -137,7 +137,7 @@ function SubModuleCard({ icon: Icon, title, description, accent, onClick }) {
 // Main page
 // ---------------------------------------------------------------------------
 
-export default function HealthManagement({ setActiveTab }) {
+export default function HealthManagement({ setActiveTab, loggedInUser }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [vetFilter, setVetFilter] = useState("all");
@@ -605,6 +605,7 @@ export default function HealthManagement({ setActiveTab }) {
         open={vacModal}
         onClose={() => { setVacModal(false); setEditVacRecord(null); }}
         editRecord={editVacRecord}
+        currentUser={loggedInUser}
         onSuccess={fetchData}
       />
     </div>

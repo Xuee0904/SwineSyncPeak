@@ -716,6 +716,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
         onArchive={!viewArchived ? (pig) => promptArchive(pig) : null}
         onUnarchive={viewArchived ? (pig) => promptUnarchive(pig) : null}
         pigData={selectedPig}
+        loggedInUser={loggedInUser}
       />
 
       <ArchiveSwineModal

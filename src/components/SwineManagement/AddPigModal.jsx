@@ -71,6 +71,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const [vaccinationError, setVaccinationError] = useState(null);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [autoRestoreBatch, setAutoRestoreBatch] = useState(false);
   const [batchDraftInfo, setBatchDraftInfo] = useState(null);
@@ -267,6 +268,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
         tag: form.tagNumber.trim(),
         message: `${gender === 'Female' ? 'Sow' : 'Boar'} #${form.tagNumber.trim()} added to your swine inventory.`
       });
+      setVaccinationError(null);
       setVaccinations([{ vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
       setStep('vaccinations');
     } catch (err) {
@@ -301,13 +303,17 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
               dosage: v.dosage.trim() || undefined,
               administered_by: loggedInUser?.name || loggedInUser || 'Admin',
             }),
-          }).then(r => { if (!r.ok) throw new Error('Failed to save a vaccination record'); })
+          }).then(async r => { 
+            if (!r.ok) {
+              const errData = await r.json().catch(() => ({}));
+              throw new Error(errData.error || 'Failed to save a vaccination record');
+            }
+          })
         )
       );
       setStep('success');
     } catch (err) {
-      // Non-blocking — vaccinations are optional, proceed to success and show a soft warning
-      setStep('success');
+      setVaccinationError(err.message || 'Failed to save vaccinations.');
     } finally {
       setIsSavingVaccinations(false);
     }
@@ -590,6 +596,14 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                     <Syringe size={14} className="shrink-0 mt-0.5" />
                     <span>{successInfo?.type} <strong>#{successInfo?.tag}</strong> has been saved. Add any vaccinations this animal has received, or skip to finish.</span>
                   </div>
+
+                  {/* Vaccination Error */}
+                  {vaccinationError && (
+                    <div className="mx-8 mb-4 p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 shrink-0">
+                      <AlertCircle size={14} className="text-rose-500 shrink-0" />
+                      <span>{vaccinationError}</span>
+                    </div>
+                  )}
 
                   {/* Vaccine rows */}
                   <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-4 space-y-3" ref={animationParent}>

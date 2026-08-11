@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Archive, ChevronDown, Loader2, CheckCircle2 } from "lucide-react";
+import { X, Archive, ChevronDown, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "../../utils/toast";
 import useModalAnimation from "../../hooks/useModalAnimation";
 import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
@@ -40,6 +40,7 @@ const EMPTY_FORM = {
   batch_id: "",
   log_date: formatDateTime(new Date()),
   recorded_by: "",
+  examined_by: "",
   symptoms: "",
   diagnosis: "",
   treatment: "",
@@ -50,7 +51,7 @@ const EMPTY_FORM = {
   notes: "",
 };
 
-export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess }) {
+export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess, prefillData, currentUser }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(open, onClose);
 
@@ -60,6 +61,8 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
   const [archiveReason, setArchiveReason] = useState("");
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [successInfo, setSuccessInfo] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [apiError, setApiError] = useState(null);
 
   const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(Boolean(successInfo));
 
@@ -80,7 +83,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         setPigs(all.filter((x) => x.category !== "Piglet Batch"));
         setBatches(all.filter((x) => x.category === "Piglet Batch"));
       } catch {
-        toast.error("Failed to load pigs/batches.");
+        setApiError("Failed to load pigs/batches.");
       } finally {
         setLoadingDropdowns(false);
       }
@@ -90,6 +93,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
 
   // Populate form when editing
   useEffect(() => {
+    const userName = currentUser?.name || currentUser?.email?.split('@')[0] || "";
     if (editRecord) {
       const isCustomMed = editRecord._raw.medication_name && !MEDICATION_OPTIONS.includes(editRecord._raw.medication_name);
       
@@ -98,7 +102,8 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         pig_id: editRecord._raw.pig_id || "",
         batch_id: editRecord._raw.batch_id || "",
         log_date: formatDateTime(editRecord._raw.log_date) || formatDateTime(new Date()),
-        recorded_by: editRecord._raw.recorded_by || "",
+        recorded_by: editRecord._raw.recorded_by || userName,
+        examined_by: editRecord._raw.examined_by || "",
         symptoms: editRecord._raw.symptoms || "",
         diagnosis: editRecord._raw.diagnosis || "",
         treatment: editRecord._raw.treatment || "",
@@ -108,41 +113,53 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         status: editRecord._raw.status || "sick",
         notes: editRecord._raw.notes || "",
       });
+    } else if (prefillData) {
+      setForm({
+        ...EMPTY_FORM,
+        targetType: prefillData.targetType,
+        pig_id: prefillData.targetType === "pig" ? prefillData.id : "",
+        batch_id: prefillData.targetType === "batch" ? prefillData.id : "",
+        log_date: formatDateTime(new Date()),
+        recorded_by: userName,
+      });
     } else {
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, recorded_by: userName });
     }
+    setFieldErrors({});
     setConfirmArchive(false);
     setArchiveReason("");
-  }, [editRecord, open]);
+  }, [editRecord, prefillData, currentUser, open]);
 
   if (!shouldRender) return null;
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((f) => ({ ...f, [name]: value }));
+    // Clear the error for this field as user types
+    setFieldErrors((prev) => ({ ...prev, [name]: undefined }));
   };
 
   const effectiveMedicationName =
     form.medication_name === "Other" ? form.medication_name_custom : form.medication_name;
 
   const validate = () => {
-    if (form.targetType === "pig" && !form.pig_id) return "Please select a pig.";
-    if (form.targetType === "batch" && !form.batch_id) return "Please select a batch.";
-    if (!form.log_date) return "Log date is required.";
-    if (!form.recorded_by.trim()) return "Recorded by is required.";
-    if (!form.status) return "Status is required.";
-    
-    // If selecting "Other" medication, they must provide the custom name
+    const errs = {};
+    if (form.targetType === "pig" && !form.pig_id) errs.pig_id = "Please select a pig.";
+    if (form.targetType === "batch" && !form.batch_id) errs.batch_id = "Please select a batch.";
+    if (!form.log_date) errs.log_date = "Log date is required.";
+    if (!form.examined_by.trim()) errs.examined_by = "Examined by is required.";
+    if (!form.status) errs.status = "Status is required.";
     if (form.medication_name === "Other" && !form.medication_name_custom.trim()) {
-      return "Please specify the custom medication name.";
+      errs.medication_name_custom = "Please specify the medication name.";
     }
-
-    return null;
+    return errs;
   };
 
   const handleSave = async () => {
-    const err = validate();
-    if (err) { toast.error(err); return; }
+    const errs = validate();
+    if (Object.keys(errs).length > 0) { setFieldErrors(errs); return; }
+    setFieldErrors({});
+    setApiError(null);
     setSaving(true);
     try {
       const payload = {
@@ -150,6 +167,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         batch_id: form.targetType === "batch" ? form.batch_id : null,
         log_date: new Date(form.log_date).toISOString(),
         recorded_by: form.recorded_by,
+        examined_by: form.examined_by || null,
         symptoms: form.symptoms || null,
         diagnosis: form.diagnosis || null,
         treatment: form.treatment || null,
@@ -181,7 +199,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         isArchive: false
       });
     } catch (e) {
-      toast.error(e.message);
+      setApiError(e.message);
     } finally {
       setSaving(false);
     }
@@ -210,7 +228,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         isArchive: true
       });
     } catch (e) {
-      toast.error(e.message);
+      setApiError(e.message);
     } finally {
       setArchiving(false);
     }
@@ -307,6 +325,14 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         ) : (
           <div className="px-6 py-5 grid grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
 
+            {/* API-level errors only (network failures etc.) */}
+            {apiError && (
+              <div className="col-span-2 mb-1 p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+                <AlertCircle size={14} className="text-rose-500 shrink-0" />
+                <span>{apiError}</span>
+              </div>
+            )}
+
             {/* Target Selection */}
             <div className="col-span-2 sm:col-span-1">
               <label className={labelCls}>Record for</label>
@@ -315,12 +341,13 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                   <button
                     key={t}
                     type="button"
+                    disabled={!!prefillData}
                     onClick={() => setForm((f) => ({ ...f, targetType: t, pig_id: "", batch_id: "" }))}
                     className={`flex-1 rounded-lg border py-2 text-sm font-medium capitalize transition ${
                       form.targetType === t
                         ? "border-emerald-500 bg-emerald-50 text-emerald-700"
                         : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
+                    } ${prefillData ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
                     {t === "pig" ? "Pig" : "Batch"}
                   </button>
@@ -334,7 +361,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                 {form.targetType === "pig" ? "Pig" : "Piglet Batch"} *
               </label>
               <div className="relative">
-                {loadingDropdowns ? (
+                {loadingDropdowns && !prefillData ? (
                   <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-400">
                     <Loader2 className="h-4 w-4 animate-spin" /> Loading...
                   </div>
@@ -344,10 +371,12 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                       name={form.targetType === "pig" ? "pig_id" : "batch_id"}
                       value={form.targetType === "pig" ? form.pig_id : form.batch_id}
                       onChange={handleChange}
-                      className={selectCls}
+                      disabled={!!prefillData}
+                      className={`${selectCls} ${prefillData ? "bg-slate-50 text-slate-500 cursor-not-allowed" : ""} ${fieldErrors.pig_id || fieldErrors.batch_id ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                     >
                       <option value="">— Select {form.targetType === "pig" ? "a pig" : "a batch"} —</option>
-                      {currentOptions.map((item) => (
+                      {prefillData && <option value={prefillData.id}>{prefillData.tag} — {prefillData.category}</option>}
+                      {!prefillData && currentOptions.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.pig_tag || item.batch_tag} — {item.category} ({item.status})
                         </option>
@@ -357,6 +386,11 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                   </>
                 )}
               </div>
+              {(fieldErrors.pig_id || fieldErrors.batch_id) && (
+                <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                  <AlertCircle size={11} /> {fieldErrors.pig_id || fieldErrors.batch_id}
+                </p>
+              )}
             </div>
 
             {/* Status */}
@@ -367,7 +401,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                   name="status"
                   value={form.status}
                   onChange={handleChange}
-                  className={selectCls}
+                  className={`${selectCls} ${fieldErrors.status ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                 >
                   <option value="">— Select status —</option>
                   {STATUS_OPTIONS.map((opt) => (
@@ -376,6 +410,11 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               </div>
+              {fieldErrors.status && (
+                <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                  <AlertCircle size={11} /> {fieldErrors.status}
+                </p>
+              )}
             </div>
 
             {/* Date Administered */}
@@ -386,8 +425,13 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                 name="log_date"
                 value={form.log_date}
                 onChange={handleChange}
-                className={inputCls}
+                className={`${inputCls} ${fieldErrors.log_date ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
               />
+              {fieldErrors.log_date && (
+                <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                  <AlertCircle size={11} /> {fieldErrors.log_date}
+                </p>
+              )}
             </div>
 
             {/* Symptoms & Diagnosis */}
@@ -466,8 +510,13 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                       value={form.medication_name_custom}
                       onChange={handleChange}
                       placeholder="Enter medication name..."
-                      className={inputCls}
+                      className={`${inputCls} ${fieldErrors.medication_name_custom ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
                     />
+                    {fieldErrors.medication_name_custom && (
+                      <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                        <AlertCircle size={11} /> {fieldErrors.medication_name_custom}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -486,14 +535,19 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
             </div>
             
             <div className="col-span-2 sm:col-span-1">
-              <label className={labelCls}>Recorded By *</label>
+              <label className={labelCls}>Examined By *</label>
               <input
-                name="recorded_by"
-                value={form.recorded_by}
+                name="examined_by"
+                value={form.examined_by}
                 onChange={handleChange}
                 placeholder="e.g. Dr. Rachel Vance"
-                className={inputCls}
+                className={`${inputCls} ${fieldErrors.examined_by ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
               />
+              {fieldErrors.examined_by && (
+                <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                  <AlertCircle size={11} /> {fieldErrors.examined_by}
+                </p>
+              )}
             </div>
             
             {/* Notes */}

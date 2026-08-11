@@ -222,7 +222,7 @@ function RowActions({ row, onEdit, onRefresh }) {
 // Main page
 // ---------------------------------------------------------------------------
 
-export default function MedicationTreatmentLogs({ setActiveTab }) {
+export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -600,6 +600,7 @@ export default function MedicationTreatmentLogs({ setActiveTab }) {
         open={modalOpen}
         onClose={() => { setModalOpen(false); setEditRecord(null); }}
         editRecord={editRecord}
+        currentUser={loggedInUser}
         onSuccess={() => {
           setModalOpen(false);
           refreshData();

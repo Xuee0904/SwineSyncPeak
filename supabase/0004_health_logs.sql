@@ -31,3 +31,5 @@ ON health_logs FOR SELECT TO public USING (true);
 
 CREATE POLICY "Allow authenticated users to write health_logs"
 ON health_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE health_logs ADD COLUMN IF NOT EXISTS examined_by TEXT;

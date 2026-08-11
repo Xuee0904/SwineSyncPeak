@@ -27,3 +27,5 @@ ON vaccination_records FOR SELECT TO public USING (true);
 
 CREATE POLICY "Allow authenticated users to write vaccination_records"
 ON vaccination_records FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+ALTER TABLE vaccination_records ADD COLUMN IF NOT EXISTS recorded_by TEXT;
