@@ -13,7 +13,7 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
   const [showSuccess, setShowSuccess] = useState(false);
   const [editedStaffInfo, setEditedStaffInfo] = useState(null);
 
-  const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } = 
+  const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
   useEffect(() => {
@@ -50,9 +50,9 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
 
       const res = await fetch(`${apiBaseUrl}/api/admin/users/${staff.fullId}`, {
         method: 'PUT',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           name: name.trim(),
@@ -67,7 +67,7 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
         throw new Error(body.error || 'Failed to update credentials.');
       }
 
-      setEditedStaffInfo({ 
+      setEditedStaffInfo({
         name: name.trim(),
         oldName: staff.name,
         role: role,
@@ -89,9 +89,9 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
   };
 
   return createPortal(
-    <div 
+    <div
       className={`fixed inset-0 lg:left-60 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
-      onClick={(e) => e.target === e.currentTarget && requestClose()} 
+      onClick={(e) => e.target === e.currentTarget && requestClose()}
       role="dialog"
     >
       <style>{`
@@ -140,12 +140,12 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
             </div>
 
             <form onSubmit={handleSubmit} className="p-8 pt-6 space-y-4">
-              {error && (
-                <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2.5 animate-fade-in">
+              <div className={`overflow-hidden transition-all duration-300 ease-in-out ${error ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}>
+                <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2.5">
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
                   <span>{error}</span>
                 </div>
-              )}
+              </div>
 
               {/* Input: Full Name */}
               <div className="space-y-1.5">
@@ -176,13 +176,11 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
                       value: 'Staff',
                       icon: <User className="w-4 h-4" />,
                       title: 'Staff',
-                      desc: 'View & update telemetry and logs',
                     },
                     {
                       value: 'Admin',
                       icon: <Shield className="w-4 h-4" />,
                       title: 'Admin',
-                      desc: 'Full system & account management',
                     },
                   ].map((opt) => {
                     const selected = role === opt.value;
@@ -211,7 +209,6 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
                             <span className={selected ? 'text-emerald-600' : 'text-slate-400'}>{opt.icon}</span>
                             {opt.title}
                           </span>
-                          <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">{opt.desc}</p>
                         </div>
                       </button>
                     );
@@ -256,7 +253,7 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
                 {editedStaffInfo?.name ? (
                   <>
-                    Successfully updated access roles and profile parameters for <span className="font-bold text-slate-800">{editedStaffInfo.name}</span>.
+                    Successfully updated details for <span className="font-bold text-slate-800">{editedStaffInfo.name}</span>.
                   </>
                 ) : (
                   'The caretaker account changes were successfully saved.'
@@ -266,7 +263,7 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
 
             {editedStaffInfo && (editedStaffInfo.oldName || editedStaffInfo.oldRole) && (
               <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 text-left space-y-2 text-xs">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Parameter Changes</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Account Changes</p>
 
                 {editedStaffInfo.oldName && editedStaffInfo.oldName !== editedStaffInfo.name && (
                   <div className="flex items-center justify-between gap-2 text-[11px]">
@@ -293,7 +290,7 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
                 )}
 
                 {((!editedStaffInfo.oldName || editedStaffInfo.oldName === editedStaffInfo.name) && (!editedStaffInfo.oldRole || editedStaffInfo.oldRole === editedStaffInfo.role)) && (
-                  <p className="text-[11px] text-slate-500 italic">No parameter discrepancies; existing profile details reaffirmed.</p>
+                  <p className="text-[11px] text-slate-500 italic">No changes were made.</p>
                 )}
               </div>
             )}

@@ -95,7 +95,7 @@ router.post('/api/admin/users', verifyAdmin, async (req, res) => {
         user_initials: initials || 'AD',
         user_bg_color: 'bg-emerald-100 text-emerald-700',
         event_title: 'Account Created',
-        event_desc: `Registered new caretaker account: ${name} (${email}) as ${role}.`,
+        event_desc: `Registered new account: ${name} (${email}) as ${role}.`,
         status: 'SUCCESS'
       });
 
@@ -151,11 +151,11 @@ router.put('/api/admin/users/:id', verifyAdmin, async (req, res) => {
     let eventTitle, eventDesc, bgColor;
     if (is_archived === true) {
       eventTitle = 'Account Archived';
-      eventDesc = `Temporarily suspended access credentials for ${name} (${user.email}).`;
+      eventDesc = `Archived account for ${name} (${user.email}).`;
       bgColor = 'bg-rose-100 text-rose-700';
     } else if (is_archived === false) {
       eventTitle = 'Account Restored';
-      eventDesc = `Restored login capabilities and credentials for ${name} (${user.email}).`;
+      eventDesc = `Restored account for ${name} (${user.email}).`;
       bgColor = 'bg-emerald-100 text-emerald-700';
     } else {
       // Plain edit — no archive/restore flag provided
@@ -174,7 +174,7 @@ router.put('/api/admin/users/:id', verifyAdmin, async (req, res) => {
       status: 'SUCCESS'
     });
 
-    res.json({ message: 'Caretaker account updated successfully', user });
+    res.json({ message: 'Account updated successfully', user });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

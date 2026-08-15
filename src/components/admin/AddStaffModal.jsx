@@ -46,7 +46,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
   const [showPassword, setShowPassword] = useState(false);
   const [touched, setTouched] = useState({ name: false, email: false, password: false });
 
-  const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } = 
+  const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
   useEffect(() => {
@@ -88,7 +88,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
 
     try {
       setLoading(true);
-      
+
       let creatorString = 'Admin System';
       if (typeof loggedInUser === 'string' && loggedInUser.trim() !== '') {
         creatorString = loggedInUser;
@@ -106,7 +106,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
 
       const response = await fetch(`${apiBaseUrl}/api/admin/users`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
@@ -181,9 +181,6 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-900 leading-tight">Add Staff Account</h3>
-                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                    Create new portal credentials
-                  </p>
                 </div>
               </div>
               <button
@@ -204,12 +201,12 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
                 onDiscard={handleDiscardDraft}
                 isOffline={isOffline}
               />
-              {formError && (
-                <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2.5 animate-fade-in">
+              <div className={`overflow-hidden transition-all duration-300 ease-in-out ${formError ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}>
+                <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2.5">
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
                   <span>{formError}</span>
                 </div>
-              )}
+              </div>
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Full Name</label>
@@ -229,12 +226,12 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
                     className={`${inputBase} pl-10 pr-4 ${touched.name && fieldErrors.name ? inputErr : inputOk}`}
                   />
                 </div>
-                {touched.name && fieldErrors.name && (
-                  <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium mt-1 animate-fade-in">
+                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${touched.name && fieldErrors.name ? 'max-h-10 opacity-100 mt-1' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}>
+                  <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium">
                     <AlertCircle className="w-3 h-3 shrink-0" />
                     {fieldErrors.name}
                   </p>
-                )}
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -255,12 +252,12 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
                     className={`${inputBase} pl-10 pr-4 ${touched.email && fieldErrors.email ? inputErr : inputOk}`}
                   />
                 </div>
-                {touched.email && fieldErrors.email && (
-                  <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium mt-1 animate-fade-in">
+                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${touched.email && fieldErrors.email ? 'max-h-10 opacity-100 mt-1' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}>
+                  <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium">
                     <AlertCircle className="w-3 h-3 shrink-0" />
                     {fieldErrors.email}
                   </p>
-                )}
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -289,14 +286,14 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
                     {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
                 </div>
-                {touched.password && fieldErrors.password ? (
-                  <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium mt-1 animate-fade-in">
+                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${touched.password && fieldErrors.password ? 'max-h-10 opacity-100 mt-1' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}>
+                  <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium">
                     <AlertCircle className="w-3 h-3 shrink-0" />
                     {fieldErrors.password}
                   </p>
-                ) : (
-                  <p className="text-[11px] text-slate-400">Provide to the staff member so they can sign in initially.</p>
-                )}
+                </div>
+                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${!(touched.password && fieldErrors.password) ? 'max-h-10 opacity-100 mt-1' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}>
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -307,13 +304,11 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
                       value: 'Staff',
                       icon: <User className="w-4 h-4" />,
                       title: 'Staff',
-                      desc: 'View & update telemetry and logs',
                     },
                     {
                       value: 'Admin',
                       icon: <Shield className="w-4 h-4" />,
                       title: 'Admin',
-                      desc: 'Full system & account management',
                     },
                   ].map((opt) => {
                     const selected = newStaff.role === opt.value;
@@ -342,7 +337,6 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
                             <span className={selected ? 'text-emerald-600' : 'text-slate-400'}>{opt.icon}</span>
                             {opt.title}
                           </span>
-                          <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">{opt.desc}</p>
                         </div>
                       </button>
                     );
@@ -403,7 +397,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
                 {createdStaff?.name ? (
                   <>
-                    <span className="font-bold text-slate-800">{createdStaff.name}</span> can now sign into the portal using their assigned credentials.
+                    <span className="font-bold text-slate-800">{createdStaff.name}</span> can now sign into the portal.
                   </>
                 ) : (
                   'The new staff account is ready to sign in.'

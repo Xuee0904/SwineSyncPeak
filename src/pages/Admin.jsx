@@ -5,16 +5,16 @@ import ArchiveStaffModal from '../components/admin/ArchiveStaffModal';
 import StaffDetailModal from '../components/admin/StaffDetailModal';
 import Pagination from '../components/common/Pagination';
 import { supabase } from '../supabaseClient';
-import { 
-  Users, Download, Plus, Edit2, MoreVertical, 
+import {
+  Users, Download, Plus, Edit2, MoreVertical,
   Activity, Search, X, Loader2, AlertCircle, Lock, Unlock,
-  ChevronLeft, ChevronRight, ShieldAlert, ShieldCheck, UserCheck, Shield, Clock, CheckCircle2, Archive
+  ChevronLeft, ChevronRight, ShieldAlert, ShieldCheck, UserCheck, Shield, Clock, CheckCircle2, Archive, Eye
 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
-const LOGS_PER_PAGE = 5; 
-const STAFF_PER_PAGE = 5; 
+const LOGS_PER_PAGE = 5;
+const STAFF_PER_PAGE = 5;
 
 // ─── Table 1: Account Management Loading Skeleton (Modern Shimmer) ──────────
 function TableSkeleton({ rows = 4 }) {
@@ -91,7 +91,7 @@ export default function Admin({ loggedInUser }) {
   const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+
   // Real-time Activity Log States
   const [activityLogs, setActivityLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(true);
@@ -111,7 +111,7 @@ export default function Admin({ loggedInUser }) {
   const [activeDropdownId, setActiveDropdownId] = useState(null);
   const [selectedEditStaff, setSelectedEditStaff] = useState(null);
   const [selectedStaffDetail, setSelectedStaffDetail] = useState(null);
-  
+
   // Dynamic Archiving / Restoring States
   const [selectedArchiveStaff, setSelectedArchiveStaff] = useState(null);
 
@@ -159,7 +159,7 @@ export default function Admin({ loggedInUser }) {
       }
       const data = await res.json();
       setActivityLogs(data.logs ?? []);
-      setLogCurrentPage(1); 
+      setLogCurrentPage(1);
     } catch (err) {
       setLogsError(err.message);
     } finally {
@@ -202,7 +202,7 @@ export default function Admin({ loggedInUser }) {
 
     const aTime = a.lastSignInAt ? new Date(a.lastSignInAt).getTime() : 0;
     const bTime = b.lastSignInAt ? new Date(b.lastSignInAt).getTime() : 0;
-    
+
     return bTime - aTime;
   });
 
@@ -258,7 +258,7 @@ export default function Admin({ loggedInUser }) {
     }
 
     const q = logSearchQuery.toLowerCase().trim();
-    const matchesSearch = !q || 
+    const matchesSearch = !q ||
       (log.user_name || '').toLowerCase().includes(q) ||
       (log.user_email || '').toLowerCase().includes(q) ||
       (log.event_title || '').toLowerCase().includes(q) ||
@@ -270,7 +270,7 @@ export default function Admin({ loggedInUser }) {
   const totalLogs = filteredLogs.length;
   const totalLogPages = Math.ceil(totalLogs / LOGS_PER_PAGE) || 1;
   const safeLogPage = Math.min(logCurrentPage, totalLogPages);
-  
+
   const logStartIndex = (safeLogPage - 1) * LOGS_PER_PAGE;
   const logEndIndex = Math.min(logStartIndex + LOGS_PER_PAGE, totalLogs);
   const paginatedLogs = filteredLogs.slice(logStartIndex, logEndIndex);
@@ -312,14 +312,14 @@ export default function Admin({ loggedInUser }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <button 
+            <button
               onClick={() => handleExport('Account Management')}
               className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" />
               Export
             </button>
-            <button 
+            <button
               onClick={() => setIsAddStaffOpen(true)}
               className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-600/20 active:scale-95 flex items-center gap-1.5"
             >
@@ -332,9 +332,9 @@ export default function Admin({ loggedInUser }) {
         {/* Live Search Filter */}
         <div className="px-5 py-2.5 bg-slate-50/40 border-b border-slate-50 flex items-center gap-2">
           <Search className="w-3.5 h-3.5 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Filter staff by name or email..."
+          <input
+            type="text"
+            placeholder="Search account by name or email..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="bg-transparent border-none text-[11px] font-medium text-slate-700 outline-none w-full placeholder-slate-400"
@@ -377,26 +377,25 @@ export default function Admin({ loggedInUser }) {
                   const staffEmail = (staff.email || '').toLowerCase();
                   const isYou = myEmail && staffEmail === myEmail;
                   const isTargetAdmin = (staff.role || '').toLowerCase() === 'admin';
-                  
+
                   // Detects if the current item is the last row in the pagination slice
                   const isLastRow = index === paginatedStaff.length - 1;
 
                   return (
-                    <tr 
-                      key={staff.fullId} 
+                    <tr
+                      key={staff.fullId}
                       onClick={() => setSelectedStaffDetail(staff)}
-                      className={`transition-all duration-200 cursor-pointer ${
-                        staff.isArchived 
-                          ? 'bg-slate-50/40 opacity-60 text-slate-400 hover:opacity-80' 
-                          : 'hover:bg-indigo-50/40'
-                      }`}
+                      className={`transition-all duration-200 cursor-pointer ${staff.isArchived
+                        ? 'bg-slate-50/40 opacity-60 text-slate-400 hover:opacity-80'
+                        : 'hover:bg-indigo-50/40'
+                        }`}
                       title="Click to view full staff profile & activity audit trail"
                     >
                       <td className="p-4 pl-6">
                         <div className="flex items-center gap-3">
-                          <img 
-                            src={staff.avatar} 
-                            alt={staffName} 
+                          <img
+                            src={staff.avatar}
+                            alt={staffName}
                             className="w-8 h-8 rounded-full object-cover ring-2 ring-slate-100 shrink-0"
                           />
                           <div className="flex flex-col">
@@ -413,20 +412,17 @@ export default function Admin({ loggedInUser }) {
                         </div>
                       </td>
                       <td className="p-4 pl-6 text-left">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wider ${
-                          isTargetAdmin 
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60 shadow-2xs' 
-                            : 'bg-blue-50 text-blue-700 border border-blue-200/60 shadow-2xs'
-                        }`}>
-                          {isTargetAdmin ? <Shield className="w-2.5 h-2.5 shrink-0 text-emerald-600" /> : null}
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wider ${isTargetAdmin
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60 shadow-2xs'
+                          : 'bg-blue-50 text-blue-700 border border-blue-200/60 shadow-2xs'
+                          }`}>
                           {staff.role}
                         </span>
                       </td>
                       <td className="p-4 pl-7 text-left">
                         <span className="inline-flex items-center gap-1.5 font-bold text-slate-600">
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            staff.status === 'Active' ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : staff.status === 'Archived' ? 'bg-rose-500' : 'bg-slate-400'
-                          }`} />
+                          <span className={`w-1.5 h-1.5 rounded-full ${staff.status === 'Active' ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : staff.status === 'Archived' ? 'bg-rose-500' : 'bg-slate-400'
+                            }`} />
                           {staff.status}
                         </span>
                       </td>
@@ -436,20 +432,43 @@ export default function Admin({ loggedInUser }) {
                       <td className="p-4 text-right pr-6 shrink-0" onClick={(e) => e.stopPropagation()}>
                         {/* Protected Role Badge vs Edit/Direct Archive actions */}
                         {isTargetAdmin ? (
-                          <span 
-                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-50 border border-slate-200/80 text-[10px] font-bold text-slate-500 shadow-2xs cursor-help transition-all hover:bg-slate-100 hover:text-slate-700" 
-                            title="System security rules protect administrative accounts from being edited or archived by fellow caretakers."
-                          >
-                            <ShieldAlert className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span>Protected</span>
-                          </span>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedStaffDetail(staff);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
+                              title="View Account Details"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            <span
+                              className="p-1.5 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-all cursor-help inline-block"
+                              title="Protected — Admin accounts cannot be edited or archived."
+                            >
+                              <ShieldAlert className="w-3.5 h-3.5" />
+                            </span>
+                          </div>
                         ) : (
                           <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedStaffDetail(staff);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
+                              title="View Account Details"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
                             {staff.isArchived ? (
                               <>
-                                <button 
-                                  disabled 
-                                  className="p-1.5 text-slate-200 cursor-not-allowed opacity-40 inline-block" 
+                                <button
+                                  disabled
+                                  className="p-1.5 text-slate-200 cursor-not-allowed opacity-40 inline-block"
                                   title="Archived accounts must be restored before editing profile parameters."
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
@@ -465,9 +484,9 @@ export default function Admin({ loggedInUser }) {
                               </>
                             ) : (
                               <>
-                                <button 
+                                <button
                                   onClick={() => setSelectedEditStaff(staff)}
-                                  className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer" 
+                                  className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all inline-block active:scale-95 cursor-pointer"
                                   title="Edit Profile Details"
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
@@ -508,7 +527,7 @@ export default function Admin({ loggedInUser }) {
           disabled={loading}
           totalItems={totalStaff}
           itemsPerPage={STAFF_PER_PAGE}
-          itemName="caretakers"
+          itemName="accounts"
         />
       </section>
 
@@ -523,7 +542,7 @@ export default function Admin({ loggedInUser }) {
               <h2 className="text-sm font-bold text-slate-800">Activity Log</h2>
             </div>
           </div>
-          <button 
+          <button
             onClick={() => handleExport('Activity Log')}
             className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
           >
@@ -538,8 +557,8 @@ export default function Admin({ loggedInUser }) {
             {/* Live Search Logs */}
             <div className="relative flex-grow w-full">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="Search logs by keyword, user, or event..."
                 value={logSearchQuery}
                 onChange={(e) => setLogSearchQuery(e.target.value)}
@@ -576,16 +595,15 @@ export default function Admin({ loggedInUser }) {
           </div>
 
           {/* Collapsible Custom Date Picker Drawer */}
-          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
-            logDateFilter === 'custom' 
-              ? 'max-h-40 opacity-100 mt-1' 
-              : 'max-h-0 opacity-0 mt-0 pointer-events-none'
-          }`}>
+          <div className={`overflow-hidden transition-all duration-300 ease-in-out ${logDateFilter === 'custom'
+            ? 'max-h-40 opacity-100 mt-1'
+            : 'max-h-0 opacity-0 mt-0 pointer-events-none'
+            }`}>
             <div className="flex flex-wrap items-center gap-4 bg-slate-50 border border-slate-100 p-3 rounded-xl text-[11px] text-slate-500">
               <div className="flex items-center gap-2">
                 <span className="font-semibold uppercase tracking-wider text-[9px] text-slate-400">From:</span>
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   value={customStartDate}
                   max={new Date().toISOString().split('T')[0]}
                   onChange={(e) => {
@@ -601,8 +619,8 @@ export default function Admin({ loggedInUser }) {
               </div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold uppercase tracking-wider text-[9px] text-slate-400">To:</span>
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   value={customEndDate}
                   min={customStartDate || undefined}
                   max={new Date().toISOString().split('T')[0]}
@@ -611,7 +629,7 @@ export default function Admin({ loggedInUser }) {
                 />
               </div>
               {(customStartDate || customEndDate) && (
-                <button 
+                <button
                   type="button"
                   onClick={() => { setCustomStartDate(''); setCustomEndDate(''); }}
                   className="text-rose-600 hover:text-rose-700 font-bold ml-auto cursor-pointer"
@@ -621,18 +639,23 @@ export default function Admin({ loggedInUser }) {
               )}
             </div>
             {/* Inline validation hint */}
-            {customStartDate > new Date().toISOString().split('T')[0] && (
-              <p className="text-[10px] text-amber-600 font-semibold mt-1.5 px-1 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3 shrink-0" />
-                "From" date cannot be in the future.
-              </p>
-            )}
-            {customStartDate && customEndDate && customEndDate < customStartDate && (
-              <p className="text-[10px] text-amber-600 font-semibold mt-1.5 px-1 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3 shrink-0" />
-                "To" date cannot be before "From" date.
-              </p>
-            )}
+            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${(customStartDate > new Date().toISOString().split('T')[0]) ||
+                (customStartDate && customEndDate && customEndDate < customStartDate)
+                ? 'max-h-10 opacity-100 mt-1.5'
+                : 'max-h-0 opacity-0 mt-0 pointer-events-none'
+              }`}>
+              {customStartDate > new Date().toISOString().split('T')[0] ? (
+                <p className="text-[10px] text-amber-600 font-semibold px-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  "From" date cannot be in the future.
+                </p>
+              ) : (customStartDate && customEndDate && customEndDate < customStartDate) ? (
+                <p className="text-[10px] text-amber-600 font-semibold px-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  "To" date cannot be before "From" date.
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -662,10 +685,10 @@ export default function Admin({ loggedInUser }) {
                 paginatedLogs.map((log) => {
                   const dateObj = new Date(log.timestamp);
                   const dateFormatted = dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-                  const timeFormatted = dateObj.toLocaleTimeString(undefined, { 
-                    hour: '2-digit', 
-                    minute: '2-digit', 
-                    hour12: true 
+                  const timeFormatted = dateObj.toLocaleTimeString(undefined, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
                   });
 
                   return (
@@ -688,9 +711,8 @@ export default function Admin({ loggedInUser }) {
                       <td className="p-4 space-y-0.5">
                         <span className="font-bold text-slate-800 block flex items-center gap-2">
                           {log.event_title}
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            log.status === 'SUCCESS' ? 'bg-emerald-500' : log.status === 'BLOCKED' ? 'bg-rose-500' : 'bg-amber-400'
-                          }`} title={`Log Status: ${log.status}`} />
+                          <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'SUCCESS' ? 'bg-emerald-500' : log.status === 'BLOCKED' ? 'bg-rose-500' : 'bg-amber-400'
+                            }`} title={`Log Status: ${log.status}`} />
                         </span>
                         <span className="text-[11px] text-slate-500 block leading-relaxed">{log.event_desc}</span>
                       </td>
@@ -717,19 +739,19 @@ export default function Admin({ loggedInUser }) {
           disabled={logsLoading}
           totalItems={filteredLogs.length}
           itemsPerPage={LOGS_PER_PAGE}
-          itemName="log transactions"
+          itemName="activity logs"
         />
       </section>
 
       {/* Dialogue Modal Component: Add Staff */}
-      <AddStaffModal 
+      <AddStaffModal
         isOpen={isAddStaffOpen}
         onClose={() => setIsAddStaffOpen(false)}
         loggedInUser={loggedInUser}
         onAddSuccess={() => {
           setIsAddStaffOpen(false);
           loadStaffAccounts();
-          loadActivityLogs(); 
+          loadActivityLogs();
         }}
         apiBaseUrl={API_BASE_URL}
       />
@@ -743,7 +765,7 @@ export default function Admin({ loggedInUser }) {
         onEditSuccess={() => {
           setSelectedEditStaff(null);
           loadStaffAccounts();
-          loadActivityLogs(); 
+          loadActivityLogs();
         }}
         apiBaseUrl={API_BASE_URL}
       />

@@ -11,7 +11,7 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
   const [actionFilter, setActionFilter] = useState('ALL');
   const [currentPage, setCurrentPage] = useState(1);
 
-  const { shouldRender, requestClose, overlayClassName, panelClassName } = 
+  const { shouldRender, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
   // Reset to page 1 whenever filters change or modal is reopened
@@ -29,8 +29,8 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
     const logName = (log.user_name || '').toLowerCase();
     const staffName = (staff.name || '').toLowerCase();
 
-    const matchesStaff = (logEmail && staffEmail && logEmail === staffEmail) || 
-                         (logName && staffName && (logName.includes(staffName) || staffName.includes(logName)));
+    const matchesStaff = (logEmail && staffEmail && logEmail === staffEmail) ||
+      (logName && staffName && (logName.includes(staffName) || staffName.includes(logName)));
     if (!matchesStaff) return false;
 
     // Action Category Filter
@@ -71,9 +71,9 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
   const isTargetAdmin = (staff.role || '').toLowerCase() === 'admin';
 
   return createPortal(
-    <div 
+    <div
       className={`fixed inset-0 lg:left-60 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
-      onClick={(e) => e.target === e.currentTarget && requestClose()} 
+      onClick={(e) => e.target === e.currentTarget && requestClose()}
       role="dialog"
       aria-modal="true"
     >
@@ -92,7 +92,7 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
-      <div 
+      <div
         className={[
           'w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left flex flex-col max-h-[85vh]',
           panelClassName,
@@ -101,9 +101,9 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
         {/* Modal Header */}
         <div className="px-8 pt-7 pb-5 flex items-center justify-between border-b border-slate-100 shrink-0 bg-slate-50/40">
           <div className="flex items-center gap-4">
-            <img 
-              src={staff.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name || 'Staff')}&background=0D8ABC&color=fff`} 
-              alt={staff.name} 
+            <img
+              src={staff.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.name || 'Staff')}&background=0D8ABC&color=fff`}
+              alt={staff.name}
               className="w-12 h-12 rounded-2xl object-cover ring-2 ring-white shadow-md shrink-0"
             />
             <div>
@@ -111,18 +111,16 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
                 <h3 className="text-lg font-extrabold text-slate-900 leading-tight">
                   {staff.name || 'Staff Profile'}
                 </h3>
-                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wider ${
-                  isTargetAdmin 
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60 shadow-2xs' 
-                    : 'bg-blue-50 text-blue-700 border border-blue-200/60 shadow-2xs'
-                }`}>
+                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wider ${isTargetAdmin
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60 shadow-2xs'
+                  : 'bg-blue-50 text-blue-700 border border-blue-200/60 shadow-2xs'
+                  }`}>
                   {isTargetAdmin ? <Shield className="w-2.5 h-2.5 shrink-0 text-emerald-600" /> : null}
                   {staff.role}
                 </span>
                 <span className="inline-flex items-center gap-1 font-bold text-[10px] text-slate-600 ml-1">
-                  <span className={`w-2 h-2 rounded-full ${
-                    staff.status === 'Active' ? 'bg-emerald-500 shadow-xs shadow-emerald-500' : staff.status === 'Archived' ? 'bg-rose-500' : 'bg-slate-400'
-                  }`} />
+                  <span className={`w-2 h-2 rounded-full ${staff.status === 'Active' ? 'bg-emerald-500 shadow-xs shadow-emerald-500' : staff.status === 'Archived' ? 'bg-rose-500' : 'bg-slate-400'
+                    }`} />
                   {staff.status}
                 </span>
               </div>
@@ -132,9 +130,9 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
               </p>
             </div>
           </div>
-          <button 
+          <button
             type="button"
-            onClick={requestClose} 
+            onClick={requestClose}
             className="p-2 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
             aria-label="Close"
           >
@@ -150,7 +148,7 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
               <div className="flex items-center gap-2 shrink-0">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
                   <FileText className="w-4 h-4 text-emerald-600" />
-                  Staff Activity Audit Trail
+                  Activity Logs
                 </h4>
                 {/* Total count badge */}
                 {totalLogs > 0 && (
@@ -173,8 +171,8 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
                     className="w-full pl-8 pr-3 py-1.5 text-[11px] bg-slate-50 border border-slate-200/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium text-slate-700 placeholder:text-slate-400"
                   />
                   {searchQuery && (
-                    <button 
-                      onClick={() => setSearchQuery('')} 
+                    <button
+                      onClick={() => setSearchQuery('')}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                     >
                       <X className="w-3 h-3" />
@@ -189,11 +187,10 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
                       key={act}
                       type="button"
                       onClick={() => setActionFilter(act)}
-                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                        actionFilter === act 
-                          ? 'bg-white text-slate-900 shadow-2xs border border-slate-200/60' 
-                          : 'text-slate-400 hover:text-slate-600'
-                      }`}
+                      className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${actionFilter === act
+                        ? 'bg-white text-slate-900 shadow-2xs border border-slate-200/60'
+                        : 'text-slate-400 hover:text-slate-600'
+                        }`}
                     >
                       {act === 'ALL' ? 'All' : act === 'ADD' ? 'Add' : act === 'EDIT' ? 'Edit' : 'Archive'}
                     </button>
@@ -207,23 +204,22 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
                 {paginatedLogs.map((log) => {
                   const dateObj = new Date(log.timestamp);
                   const dateFormatted = dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-                  const timeFormatted = dateObj.toLocaleTimeString(undefined, { 
-                    hour: '2-digit', 
-                    minute: '2-digit', 
-                    hour12: true 
+                  const timeFormatted = dateObj.toLocaleTimeString(undefined, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
                   });
 
                   return (
-                    <div 
-                      key={log.log_id} 
+                    <div
+                      key={log.log_id}
                       className="p-3.5 rounded-2xl bg-white border border-slate-200/70 shadow-2xs hover:border-slate-300/80 transition-all flex items-start justify-between gap-4 text-xs"
                     >
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-slate-800">{log.event_title}</span>
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                            log.status === 'SUCCESS' ? 'bg-emerald-500' : log.status === 'BLOCKED' ? 'bg-rose-500' : 'bg-amber-400'
-                          }`} title={log.status} />
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${log.status === 'SUCCESS' ? 'bg-emerald-500' : log.status === 'BLOCKED' ? 'bg-rose-500' : 'bg-amber-400'
+                            }`} title={log.status} />
                         </div>
                         <p className="text-[11px] text-slate-500 leading-relaxed">{log.event_desc}</p>
                       </div>
@@ -239,11 +235,6 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
               <div className="p-8 rounded-2xl bg-slate-50/70 border border-dashed border-slate-200 text-center space-y-2">
                 <Activity className="w-8 h-8 text-slate-300 mx-auto" />
                 <p className="text-xs font-bold text-slate-600">No Activity Logs Found</p>
-                <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                  {searchQuery || actionFilter !== 'ALL'
-                    ? 'No logs match your current filters. Try adjusting your search or category.'
-                    : 'This account has not yet triggered any recorded database actions or system transactions.'}
-                </p>
               </div>
             )}
           </div>
@@ -264,9 +255,9 @@ export default function StaffDetailModal({ isOpen, onClose, staff, allLogs = [] 
 
         {/* Modal Close Footer */}
         <div className="px-8 py-4 bg-slate-50/60 border-t border-slate-100 flex justify-end shrink-0">
-          <button 
-            type="button" 
-            onClick={requestClose} 
+          <button
+            type="button"
+            onClick={requestClose}
             className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer active:scale-95"
           >
             Close Drawer
