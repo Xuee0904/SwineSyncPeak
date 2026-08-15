@@ -69,9 +69,8 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
       <div
         ref={containerRef}
         style={stepTransitionStyle}
-        className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${
-          successInfo ? "max-w-sm" : "max-w-md"
-        } ${panelClassName}`}
+        className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${successInfo ? "max-w-sm" : "max-w-md"
+          } ${panelClassName}`}
       >
         {!successInfo && (
           <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
@@ -83,9 +82,6 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
                 <h3 className="text-base font-bold text-slate-900">
                   {hasSwine ? `Cannot Archive #${pen.code}` : `Archive Pen #${pen.code}`}
                 </h3>
-                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                  {hasSwine ? "Active records detected" : "Deactivate housing unit"}
-                </p>
               </div>
             </div>
             <button
@@ -101,8 +97,8 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
 
         {successInfo ? (
           <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner mx-auto">
-              <CheckCircle2 size={32} className="animate-bounce" />
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm mx-auto">
+              <CheckCircle2 size={28} strokeWidth={2} />
             </div>
             <div>
               <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
@@ -112,7 +108,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
                 Pen #{successInfo.code} Archived!
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
-                The housing unit has been archived cleanly and recorded in activity logs.
+                Pen #{successInfo.code} has been successfully archived.
               </p>
             </div>
 
@@ -157,7 +153,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4 animate-in fade-in duration-300">
             <p className="text-xs text-slate-600 leading-relaxed">
-              Archiving pen <span className="font-bold text-slate-900">#{pen.code}</span> will remove it from active housing selections across the system. This action will be logged in activity history.
+              Archiving <span className="font-bold text-slate-900">#{pen.code}</span> will remove it from active housing selections.
             </p>
 
             <div>
@@ -168,11 +164,10 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
                 {reasonOptions.map((option) => (
                   <label
                     key={option}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
-                      selectedReason === option
-                        ? "border-rose-500 bg-rose-50/40 text-rose-900 shadow-xs"
-                        : "border-slate-200 bg-slate-50/50 text-slate-700 hover:bg-slate-100/60"
-                    }`}
+                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${selectedReason === option
+                      ? "border-rose-500 bg-rose-50/40 text-rose-900 shadow-xs"
+                      : "border-slate-200 bg-slate-50/50 text-slate-700 hover:bg-slate-100/60"
+                      }`}
                   >
                     <input
                       type="radio"
@@ -190,20 +185,18 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
                 ))}
               </div>
 
-              {selectedReason.startsWith("Other") && (
-                <div className="mt-3">
-                  <input
-                    type="text"
-                    placeholder="Enter specific reason..."
-                    value={customReason}
-                    onChange={(e) => {
-                      setCustomReason(e.target.value);
-                      if (e.target.value.trim()) setReasonError("");
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 transition-all"
-                  />
-                </div>
-              )}
+              <div className={`overflow-hidden transition-all duration-300 ease-in-out ${selectedReason.startsWith("Other") ? 'max-h-20 opacity-100 mt-3' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}>
+                <input
+                  type="text"
+                  placeholder="Enter specific reason..."
+                  value={customReason}
+                  onChange={(e) => {
+                    setCustomReason(e.target.value);
+                    if (e.target.value.trim()) setReasonError("");
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 transition-all"
+                />
+              </div>
               {reasonError && (
                 <p className="text-xs text-rose-600 font-medium mt-1">{reasonError}</p>
               )}

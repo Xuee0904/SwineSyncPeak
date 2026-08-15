@@ -26,6 +26,7 @@ import SwineTransferModal from "../components/PenManagement/SwineTransferModal";
 import EditPenModal from "../components/PenManagement/EditPenModal";
 import ArchivePenModal from "../components/PenManagement/ArchivePenModal";
 import ViewPenModal from "../components/PenManagement/ViewPenModal";
+import Pagination from "../components/common/Pagination";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
@@ -90,6 +91,8 @@ export default function PenManagement({ loggedInUser }) {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState("card"); // "card" or "table"
+  const [tablePage, setTablePage] = useState(1);
+  const TABLE_PER_PAGE = 10;
   const menuRef = useRef(null);
 
   const showArchived = activeSection === "ARCHIVED";
@@ -141,6 +144,12 @@ export default function PenManagement({ loggedInUser }) {
     return matchesSection && matchesQuery;
   });
 
+  // Reset table pagination when filters/search change
+  useEffect(() => { setTablePage(1); }, [filteredPens.length, activeSection, query, viewMode]);
+
+  const totalTablePages = Math.ceil(filteredPens.length / TABLE_PER_PAGE);
+  const paginatedTablePens = filteredPens.slice((tablePage - 1) * TABLE_PER_PAGE, tablePage * TABLE_PER_PAGE);
+
   const totalCapacity = activePens.reduce((sum, p) => sum + Number(p.capacity || 0), 0);
   const totalOccupancy = activePens.reduce((sum, p) => sum + Number(p.occupancy || 0), 0);
   const utilization = totalCapacity ? Math.round((totalOccupancy / totalCapacity) * 100) : 0;
@@ -177,7 +186,6 @@ export default function PenManagement({ loggedInUser }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save pen.");
 
-      toast.success(`Added pen ${code.trim().toUpperCase()}`);
       if (typeof onSuccess === "function") {
         onSuccess({ code: code.trim().toUpperCase(), section, capacity: finalCapacity });
       } else {
@@ -207,7 +215,6 @@ export default function PenManagement({ loggedInUser }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update pen.");
 
-      toast.success(`Updated pen #${code.trim().toUpperCase()}`);
       if (typeof onSuccess === "function") {
         onSuccess({ code: code.trim().toUpperCase(), section, capacity });
       } else {
@@ -236,7 +243,6 @@ export default function PenManagement({ loggedInUser }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to archive pen.");
 
-      toast.success(`Archived pen #${code || id}`);
       if (typeof onSuccess === "function") {
         onSuccess({ code });
       } else {
@@ -380,33 +386,27 @@ export default function PenManagement({ loggedInUser }) {
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={fetchPens}
-              disabled={loading}
-              className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer disabled:opacity-50 shrink-0"
-              title="Refresh Pens"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-emerald-600" : ""}`} />
-            </button>
 
-            <button
-              type="button"
-              onClick={() => setShowTransferModal(true)}
-              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shrink-0"
-            >
-              <ArrowRightLeft className="w-4 h-4" strokeWidth={2.5} /> Transfer Swine
-            </button>
 
-            <button
-              type="button"
-              onClick={() => setShowAddModal(true)}
-              className={`flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer shrink-0 ${
-                showArchived ? 'opacity-0 pointer-events-none' : ''
-              }`}
-            >
-              <Plus className="w-4 h-4" strokeWidth={2.5} /> Add Pen
-            </button>
+            {!showArchived && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowTransferModal(true)}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shrink-0"
+                >
+                  <ArrowRightLeft className="w-4 h-4" strokeWidth={2.5} /> Transfer Swine
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(true)}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer shrink-0"
+                >
+                  <Plus className="w-4 h-4" strokeWidth={2.5} /> Add Pen
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -471,7 +471,7 @@ export default function PenManagement({ loggedInUser }) {
                     </td>
                   </tr>
                 ) : (
-                  filteredPens.map((pen) => {
+                  paginatedTablePens.map((pen) => {
                     const section = SECTIONS[pen.section] || Object.values(SECTIONS)[0] || { label: pen.section || "Pen", color: "text-emerald-800", bg: "bg-emerald-50 border-emerald-200/60" };
                     const status = getStatus(pen.occupancy, pen.capacity);
                     const pct = pen.capacity > 0 ? Math.min(100, Math.round((pen.occupancy / pen.capacity) * 100)) : 0;
@@ -555,6 +555,17 @@ export default function PenManagement({ loggedInUser }) {
               </tbody>
             </table>
           </div>
+          {/* Table Pagination */}
+          {filteredPens.length > TABLE_PER_PAGE && (
+            <Pagination
+              currentPage={tablePage}
+              totalPages={totalTablePages}
+              onPageChange={setTablePage}
+              totalItems={filteredPens.length}
+              itemsPerPage={TABLE_PER_PAGE}
+              itemName="pens"
+            />
+          )}
         </div>
       ) : (
         /* --- CARD VIEW --- */
@@ -582,9 +593,11 @@ export default function PenManagement({ loggedInUser }) {
               <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">
                 <Grid3X3 className="w-6 h-6 text-slate-300" />
               </div>
-              <h3 className="font-bold text-slate-800 text-sm">No Pens Found</h3>
+              <h3 className="font-bold text-slate-800 text-sm">{showArchived ? "No Archived Pens" : "No Pens Found"}</h3>
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                {query || activeSection !== "ALL"
+                {showArchived 
+                  ? (query ? "No archived pens match your search terms." : "You do not have any archived pens.")
+                  : query || activeSection !== "ALL"
                   ? "Try adjusting your section filter or search terms."
                   : "No pen records exist in the database yet. Click 'Add Pen' to create your first facility pen."}
               </p>

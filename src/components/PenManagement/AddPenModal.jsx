@@ -55,9 +55,8 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
       <div
         ref={containerRef}
         style={stepTransitionStyle}
-        className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${
-          successInfo ? "max-w-sm" : "max-w-md"
-        } ${panelClassName}`}
+        className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${successInfo ? "max-w-sm" : "max-w-md"
+          } ${panelClassName}`}
       >
         {!successInfo && (
           <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
@@ -67,9 +66,6 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">Add New Pen</h3>
-                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                  Create a new housing unit
-                </p>
               </div>
             </div>
             <button
@@ -85,8 +81,8 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
 
         {successInfo ? (
           <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner mx-auto">
-              <CheckCircle2 size={32} className="animate-bounce" />
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm mx-auto">
+              <CheckCircle2 size={28} strokeWidth={2} />
             </div>
             <div>
               <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
@@ -164,7 +160,7 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
               </select>
               {sections[section]?.desc && (
                 <p className="text-[11px] font-medium text-slate-500 mt-1">
-                  ℹ️ {sections[section].desc}
+                  {sections[section].desc}
                 </p>
               )}
             </div>
@@ -184,8 +180,8 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
               />
               {isBoarLocked && (
-                <p className="text-[11px] font-bold text-amber-600 mt-1 flex items-center gap-1">
-                  <span>⚠️ Max capacity is locked to 1 since boars fight other pigs.</span>
+                <p className="text-[11px] font-bold text-amber-600 mt-1">
+                  Max capacity is locked to 1 since boars fight other pigs.
                 </p>
               )}
             </div>

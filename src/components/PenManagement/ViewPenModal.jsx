@@ -9,8 +9,8 @@ import useModalAnimation from "../../hooks/useModalAnimation";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
 // Step identifiers
-const STEP_VIEW   = "view";
-const STEP_EDIT   = "edit";
+const STEP_VIEW = "view";
+const STEP_EDIT = "edit";
 const STEP_SUCCESS = "success";
 
 export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, onArchive, loggedInUser }) {
@@ -18,26 +18,26 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
     useModalAnimation(isOpen, onClose);
 
   /* ─── Step state ────────────────────────────────────────────── */
-  const [step, setStep]           = useState(STEP_VIEW);
+  const [step, setStep] = useState(STEP_VIEW);
   const [successInfo, setSuccessInfo] = useState(null);
 
   /* ─── Swine data ─────────────────────────────────────────────── */
-  const [swineData, setSwineData]   = useState({ pigs: [], batches: [] });
+  const [swineData, setSwineData] = useState({ pigs: [], batches: [] });
   const [loadingSwine, setLoadingSwine] = useState(false);
-  const [swineReady, setSwineReady]   = useState(false);  // triggers entry animation
+  const [swineReady, setSwineReady] = useState(false);  // triggers entry animation
 
   /* ─── Edit form state ────────────────────────────────────────── */
-  const [code, setCode]         = useState("");
-  const [section, setSection]   = useState("S");
+  const [code, setCode] = useState("");
+  const [section, setSection] = useState("S");
   const [capacity, setCapacity] = useState("10");
   const [submitting, setSubmitting] = useState(false);
 
   /* ─── Smooth step transition (ref-based snapshot approach) ─────── */
   // We capture the container height BEFORE setStep() so useLayoutEffect
   // can animate from the old height to the new height after React re-renders.
-  const containerRef        = useRef(null);
-  const prevHeightSnapRef   = useRef(null); // height captured before step change
-  const [ht, setHt]         = useState('auto');
+  const containerRef = useRef(null);
+  const prevHeightSnapRef = useRef(null); // height captured before step change
+  const [ht, setHt] = useState('auto');
   const TRANSITION_DURATION = 320;
 
   useLayoutEffect(() => {
@@ -93,7 +93,7 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
       return () => clearTimeout(timer);
     });
     return () => cancelAnimationFrame(raf);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swineData]);
 
   const containerStyle = {
@@ -165,7 +165,7 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
       setSwineData({ pigs: [], batches: [] });
       setSwineReady(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, pen]);
 
   if (!shouldRender || !pen) return null;
@@ -173,29 +173,31 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
   const handleClose = () => requestClose();
 
   /* ─── View‑step derived values ───────────────────────────────── */
-  const sectionObj  = resolveSectionObj(pen);
-  const pct         = Math.min(100, Math.round((Number(pen.occupancy || 0) / Number(pen.capacity || 1)) * 100));
-  const totalHead   = loadingSwine
+  const sectionObj = resolveSectionObj(pen);
+  const pct = Math.min(100, Math.round((Number(pen.occupancy || 0) / Number(pen.capacity || 1)) * 100));
+  const totalHead = loadingSwine
     ? "..."
     : (swineData.pigs?.length || 0) + (swineData.batches?.reduce((a, b) => a + Number(b.current_count || 0), 0) || 0);
 
   /* ─── Edit‑step derived values ───────────────────────────────── */
-  const isBoarLocked      = section === "B";
-  const minCapacity       = Math.max(1, pen?.occupancy || 1);
-  const originalSecCat    = getSectionCat(pen?.section);
-  const newSecCat         = getSectionCat(section);
-  const hasSwine          = (swineData.pigs?.length || 0) > 0 || (swineData.batches?.length || 0) > 0 || (pen?.occupancy || 0) > 0;
+  const isBoarLocked = section === "B";
+  const minCapacity = Math.max(1, pen?.occupancy || 1);
+  const originalSecCat = getSectionCat(pen?.section);
+  const newSecCat = getSectionCat(section);
+  const hasSwine = (swineData.pigs?.length || 0) > 0 || (swineData.batches?.length || 0) > 0 || (pen?.occupancy || 0) > 0;
 
   let typeWarning = null;
   if (hasSwine && newSecCat !== originalSecCat) {
     if (newSecCat === "S" && (swineData.pigs?.some(p => p.gender === "Male" || p.type?.toLowerCase() === "boar" || p.category?.toLowerCase()?.includes("boar")) || originalSecCat === "B" || swineData.batches?.length > 0)) {
-      typeWarning = "Cannot change to Sow Pen: this housing unit currently houses boars, piglet batches, or non-sow swine. Please transfer them to another pen first.";
+      typeWarning = "Sow pens are for female breeding swine only. Please transfer or remove the current animals before switching to this type.";
     } else if (newSecCat === "B" && (swineData.pigs?.some(p => p.gender === "Female" || p.type?.toLowerCase() === "sow" || p.category?.toLowerCase()?.includes("sow")) || originalSecCat === "S" || swineData.batches?.length > 0 || (pen?.occupancy || 0) > 1)) {
-      typeWarning = `Cannot change to Boar Pen: this housing unit currently houses ${pen?.occupancy} swine (sows/batches). Boar pens allow max 1 solitary boar.`;
-    } else if (newSecCat === "W" && swineData.pigs?.some(p => p.type?.toLowerCase() === "boar" || p.type?.toLowerCase() === "sow" || p.category?.toLowerCase()?.includes("boar") || p.category?.toLowerCase()?.includes("sow"))) {
-      typeWarning = "Cannot change to Weaned / Fattening: this housing unit currently houses adult breeding swine. Please transfer them first.";
+      typeWarning = `Boar pens hold only 1 solitary boar, but this pen currently has ${pen?.occupancy} animal${(pen?.occupancy || 0) > 1 ? 's' : ''}. Please transfer them out before switching.`;
+    } else if (newSecCat === "W" && (originalSecCat === "S" || swineData.pigs?.some(p => p.type?.toLowerCase() === "boar" || p.type?.toLowerCase() === "sow" || p.gender === "Female" || p.category?.toLowerCase()?.includes("boar") || p.category?.toLowerCase()?.includes("sow")))) {
+      typeWarning = originalSecCat === "S"
+        ? "Sows cannot be housed in a Weaned / Fattening pen. Please transfer the sows to a Sow pen before switching pen type."
+        : "Weaned / Fattening pens are for growing pigs only. Please move the adult breeding swine out before switching pen type.";
     } else if (pen?.occupancy > 0) {
-      typeWarning = `Cannot change pen type from ${pen?.section} while this housing unit currently houses ${pen?.occupancy} active swine. Please transfer them to another pen first.`;
+      typeWarning = `This pen still has ${pen?.occupancy} active animal${(pen?.occupancy || 0) > 1 ? 's' : ''} inside. Please transfer them to another pen before changing the pen type.`;
     }
   }
 
@@ -258,8 +260,7 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
                   <Eye size={18} />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Pen #{pen.code} Details</h3>
-                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Housing unit summary</p>
+                  <h3 className="text-base font-bold text-slate-900">{pen.code} Details</h3>
                 </div>
               </div>
               <button type="button" onClick={handleClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer">
@@ -293,9 +294,8 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
                 </div>
                 <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      pct >= 100 ? "bg-rose-500" : pct >= 80 ? "bg-amber-500" : "bg-emerald-500"
-                    }`}
+                    className={`h-full rounded-full transition-all duration-500 ${pct >= 100 ? "bg-rose-500" : pct >= 80 ? "bg-amber-500" : "bg-emerald-500"
+                      }`}
                     style={{ width: `${pct}%` }}
                   />
                 </div>
@@ -333,76 +333,74 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
                         animation: swine-fade-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
                       }
                     `}</style>
-                  <div className="max-h-52 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                    {/* Individual pigs */}
-                    {(swineData.pigs || []).map((pig, i) => (
-                      <div
-                        key={pig.pig_id || pig.id}
-                        className={`p-3 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-100 flex items-center justify-between gap-2 transition-colors${swineReady ? ' swine-card-enter' : ''}`}
-                        style={swineReady ? { animationDelay: `${i * 55}ms` } : undefined}
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs text-slate-900 truncate">#{pig.pig_tag || pig.id}</span>
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide shrink-0 ${
-                              pig.gender === "Female"
+                    <div className="max-h-52 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                      {/* Individual pigs */}
+                      {(swineData.pigs || []).map((pig, i) => (
+                        <div
+                          key={pig.pig_id || pig.id}
+                          className={`p-3 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-100 flex items-center justify-between gap-2 transition-colors${swineReady ? ' swine-card-enter' : ''}`}
+                          style={swineReady ? { animationDelay: `${i * 55}ms` } : undefined}
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-xs text-slate-900 truncate">#{pig.pig_tag || pig.id}</span>
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide shrink-0 ${pig.gender === "Female"
                                 ? "bg-rose-100 text-rose-800"
                                 : pig.gender === "Male"
-                                ? "bg-blue-100 text-blue-800"
-                                : "bg-emerald-100 text-emerald-800"
-                            }`}>
-                              {pig.gender || pig.status || "Pig"}
-                            </span>
-                            <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 text-[9px] font-bold uppercase tracking-wide shrink-0">
-                              {pig.status || "Healthy"}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5">
-                            {pig.breed || "Crossbreed"}
-                            {pig.weight != null ? ` • ${Number(pig.weight).toFixed(1)} kg` : ""}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Piglet batches */}
-                    {(swineData.batches || []).map((batch, i) => {
-                      const batchAge = batch.date_of_birth
-                        ? Math.floor((Date.now() - new Date(batch.date_of_birth).getTime()) / (1000 * 60 * 60 * 24))
-                        : null;
-                      return (
-                        <div
-                          key={batch.batch_id || batch.id}
-                          className={`p-3 rounded-xl bg-amber-50/60 hover:bg-amber-50 border border-amber-100 flex items-center justify-between gap-2 transition-colors${swineReady ? ' swine-card-enter' : ''}`}
-                          style={swineReady ? { animationDelay: `${((swineData.pigs?.length || 0) + i) * 55}ms` } : undefined}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-xs text-amber-950 truncate">
-                                {getBatchLabel(batch)}
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-emerald-100 text-emerald-800"
+                                }`}>
+                                {pig.gender || pig.status || "Pig"}
                               </span>
-                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold uppercase tracking-wide shrink-0">
-                                Piglet Batch
-                              </span>
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide shrink-0 ${
-                                batch.status === "suckling"
-                                  ? "bg-sky-100 text-sky-700"
-                                  : "bg-violet-100 text-violet-700"
-                              }`}>
-                                {batch.status || "suckling"}
+                              <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 text-[9px] font-bold uppercase tracking-wide shrink-0">
+                                {pig.status || "Healthy"}
                               </span>
                             </div>
-                            <p className="text-[11px] text-amber-700/80 font-medium truncate mt-0.5">
-                              {batch.breed || "Crossbreed"}
-                              {" • "}
-                              <span className="font-semibold text-amber-900">{batch.current_count} head</span>
-                              {batchAge !== null ? ` • ${batchAge}d old` : ""}
+                            <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5">
+                              {pig.breed || "Crossbreed"}
+                              {pig.weight != null ? ` • ${Number(pig.weight).toFixed(1)} kg` : ""}
                             </p>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                      ))}
+
+                      {/* Piglet batches */}
+                      {(swineData.batches || []).map((batch, i) => {
+                        const batchAge = batch.date_of_birth
+                          ? Math.floor((Date.now() - new Date(batch.date_of_birth).getTime()) / (1000 * 60 * 60 * 24))
+                          : null;
+                        return (
+                          <div
+                            key={batch.batch_id || batch.id}
+                            className={`p-3 rounded-xl bg-amber-50/60 hover:bg-amber-50 border border-amber-100 flex items-center justify-between gap-2 transition-colors${swineReady ? ' swine-card-enter' : ''}`}
+                            style={swineReady ? { animationDelay: `${((swineData.pigs?.length || 0) + i) * 55}ms` } : undefined}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-xs text-amber-950 truncate">
+                                  {getBatchLabel(batch)}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-bold uppercase tracking-wide shrink-0">
+                                  Piglet Batch
+                                </span>
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide shrink-0 ${batch.status === "suckling"
+                                  ? "bg-sky-100 text-sky-700"
+                                  : "bg-violet-100 text-violet-700"
+                                  }`}>
+                                  {batch.status || "suckling"}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-amber-700/80 font-medium truncate mt-0.5">
+                                {batch.breed || "Crossbreed"}
+                                {" • "}
+                                <span className="font-semibold text-amber-900">{batch.current_count} head</span>
+                                {batchAge !== null ? ` • ${batchAge}d old` : ""}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </>
                 )}
               </div>
@@ -444,7 +442,6 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
                 </button>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">Edit Pen #{pen.code}</h3>
-                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Update housing unit details</p>
                 </div>
               </div>
               <button
@@ -491,7 +488,7 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
                 </select>
                 {typeWarning && (
                   <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold mt-2 flex items-start gap-2 animate-in fade-in">
-                    <span>🚫 {typeWarning}</span>
+                    <span>{typeWarning}</span>
                   </div>
                 )}
               </div>
@@ -514,9 +511,9 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                 />
                 {isBoarLocked ? (
-                  <p className="text-[11px] font-bold text-amber-600 mt-1">⚠️ Max capacity is locked to 1 since boars fight other pigs.</p>
+                  <p className="text-[11px] font-bold text-amber-600 mt-1">Max capacity is locked to 1 since boars fight other pigs.</p>
                 ) : pen?.occupancy > 0 ? (
-                  <p className="text-[11px] font-medium text-slate-500 mt-1">ℹ️ Capacity cannot be lower than the current occupancy ({pen.occupancy} pigs).</p>
+                  <p className="text-[11px] font-medium text-slate-500 mt-1">Capacity cannot be lower than the current occupancy ({pen.occupancy} pigs).</p>
                 ) : null}
               </div>
 

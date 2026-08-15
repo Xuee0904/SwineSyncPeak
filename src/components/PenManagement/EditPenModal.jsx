@@ -77,13 +77,15 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
 
   if (hasSwine && newSecCat !== originalSecCat) {
     if (newSecCat === "S" && (housedSwine.pigs?.some(p => p.gender === "Male" || p.type?.toLowerCase() === "boar" || p.category?.toLowerCase()?.includes("boar")) || originalSecCat === "B" || housedSwine.batches?.length > 0)) {
-      typeWarning = "Cannot change to Sow Pen: this housing unit currently houses boars, piglet batches, or non-sow swine. Please transfer them to another pen first.";
+      typeWarning = "Sow pens are for female breeding swine only. Please transfer or remove the current animals before switching to this type.";
     } else if (newSecCat === "B" && (housedSwine.pigs?.some(p => p.gender === "Female" || p.type?.toLowerCase() === "sow" || p.category?.toLowerCase()?.includes("sow")) || originalSecCat === "S" || housedSwine.batches?.length > 0 || (pen?.occupancy || 0) > 1)) {
-      typeWarning = `Cannot change to Boar Pen: this housing unit currently houses ${pen?.occupancy} swine (sows/batches). Boar pens allow max 1 solitary boar.`;
-    } else if (newSecCat === "W" && housedSwine.pigs?.some(p => p.type?.toLowerCase() === "boar" || p.type?.toLowerCase() === "sow" || p.category?.toLowerCase()?.includes("boar") || p.category?.toLowerCase()?.includes("sow"))) {
-      typeWarning = "Cannot change to Weaned / Fattening: this housing unit currently houses adult breeding swine. Please transfer them first.";
+      typeWarning = `Boar pens hold only 1 solitary boar, but this pen currently has ${pen?.occupancy} animal${(pen?.occupancy || 0) > 1 ? 's' : ''}. Please transfer them out before switching.`;
+    } else if (newSecCat === "W" && (originalSecCat === "S" || housedSwine.pigs?.some(p => p.type?.toLowerCase() === "boar" || p.type?.toLowerCase() === "sow" || p.gender === "Female" || p.category?.toLowerCase()?.includes("boar") || p.category?.toLowerCase()?.includes("sow")))) {
+      typeWarning = originalSecCat === "S"
+        ? "Sows cannot be housed in a Weaned / Fattening pen. Please transfer the sows to a Sow pen before switching pen type."
+        : "Weaned / Fattening pens are for growing pigs only. Please move the adult breeding swine out before switching pen type.";
     } else if (pen?.occupancy > 0) {
-      typeWarning = `Cannot change pen type from ${pen?.section} while this housing unit currently houses ${pen?.occupancy} active swine. Please transfer them to another pen first.`;
+      typeWarning = `This pen still has ${pen?.occupancy} active animal${(pen?.occupancy || 0) > 1 ? 's' : ''} inside. Please transfer them to another pen before changing the pen type.`;
     }
   }
 
@@ -111,9 +113,8 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
       <div
         ref={containerRef}
         style={stepTransitionStyle}
-        className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${
-          successInfo ? "max-w-sm" : "max-w-md"
-        } ${panelClassName}`}
+        className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${successInfo ? "max-w-sm" : "max-w-md"
+          } ${panelClassName}`}
       >
         {!successInfo && (
           <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
@@ -123,9 +124,6 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">Edit Pen #{pen.code}</h3>
-                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                  Update housing unit details
-                </p>
               </div>
             </div>
             <button
@@ -141,8 +139,8 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
 
         {successInfo ? (
           <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner mx-auto">
-              <CheckCircle2 size={32} className="animate-bounce" />
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm mx-auto">
+              <CheckCircle2 size={28} strokeWidth={2} />
             </div>
             <div>
               <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
@@ -152,7 +150,7 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
                 Pen #{successInfo.code} Updated!
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
-                {sections[successInfo.section]?.label || "Pen"} details have been updated successfully and recorded in activity logs.
+                {sections[successInfo.section]?.label || "Pen"} details have been updated successfully.
               </p>
             </div>
 
@@ -209,7 +207,7 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
               </select>
               {typeWarning && (
                 <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold mt-2 flex items-start gap-2 animate-in fade-in">
-                  <span>🚫 {typeWarning}</span>
+                  <span>{typeWarning}</span>
                 </div>
               )}
             </div>
@@ -235,11 +233,11 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
               />
               {isBoarLocked ? (
                 <p className="text-[11px] font-bold text-amber-600 mt-1">
-                  ⚠️ Max capacity is locked to 1 since boars fight other pigs.
+                  Max capacity is 1 since boars fight other pigs.
                 </p>
               ) : pen?.occupancy > 0 ? (
                 <p className="text-[11px] font-medium text-slate-500 mt-1">
-                  ℹ️ Capacity cannot be lower than the current occupancy ({pen.occupancy} pigs).
+                  Capacity cannot be lower than the current occupancy ({pen.occupancy} pigs).
                 </p>
               ) : null}
             </div>
