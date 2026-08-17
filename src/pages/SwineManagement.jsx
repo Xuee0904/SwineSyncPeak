@@ -239,6 +239,10 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     try {
       const params = new URLSearchParams({ page: String(archivedPage), limit: String(PAGE_SIZE) });
       if (search && search !== '') params.set('search', search);
+      if (filterPen && filterPen !== 'all') params.set('pen', filterPen);
+      if (filterCat && filterCat !== 'all') params.set('category', filterCat);
+      if (filterBreed && filterBreed !== 'all') params.set('breed', filterBreed);
+
       const res = await fetch(`${API_BASE}/api/pigs/archived?${params}`);
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
@@ -250,7 +254,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     } finally {
       setArchivedLoading(false);
     }
-  }, [archivedPage, search]);
+  }, [archivedPage, search, filterPen, filterCat, filterBreed]);
 
   useEffect(() => {
     fetchStats();
@@ -261,7 +265,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
   useEffect(() => { if (viewArchived) fetchArchived(); }, [fetchArchived, viewArchived]);
 
   useEffect(() => { setPage(1); }, [search, filterPen, filterCat, filterBreed]);
-  useEffect(() => { setArchivedPage(1); }, [search]);
+  useEffect(() => { setArchivedPage(1); }, [search, filterPen, filterCat, filterBreed]);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 400);
@@ -411,9 +415,8 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
             )}
           </div>
 
-          {/* ── Row 2: Filters (hidden in archived view) ── */}
-          {!viewArchived && (
-            <div className="flex flex-wrap items-center gap-3 mt-3">
+          {/* ── Row 2: Filters (Visible in both views) ── */}
+          <div className="flex flex-wrap items-center gap-3 mt-3">
               <div className="flex flex-col gap-0.5">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Pen</label>
                 <select
@@ -459,7 +462,6 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                 </select>
               </div>
             </div>
-          )}
         </div>
 
         <div className="overflow-x-auto">

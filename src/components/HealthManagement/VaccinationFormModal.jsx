@@ -154,10 +154,18 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
   const effectiveVaccineName =
     form.vaccine_name === "Other" ? form.vaccine_name_custom : form.vaccine_name;
 
+  const selectedAnimal = form.targetType === "pig"
+    ? pigs.find(p => String(p.id) === String(form.pig_id))
+    : batches.find(b => String(b.id) === String(form.batch_id));
+  
+  const minDate = editRecord?._raw?.date_of_birth || prefillData?.date_of_birth || prefillData?.dateOfBirth || selectedAnimal?.date_of_birth;
+  const minDateFormatted = minDate ? String(minDate).slice(0, 10) : null;
+
   const validate = () => {
     const errs = {};
     if (!effectiveVaccineName.trim()) errs.vaccine_name = "Vaccine name is required.";
     if (!form.administered_date) errs.administered_date = "Date administered is required.";
+    else if (minDateFormatted && form.administered_date < minDateFormatted) errs.administered_date = `Cannot be before birthdate (${new Date(minDateFormatted).toLocaleDateString()})`;
     if (!form.administered_by.trim()) errs.administered_by = "Administered by is required.";
     if (form.targetType === "pig" && !form.pig_id) errs.pig_id = "Please select a pig.";
     if (form.targetType === "batch" && !form.batch_id) errs.batch_id = "Please select a batch.";
@@ -461,6 +469,7 @@ export default function VaccinationFormModal({ open, onClose, editRecord, onSucc
                 name="administered_date"
                 value={form.administered_date}
                 onChange={handleChange}
+                min={minDateFormatted || undefined}
                 className={`${inputCls} ${fieldErrors.administered_date ? "border-rose-400 ring-1 ring-rose-200" : ""}`}
               />
               {fieldErrors.administered_date && (

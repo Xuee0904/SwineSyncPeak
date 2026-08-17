@@ -77,6 +77,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
   const [batchDraftInfo, setBatchDraftInfo] = useState(null);
   const [savedPigId, setSavedPigId] = useState(null);
   const [savedBatchId, setSavedBatchId] = useState(null);
+  const [vaccineMinDate, setVaccineMinDate] = useState(null);
   const [vaccinations, setVaccinations] = useState([{ id: Date.now(), vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
   const [isSavingVaccinations, setIsSavingVaccinations] = useState(false);
   const [openVaccineIdx, setOpenVaccineIdx] = useState(null);
@@ -283,6 +284,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
       // Store the new pig's ID so we can attach vaccinations, then go to vaccination step
       setSavedPigId(result?.id || result?.pig_id || result?.data?.id || null);
       setSavedBatchId(null);
+      setVaccineMinDate(form.dateOfBirth || null);
       setSuccessInfo({
         type: gender === 'Female' ? 'Sow' : 'Boar',
         tag: form.tagNumber.trim(),
@@ -386,7 +388,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
           <div
             ref={containerRef}
             style={stepTransitionStyle}
-            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[86vh] transition-[max-width] duration-300 ease-in-out ${step === 'select' || step === 'success' ? 'max-w-md' : step === 'batch' ? 'max-w-4xl' : 'max-w-2xl'
+            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[86vh] transition-[max-width] duration-300 ease-in-out ${step === 'select' || step === 'success' ? 'max-w-md' : step === 'batch' ? 'max-w-4xl' : step === 'vaccinations' ? 'max-w-3xl' : 'max-w-2xl'
               } ${panelClassName}`}
           >
             {/* Header */}
@@ -620,18 +622,10 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                     <span>{successInfo?.type} <strong>#{successInfo?.tag}</strong> has been saved. Add any vaccinations this animal has received, or skip to finish.</span>
                   </div>
 
-                  {/* Vaccination Error */}
-                  {vaccinationError && (
-                    <div className="mx-8 mb-4 p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 shrink-0">
-                      <AlertCircle size={14} className="text-rose-500 shrink-0" />
-                      <span>{vaccinationError}</span>
-                    </div>
-                  )}
-
                   {/* Vaccine rows */}
                   <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-8 pb-4 gap-3" ref={animationParent} style={{ scrollbarGutter: 'stable' }}>
                     {vaccinations.map((vac, idx) => (
-                      <div key={vac.id} className="grid grid-cols-[1fr_1fr_auto_auto] gap-3 items-start">
+                      <div key={vac.id} className="grid grid-cols-[4fr_3fr_3fr_auto] gap-3 items-start pb-5">
                         <div className="space-y-1.5 flex flex-col justify-end h-full">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                             {idx === 0 ? 'Vaccine Name *' : 'Vaccine Name *'}
@@ -656,15 +650,21 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                             />
                           )}
                         </div>
-                        <div className="space-y-1.5 flex flex-col justify-end h-full">
+                        <div className="space-y-1.5 flex flex-col justify-end h-full relative">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Date Given *</label>
                           <input
                             type="date"
                             value={vac.administered_date}
+                            min={vaccineMinDate || undefined}
                             max={new Date().toISOString().split('T')[0]}
                             onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, administered_date: e.target.value } : v))}
-                            className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 transition-all"
+                            className={`w-full bg-white border rounded-xl py-2.5 outline-none text-xs px-3 focus:ring-2 transition-all ${vaccineMinDate && vac.administered_date && vac.administered_date < vaccineMinDate ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-500/20 text-rose-800' : 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-slate-900'}`}
                           />
+                          {vaccineMinDate && vac.administered_date && vac.administered_date < vaccineMinDate && (
+                            <p className="absolute -bottom-5 left-0 w-max text-[10px] font-bold text-rose-600 flex items-center gap-1 animate-in fade-in slide-in-from-top-1">
+                              <AlertCircle size={10} className="shrink-0" /> Cannot be before birthdate ({new Date(vaccineMinDate).toLocaleDateString()})
+                            </p>
+                          )}
                         </div>
                         <div className="space-y-1.5 flex flex-col justify-end h-full">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dosage</label>
@@ -699,23 +699,32 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                   </div>
 
                   {/* Footer */}
-                  <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setStep('success')}
-                      className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-                    >
-                      Skip &amp; Finish
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSaveVaccinations}
-                      disabled={isSavingVaccinations || !vaccinations.some(v => v.vaccine_name.trim())}
-                      className="flex-2 flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                    >
-                      {isSavingVaccinations && <Loader2 size={16} className="animate-spin" />}
-                      Save &amp; Finish
-                    </button>
+                  <div className="px-8 py-4 border-t border-slate-100 bg-white flex flex-col gap-3 shrink-0">
+                    {/* Vaccination API Error Inline */}
+                    {vaccinationError && (
+                      <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 animate-in fade-in">
+                        <AlertCircle size={14} className="text-rose-500 shrink-0" />
+                        <span>{vaccinationError}</span>
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setStep('success')}
+                        className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                      >
+                        Skip &amp; Finish
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveVaccinations}
+                        disabled={isSavingVaccinations || !vaccinations.some(v => v.vaccine_name.trim()) || vaccinations.some(v => vaccineMinDate && v.administered_date && v.administered_date < vaccineMinDate)}
+                        className="flex-2 flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        {isSavingVaccinations && <Loader2 size={16} className="animate-spin" />}
+                        Save &amp; Finish
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -737,6 +746,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                     // Capture batch ID and clear pig ID so vaccination uses batch_id
                     setSavedBatchId(batchResult?.batch_id || batchResult?.id || null);
                     setSavedPigId(null);
+                    setVaccineMinDate(batchResult?.date_of_birth || batchResult?.dateOfBirth || null);
                     setVaccinations([{ vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
                     setStep('vaccinations');
                   }}
@@ -751,11 +761,8 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                     <CheckCircle2 size={28} strokeWidth={2} />
                   </div>
                   <div>
-                    <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                      {successInfo?.type || 'Record'} Added
-                    </span>
                     <h4 className="text-xl font-black text-slate-900">
-                      {successInfo?.type || 'Swine'} #{successInfo?.tag} Saved!
+                      {successInfo?.tag} Added!
                     </h4>
                     <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
                       {successInfo?.message || 'The new record has been saved and synced to your database.'}
@@ -783,7 +790,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                       onClick={resetAndClose}
                       className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
                     >
-                      Done & Close
+                      Done
                     </button>
                   </div>
                 </div>

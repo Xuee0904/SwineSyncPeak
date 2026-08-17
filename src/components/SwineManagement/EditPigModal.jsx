@@ -408,12 +408,9 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
             <div className="grid grid-cols-3 gap-2.5">
               {SOURCE_OPTIONS.map(opt => (
-                <label key={opt.value} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-xs transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 shadow-xs' : 'border-slate-200 hover:bg-slate-50'}`}>
-                  <span className="flex items-center gap-2 font-semibold text-slate-700">
-                    <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
-                    {opt.label}
-                  </span>
-                  <span className="pl-5 text-[10px] text-slate-400 leading-tight">{opt.hint}</span>
+                <label key={opt.value} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 text-slate-900 shadow-xs' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                  <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
+                  {opt.label}
                 </label>
               ))}
             </div>
@@ -531,12 +528,9 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
           <div className="grid grid-cols-3 gap-2.5">
             {SOURCE_OPTIONS.map(opt => (
-              <label key={opt.value} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-xs transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 shadow-xs' : 'border-slate-200 hover:bg-slate-50'}`}>
-                <span className="flex items-center gap-2 font-semibold text-slate-700">
-                  <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
-                  {opt.label}
-                </span>
-                <span className="pl-5 text-[10px] text-slate-400 leading-tight">{opt.hint}</span>
+              <label key={opt.value} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 text-slate-900 shadow-xs' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
+                {opt.label}
               </label>
             ))}
           </div>
@@ -674,11 +668,8 @@ export function PigEditView({
           <CheckCircle2 size={28} strokeWidth={2} />
         </div>
         <div>
-          <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-            {successInfo?.type || 'Record'} Updated
-          </span>
           <h4 className="text-xl font-black text-slate-900">
-            {successInfo?.type || 'Record'} #{successInfo?.tag} Saved!
+            {successInfo?.tag} Updated!
           </h4>
           <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
             {successInfo?.message || 'The record has been updated and synced to your database.'}
@@ -690,7 +681,7 @@ export function PigEditView({
             onClick={() => onClose?.()}
             className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
           >
-            Done & Close
+            Done
           </button>
         </div>
       </div>

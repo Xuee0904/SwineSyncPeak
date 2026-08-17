@@ -200,89 +200,92 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
   const maxWidthClass = mode === 'view' ? 'max-w-4xl' : mode === 'success' ? 'max-w-md' : (isBatch ? 'max-w-3xl' : 'max-w-2xl');
 
   return createPortal(
+    <div
+      className={`fixed inset-0 lg:left-60 z-40 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 transition-opacity duration-300 ${overlayClassName}`}
+      onClick={(e) => { if (e.target === e.currentTarget) requestClose(); }}
+    >
       <div
-        className={`fixed inset-0 lg:left-60 z-40 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 transition-opacity duration-300 ${overlayClassName}`}
-        onClick={(e) => { if (e.target === e.currentTarget) requestClose(); }}
+        style={{ willChange: 'transform, opacity, max-width' }}
+        className={`flex max-h-[92vh] flex-col w-full bg-white rounded-3xl shadow-2xl overflow-hidden relative transition-[max-width] duration-300 ease-in-out ${maxWidthClass} ${panelClassName}`}
       >
-        <div
-          style={{ willChange: 'transform, opacity, max-width' }}
-          className={`flex max-h-[92vh] flex-col w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative transition-[max-width] duration-300 ease-in-out ${maxWidthClass} ${panelClassName}`}
-        >
-          <div className="flex flex-col w-full animate-in fade-in duration-300 overflow-y-auto">
+        <div className="flex flex-col w-full animate-in fade-in duration-300 overflow-y-auto">
 
-            {/* ──── EDIT OR SUCCESS VIEW ──── */}
-            {mode === 'edit' || mode === 'success' ? (
-              <PigEditView
-                pigData={data}
-                onSave={onSave}
-                onCancel={() => setMode('view')}
-                onBack={() => setMode('view')}
-                onClose={() => requestClose()}
-                showBackBtn={true}
-                onSuccess={(savedRecord) => {
-                  if (savedRecord) setDetail(savedRecord);
-                  fetchDetail(true);
-                  setMode('success');
-                }}
-              />
+          {/* ──── EDIT OR SUCCESS VIEW ──── */}
+          {mode === 'edit' || mode === 'success' ? (
+            <PigEditView
+              pigData={data}
+              onSave={onSave}
+              onCancel={() => setMode('view')}
+              onBack={() => setMode('view')}
+              onClose={() => requestClose()}
+              showBackBtn={true}
+              onSuccess={(savedRecord) => {
+                if (savedRecord) setDetail(savedRecord);
+                fetchDetail(true);
+                setMode('success');
+              }}
+            />
 
-              /* ──── VIEW MODE ──── */
-            ) : (
-              <>
-                {/* View Header */}
-                <div className="relative px-5 pt-4 pb-4 bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3.5">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-lg shrink-0 ${isBatch
-                      ? 'bg-gradient-to-br from-amber-500 to-orange-600 shadow-orange-500/20'
-                      : 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/20'
-                      }`}>
-                      {isBatch ? <Layers className="w-5 h-5 text-white" /> : <PiggyBank className="w-5 h-5 text-white" />}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                          {isBatch ? 'Piglet Batch' : (data.category || 'Swine Record')}
+            /* ──── VIEW MODE ──── */
+          ) : (
+            <>
+              {/* View Header */}
+              <div className="relative px-6 pt-5 pb-5 bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-between gap-4 overflow-hidden rounded-t-3xl border-b border-slate-800 shadow-inner">
+                {/* Subtle highlight ring */}
+                <div className="absolute inset-0 border-t border-white/10 rounded-t-3xl pointer-events-none" />
+                
+                <div className="flex items-center gap-4 relative z-10">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg shrink-0 ${isBatch
+                    ? 'bg-gradient-to-br from-amber-500 to-orange-600 shadow-orange-500/20 ring-1 ring-orange-500/50'
+                    : 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/20 ring-1 ring-emerald-500/50'
+                    }`}>
+                    {isBatch ? <Layers className="w-6 h-6 text-white drop-shadow-md" /> : <PiggyBank className="w-6 h-6 text-white drop-shadow-md" />}
+                  </div>
+                  <div className="flex flex-col justify-center">
+                    <div className="flex items-center gap-2.5 flex-wrap mb-1">
+                      <h2 className="text-2xl font-black tracking-tight text-white drop-shadow-sm leading-none mr-1">#{tag}</h2>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                        {isBatch ? 'Piglet Batch' : (data.category || 'Swine Record')}
+                      </span>
+                      <StatusBadge status={status} />
+                      {data.is_archived && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1.5">
+                          <Archive className="w-3 h-3" />
+                          <span>{data.archive_reasoning || 'Archived'}</span>
                         </span>
-                        <StatusBadge status={status} />
-                        {data.is_archived && (
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1.5">
-                            <Archive className="w-3 h-3" />
-                            <span>{data.archive_reasoning || 'Archived'}</span>
-                          </span>
-                        )}
-                      </div>
-                      <h2 className="text-xl font-black tracking-tight mt-0.5 text-white">#{tag}</h2>
-                      {dob && (
-                        <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5">
-                          <Calendar className="w-3 h-3 text-emerald-400" /> Born <span className="font-semibold text-slate-200">{dob}</span> · <span className="text-slate-300">{ageWeeks}</span>
-                        </p>
                       )}
                     </div>
+                    {dob && (
+                      <p className="text-xs text-slate-400 flex items-center gap-1.5 font-medium mt-0.5">
+                        <Calendar className="w-3.5 h-3.5 text-emerald-400/80" /> Born <span className="font-bold text-slate-200">{dob}</span> <span className="mx-0.5 text-slate-600">•</span> <span className="text-slate-300">{ageWeeks}</span>
+                      </p>
+                    )}
                   </div>
-                  <button onClick={requestClose} className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer shrink-0" title="Close modal">
-                    <X className="w-4 h-4" />
-                  </button>
                 </div>
+                <button onClick={requestClose} className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer shrink-0" title="Close modal">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-                {/* View Content — height-animated shell */}
-                <div
-                  style={{
-                    height: panelHeight != null ? `${panelHeight}px` : 'auto',
-                    transition: 'height 300ms cubic-bezier(0.16, 1, 0.3, 1)',
-                    willChange: 'height',
-                    overflow: 'hidden',
-                    maxHeight: '70vh',
-                    overflowY: panelHeight != null && panelHeight > window.innerHeight * 0.68 ? 'auto' : 'hidden',
-                  }}
-                >
-                  {/* Inner content — this is what ResizeObserver measures */}
-                  <div ref={tabContentRef} className="p-5 space-y-4 bg-slate-50/60">
+              {/* View Content — height-animated shell */}
+              <div
+                style={{
+                  height: panelHeight != null ? `${panelHeight}px` : 'auto',
+                  transition: 'height 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                  willChange: 'height',
+                  overflow: 'hidden',
+                  maxHeight: '70vh',
+                  overflowY: panelHeight != null && panelHeight > window.innerHeight * 0.68 ? 'auto' : 'hidden',
+                }}
+              >
+                {/* Inner content — this is what ResizeObserver measures */}
+                <div ref={tabContentRef} className="p-5 space-y-4 bg-slate-50/60">
                   {isLoading ? (
                     /* ── Skeleton Loader ───────────────────────────────── */
                     <div className="space-y-4 animate-in fade-in duration-300">
                       {/* Tab bar skeleton */}
                       <div className="flex items-center gap-1 p-1 bg-slate-100/80 rounded-xl border border-slate-200/70">
-                        {[1,2,3,4].map(i => (
+                        {[1, 2, 3, 4].map(i => (
                           <div key={i} className="flex-1 h-8 skeleton rounded-lg" />
                         ))}
                       </div>
@@ -292,7 +295,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
 
                       {/* 4 core spec cards */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {[1,2,3,4].map(i => (
+                        {[1, 2, 3, 4].map(i => (
                           <div key={i} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm space-y-2">
                             <div className="skeleton h-3 w-14 rounded" />
                             <div className="skeleton h-5 w-20 rounded" />
@@ -302,7 +305,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
 
                       {/* 2 info tiles */}
                       <div className="grid grid-cols-2 gap-3">
-                        {[1,2].map(i => (
+                        {[1, 2].map(i => (
                           <div key={i} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm space-y-2">
                             <div className="skeleton h-3 w-12 rounded" />
                             <div className="skeleton h-5 w-32 rounded" />
@@ -312,7 +315,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
 
                       {/* 2 snapshot cards */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {[1,2].map(i => (
+                        {[1, 2].map(i => (
                           <div key={i} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm space-y-3">
                             <div className="flex justify-between">
                               <div className="skeleton h-3 w-28 rounded" />
@@ -418,7 +421,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                             onClick={() => setActiveTab('growth')}
                             className={`flex-1 py-2 px-3 rounded-lg text-[11px] font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${activeTab === 'growth'
                               ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-400/30 shadow-[0_2px_10px_-3px_rgba(251,191,36,0.3)]'
-                              : 'bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-700 shadow-sm border border-slate-100'
+                              : 'text-slate-500 hover:text-slate-800 hover:bg-white/60'
                               }`}
                           >
                             <Target className={`w-3.5 h-3.5 ${activeTab === 'growth' ? 'text-amber-600' : 'text-slate-400'}`} />
@@ -498,8 +501,8 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                 <span className="text-base font-extrabold text-slate-800">
                                   {data.category === 'Sow'
                                     ? (Number(data.parity_count ?? 0) === 0
-                                        ? 'Nulliparous — not yet farrowed'
-                                        : `#${data.parity_count} — ${data.parity_count === 1 ? '1 litter' : `${data.parity_count} litters`} farrowed`)
+                                      ? '0 — not yet farrowed'
+                                      : `#${data.parity_count} — ${data.parity_count === 1 ? '1 litter' : `${data.parity_count} litters`} farrowed`)
                                     : 'Active Boar'}
                                 </span>
                               </div>
@@ -512,11 +515,11 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                 <span className="text-base font-extrabold text-slate-800 truncate" title={
                                   sourceOrigin === 'born_in_farm' ? 'Born in Farm'
                                     : sourceOrigin === 'purchased' ? `Purchased${supplierName ? ` · ${supplierName}` : ''}`
-                                    : `Transferred${supplierName ? ` · ${supplierName}` : ''}`
+                                      : `Transferred${supplierName ? ` · ${supplierName}` : ''}`
                                 }>
                                   {sourceOrigin === 'born_in_farm' ? 'Born in Farm'
                                     : sourceOrigin === 'purchased' ? `Purchased${supplierName ? ` · ${supplierName}` : ''}`
-                                    : `Transferred${supplierName ? ` · ${supplierName}` : ''}`}
+                                      : `Transferred${supplierName ? ` · ${supplierName}` : ''}`}
                                 </span>
                                 {arrivalDate && (
                                   <span className="text-[11px] text-slate-400 font-medium">Arrived {arrivalDate}</span>
@@ -653,9 +656,6 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                               <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                                 <Heart className="w-4 h-4 text-rose-500" /> Reproductive & Breeding History
                               </h3>
-                              <p className="text-xs text-slate-500 mt-0.5">
-                                Complete record of all mating cycles, pregnancy confirmations, and farrowing outcomes.
-                              </p>
                             </div>
                             <span className="text-xs font-bold px-3 py-1 bg-rose-50 text-rose-800 rounded-xl border border-rose-100">
                               {breedingHistory.length} {breedingHistory.length === 1 ? 'Cycle' : 'Cycles'}
@@ -679,23 +679,23 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                 const dotColor = isArchivedCycle
                                   ? 'bg-slate-400'
                                   : isFarrowed ? 'bg-emerald-500'
-                                  : isFailed ? 'bg-rose-500'
-                                  : isActive ? 'bg-blue-500'
-                                  : 'bg-slate-400';
+                                    : isFailed ? 'bg-rose-500'
+                                      : isActive ? 'bg-blue-500'
+                                        : 'bg-slate-400';
 
                                 const statusLabel = isArchivedCycle ? 'Archived'
                                   : status === 'pregnant' ? 'Pregnant'
-                                  : status === 'pending' ? 'Monitoring'
-                                  : status === 'farrowed' ? 'Farrowed'
-                                  : status === 'failed' ? 'Failed / Miscarriage'
-                                  : status;
+                                    : status === 'pending' ? 'Monitoring'
+                                      : status === 'farrowed' ? 'Farrowed'
+                                        : status === 'failed' ? 'Failed / Miscarriage'
+                                          : status;
 
                                 const statusColor = isArchivedCycle
                                   ? 'bg-slate-100 text-slate-700 border-slate-200'
                                   : isFarrowed ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                  : isFailed ? 'bg-rose-100 text-rose-800 border-rose-200'
-                                  : isActive ? 'bg-blue-100 text-blue-800 border-blue-200'
-                                  : 'bg-slate-100 text-slate-700 border-slate-200';
+                                    : isFailed ? 'bg-rose-100 text-rose-800 border-rose-200'
+                                      : isActive ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                        : 'bg-slate-100 text-slate-700 border-slate-200';
 
                                 const cycleNumber = breedingHistory.length - idx;
 
@@ -706,12 +706,11 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                       {/* Header */}
                                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                                         <div className="flex items-center gap-2.5">
-                                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                                            isFarrowed ? 'bg-emerald-50 text-emerald-600'
+                                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isFarrowed ? 'bg-emerald-50 text-emerald-600'
                                             : isFailed ? 'bg-rose-50 text-rose-500'
-                                            : isActive ? 'bg-blue-50 text-blue-500'
-                                            : 'bg-slate-100 text-slate-500'
-                                          }`}>
+                                              : isActive ? 'bg-blue-50 text-blue-500'
+                                                : 'bg-slate-100 text-slate-500'
+                                            }`}>
                                             <Heart className="w-4 h-4" />
                                           </div>
                                           <div>
@@ -805,9 +804,6 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                               <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                                 <Stethoscope className="w-4 h-4 text-emerald-600" /> Medical & Health History
                               </h3>
-                              <p className="text-xs text-slate-500 mt-0.5">
-                                Detailed log of clinical diagnoses, treatments, medications, and observed symptoms.
-                              </p>
                             </div>
                             <div className="flex items-center gap-3">
                               <span className="text-xs font-bold px-3 py-1 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100 hidden sm:inline-block">
@@ -930,9 +926,6 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                               <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                                 <Syringe className="w-4 h-4 text-indigo-600" /> Vaccination & Immunization Passport
                               </h3>
-                              <p className="text-xs text-slate-500 mt-0.5">
-                                Complete record of administered vaccines, dosages, lot numbers, and scheduled booster dates.
-                              </p>
                             </div>
                             <div className="flex items-center gap-3">
                               <span className="text-xs font-bold px-3 py-1 bg-indigo-50 text-indigo-800 rounded-xl border border-indigo-100 hidden sm:inline-block">
@@ -1052,7 +1045,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                               Program Progress
                             </h3>
                           </div>
-                          
+
                           {growthTasks.length === 0 ? (
                             <div className="p-10 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 flex flex-col items-center">
                               <Layers className="w-8 h-8 text-slate-300 mb-3" />
@@ -1063,11 +1056,11 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
                               <div className="relative pl-6 space-y-6">
                                 <div className="absolute top-2 bottom-2 left-[11px] w-[2px] bg-slate-100 rounded-full" />
-                                
+
                                 {growthTasks.map((task, idx) => {
                                   const isDone = task.status === 'completed';
                                   const isOverdue = !isDone && new Date(task.due_date) < new Date();
-                                  
+
                                   return (
                                     <div key={task.task_id} className="relative">
                                       <div className={`absolute -left-[30px] top-1 w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center z-10
@@ -1075,7 +1068,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                       >
                                         {isDone && <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />}
                                       </div>
-                                      
+
                                       <div className={`flex flex-col ${isDone ? 'opacity-70' : ''}`}>
                                         <div className="flex items-center justify-between">
                                           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
@@ -1099,66 +1092,66 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                       )}
                     </>
                   )}
-                  </div>{/* end tabContentRef inner */}
-                </div>{/* end animated height shell */}
+                </div>{/* end tabContentRef inner */}
+              </div>{/* end animated height shell */}
 
-                {/* View Footer */}
-                <div className="px-5 py-3 bg-white border-t border-slate-100 flex items-center justify-between gap-3">
-                  <button type="button" onClick={requestClose} className="px-5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-all cursor-pointer">Close</button>
-                  <div className="flex items-center gap-2.5">
-                    {isArchived ? (
-                      onUnarchive && (
-                        <button type="button" onClick={() => onUnarchive(data)} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer">
-                          <RotateCcw className="w-3.5 h-3.5" /> Unarchive Record
+              {/* View Footer */}
+              <div className="px-5 py-3 bg-white border-t border-slate-100 flex items-center justify-between gap-3">
+                <button type="button" onClick={requestClose} className="px-5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-all cursor-pointer">Close</button>
+                <div className="flex items-center gap-2.5">
+                  {isArchived ? (
+                    onUnarchive && (
+                      <button type="button" onClick={() => onUnarchive(data)} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer">
+                        <RotateCcw className="w-3.5 h-3.5" /> Unarchive Record
+                      </button>
+                    )
+                  ) : (
+                    <>
+                      {onArchive && (
+                        <button type="button" onClick={() => onArchive(data)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-xs font-bold text-rose-700 transition-all cursor-pointer">
+                          <Archive className="w-3.5 h-3.5" /> Archive
                         </button>
-                      )
-                    ) : (
-                      <>
-                        {onArchive && (
-                          <button type="button" onClick={() => onArchive(data)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-xs font-bold text-rose-700 transition-all cursor-pointer">
-                            <Archive className="w-3.5 h-3.5" /> Archive
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={switchToEdit}
-                          className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold transition-all bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 cursor-pointer"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" /> Edit Record <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                      </>
-                    )}
-                  </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={switchToEdit}
+                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold transition-all bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 cursor-pointer"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" /> Edit Record <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
                 </div>
-              </>
-            )}
+              </div>
+            </>
+          )}
 
-          </div>{/* end contentRef */}
-        </div>
-        
-        {/* --- Health & Vaccine Modals --- */}
-        <AddHealthLogModal
-          open={showAddHealth}
-          onClose={() => setShowAddHealth(false)}
-          prefillData={pigData ? { id: pigData.id, tag: tag, category: pigData.category || (isBatch ? 'Piglet Batch' : 'Pig'), targetType: isBatch ? 'batch' : 'pig' } : null}
-          currentUser={loggedInUser}
-          onSuccess={() => {
-            fetchDetail(true);
-            setShowAddHealth(false);
-          }}
-        />
+        </div>{/* end contentRef */}
+      </div>
 
-        <VaccinationFormModal
-          open={showAddVaccine}
-          onClose={() => setShowAddVaccine(false)}
-          prefillData={pigData ? { id: pigData.id, tag: tag, category: pigData.category || (isBatch ? 'Piglet Batch' : 'Pig'), targetType: isBatch ? 'batch' : 'pig' } : null}
-          currentUser={loggedInUser}
-          onSuccess={() => {
-            fetchDetail(true);
-            setShowAddVaccine(false);
-          }}
-        />
-      </div>,
-      document.body
-    );
-  }
+      {/* --- Health & Vaccine Modals --- */}
+      <AddHealthLogModal
+        open={showAddHealth}
+        onClose={() => setShowAddHealth(false)}
+        prefillData={pigData ? { id: pigData.id, tag: tag, category: pigData.category || (isBatch ? 'Piglet Batch' : 'Pig'), targetType: isBatch ? 'batch' : 'pig' } : null}
+        currentUser={loggedInUser}
+        onSuccess={() => {
+          fetchDetail(true);
+          setShowAddHealth(false);
+        }}
+      />
+
+      <VaccinationFormModal
+        open={showAddVaccine}
+        onClose={() => setShowAddVaccine(false)}
+        prefillData={pigData ? { id: pigData.id, tag: tag, category: pigData.category || (isBatch ? 'Piglet Batch' : 'Pig'), targetType: isBatch ? 'batch' : 'pig' } : null}
+        currentUser={loggedInUser}
+        onSuccess={() => {
+          fetchDetail(true);
+          setShowAddVaccine(false);
+        }}
+      />
+    </div>,
+    document.body
+  );
+}

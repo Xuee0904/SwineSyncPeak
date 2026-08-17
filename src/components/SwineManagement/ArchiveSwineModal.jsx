@@ -287,15 +287,11 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
             </div>
 
             <div>
-              <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider mb-2 ${isArchiving ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                {isArchiving ? 'Record Archived' : 'Record Restored'}
-              </span>
               <h4 className="text-xl font-black text-slate-900">
-                #{tag} {isArchiving ? 'Archived!' : 'Restored!'}
+                Record {isArchiving ? 'Archived!' : 'Restored!'}
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
-                The swine record for <span className="font-bold text-slate-800">#{tag}</span> has been successfully{' '}
-                {isArchiving ? 'archived and moved to the archived view' : 'restored to active circulation'}.
+                {tag} has been successfully {isArchiving ? 'archived' : 'restored'}.
               </p>
             </div>
 

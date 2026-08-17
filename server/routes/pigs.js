@@ -205,7 +205,7 @@ router.get('/api/pigs', async (req, res) => {
 // GET /api/pigs/archived – fetch archived pig & batch records
 router.get('/api/pigs/archived', async (req, res) => {
   try {
-    const { search, category, breed, page, limit } = req.query;
+    const { search, category, breed, pen, page, limit } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
     const pageSize = parseInt(limit) || 10;
     const from = (pageNum - 1) * pageSize;
@@ -217,6 +217,7 @@ router.get('/api/pigs/archived', async (req, res) => {
 
     if (queryPigs) {
       let q = supabase.from('pigs').select('*, breeds(name)').eq('is_archived', true);
+      if (pen && pen !== 'all') q = q.eq('pen_id', pen);
       if (search) q = q.ilike('pig_tag', `%${search}%`);
       const { data } = await q;
       pigData = data || [];
@@ -224,6 +225,7 @@ router.get('/api/pigs/archived', async (req, res) => {
 
     if (queryBatches) {
       let q = supabase.from('piglet_batches').select('*, breeds(name)').eq('is_archived', true);
+      if (pen && pen !== 'all') q = q.eq('pen_id', pen);
       if (search) q = q.ilike('batch_tag', `%${search}%`);
       const { data } = await q;
       batchData = data || [];

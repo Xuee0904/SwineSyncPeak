@@ -16,9 +16,9 @@ import toast from '../../utils/toast';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
 const SOURCE_OPTIONS = [
-  { value: 'born_in_farm',  label: 'Born in Farm',  hint: 'Internal breeding cycle' },
-  { value: 'purchased',     label: 'Purchased',      hint: 'External supplier acquisition' },
-  { value: 'transferred',   label: 'Transferred',    hint: 'Moved from another facility' },
+  { value: 'born_in_farm', label: 'Born in Farm', hint: 'Internal breeding cycle' },
+  { value: 'purchased', label: 'Purchased', hint: 'External supplier acquisition' },
+  { value: 'transferred', label: 'Transferred', hint: 'Moved from another facility' },
 ];
 
 const STATUS_OPTIONS = ['suckling', 'weaned', 'healthy', 'sick', 'quarantine'];
@@ -37,20 +37,20 @@ const COMMON_VACCINES = [
 ];
 
 const EMPTY_FORM = {
-  batchTag:       '',
-  sowId:          '',
-  penId:          '',
-  dateOfBirth:    '',
-  breed:          '',
-  sourceOrigin:   'born_in_farm',
-  supplierName:   '',
-  arrivalDate:    '',
+  batchTag: '',
+  sowId: '',
+  penId: '',
+  dateOfBirth: '',
+  breed: '',
+  sourceOrigin: 'born_in_farm',
+  supplierName: '',
+  arrivalDate: '',
   totalBornAlive: '',
-  currentCount:   '',
+  currentCount: '',
   stillbornCount: '0',
-  mummyCount:     '0',
-  averageWeight:  '',
-  status:         'suckling',
+  mummyCount: '0',
+  averageWeight: '',
+  status: 'suckling',
   assignedProgramId: '',
 };
 
@@ -91,8 +91,8 @@ export function AddPigletBatchForm({
   const [vaccinationError, setVaccinationError] = useState(null);
 
   // Dropdown data
-  const [pensState, setPens]   = useState([]);
-  const [sows, setSows]        = useState([]);
+  const [pensState, setPens] = useState([]);
+  const [sows, setSows] = useState([]);
   const [breedsState, setBreeds] = useState([]);
   const [programsState, setPrograms] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -149,8 +149,8 @@ export function AddPigletBatchForm({
     if (!autoRestore) {
       Promise.resolve().then(() => {
         checkDraft();
-        resetForm(() => ({ 
-          ...EMPTY_FORM, 
+        resetForm(() => ({
+          ...EMPTY_FORM,
           batchTag: generateBatchTag(),
           ...initialData
         }));
@@ -169,8 +169,8 @@ export function AddPigletBatchForm({
         const [pensData, sowsData, breedsData, programsData] = await Promise.all([
           pensRes.json(), sowsRes.json(), breedsRes.json(), programsRes.json(),
         ]);
-        setPens(pensData.data   || []);
-        setSows(sowsData.data   || []);
+        setPens(pensData.data || []);
+        setSows(sowsData.data || []);
         setBreeds(breedsData.data || []);
         setPrograms(programsData || []);
       } catch (err) {
@@ -277,8 +277,8 @@ export function AddPigletBatchForm({
     minDate.setFullYear(minDate.getFullYear() - 15);
     const minDobStr = minDate.toISOString().split('T')[0];
 
-    if (!form.batchTag.trim())    next.batchTag    = 'Batch tag is required';
-    if (!form.penId)              next.penId       = 'Select a pen';
+    if (!form.batchTag.trim()) next.batchTag = 'Batch tag is required';
+    if (!form.penId) next.penId = 'Select a pen';
     if (!form.dateOfBirth) {
       next.dateOfBirth = 'Date of birth is required';
     } else if (form.dateOfBirth > today) {
@@ -315,8 +315,8 @@ export function AddPigletBatchForm({
         const batchCount = parseInt(form.currentCount || form.totalBornAlive) || 0;
         if (selectedPen.section === 'B' || selectedPen.section === 'BOAR') {
           next.penId = 'Piglet batches cannot be assigned to a Boar pen';
-        } else if (selectedSow && selectedSow.penId && String(selectedPen.id) !== String(selectedSow.penId)) {
-          next.penId = `Must be assigned to Mother Sow #${selectedSow.tag}'s pen`;
+        } else if (selectedSow && selectedSow.penId && String(selectedPen.id) !== String(selectedSow.penId) && (!form.status || form.status.toLowerCase() === 'suckling')) {
+          next.penId = `Must be assigned to Mother Sow #${selectedSow.tag}'s pen while suckling`;
         } else if (ageInDays !== null && ageInDays <= 28 && selectedPen.section !== 'S' && selectedPen.section !== 'SOW') {
           next.penId = 'Nursing piglets (<=28 days old) must be assigned to a Sow pen';
         } else if (ageInDays !== null && ageInDays > 28 && selectedPen.section !== 'W' && selectedPen.section !== 'WEANED') {
@@ -356,20 +356,20 @@ export function AddPigletBatchForm({
     setSubmitError(null);
     try {
       const result = await onSave?.({
-        batchTag:       form.batchTag.trim(),
-        sowId:          form.sowId      || null,
-        penId:          form.penId      || null,
-        dateOfBirth:    form.dateOfBirth || null,
-        breed:          form.breed.trim() || null,
-        sourceOrigin:   form.sourceOrigin,
-        supplierName:   form.supplierName || null,
-        arrivalDate:    form.arrivalDate || null,
+        batchTag: form.batchTag.trim(),
+        sowId: form.sowId || null,
+        penId: form.penId || null,
+        dateOfBirth: form.dateOfBirth || null,
+        breed: form.breed.trim() || null,
+        sourceOrigin: form.sourceOrigin,
+        supplierName: form.supplierName || null,
+        arrivalDate: form.arrivalDate || null,
         totalBornAlive: Number(form.totalBornAlive) || 0,
-        currentCount:   Number(form.totalBornAlive) || 0,
+        currentCount: Number(form.totalBornAlive) || 0,
         stillbornCount: Number(form.stillbornCount) || 0,
-        mummyCount:     Number(form.mummyCount)     || 0,
-        averageWeight:  form.averageWeight ? Number(form.averageWeight) : null,
-        status:         form.status,
+        mummyCount: Number(form.mummyCount) || 0,
+        averageWeight: form.averageWeight ? Number(form.averageWeight) : null,
+        status: form.status,
         assignedProgramId: form.assignedProgramId || null,
       });
       clearDraft();
@@ -401,7 +401,7 @@ export function AddPigletBatchForm({
     : 0;
 
   const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs pl-10 pr-4";
-  const inputOk  = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
+  const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
   const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 bg-rose-50/10 text-slate-900";
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -433,7 +433,6 @@ export function AddPigletBatchForm({
           </div>
           <div>
             <h3 className="text-lg font-bold text-slate-900">Add Piglet Batch</h3>
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">New Batch Record</p>
           </div>
         </div>
         <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer">
@@ -441,246 +440,242 @@ export function AddPigletBatchForm({
         </button>
       </div>
 
-        {/* ── Body ── */}
-        <form
-          id="batch-form"
-          onSubmit={handleSubmit}
-          className="flex flex-1 min-h-0 overflow-hidden"
-        >
-          {/* Left: main form */}
-          <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6 space-y-6">
-            <DraftBanner
-              hasDraft={hasDraft}
-              draftInfo={draftInfo}
-              onRestore={handleRestoreDraft}
-              onDiscard={handleDiscardDraft}
-              isOffline={isOffline}
-            />
+      {/* ── Body ── */}
+      <form
+        id="batch-form"
+        onSubmit={handleSubmit}
+        className="flex flex-1 min-h-0 overflow-hidden"
+      >
+        {/* Left: main form */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6 space-y-6">
+          <DraftBanner
+            hasDraft={hasDraft}
+            draftInfo={draftInfo}
+            onRestore={handleRestoreDraft}
+            onDiscard={handleDiscardDraft}
+            isOffline={isOffline}
+          />
 
-            {submitError && (
-              <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
-                <AlertCircle size={14} className="text-rose-500 shrink-0" />
-                <span>{submitError}</span>
-              </div>
-            )}
+          {submitError && (
+            <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+              <AlertCircle size={14} className="text-rose-500 shrink-0" />
+              <span>{submitError}</span>
+            </div>
+          )}
 
-            {/* ── Section 1: Batch Identity ── */}
-            <Section step="1" title="Batch Identity">
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Batch Tag" error={errors.batchTag} icon={<Tag />}>
-                  <input type="text" value={form.batchTag} onChange={handleChange('batchTag')} placeholder="BTC-2026-MAY-####" className={`${inputBase} ${errors.batchTag ? inputErr : inputOk}`} />
-                </Field>
+          {/* ── Section 1: Batch Identity ── */}
+          <Section step="1" title="Batch Identity">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Batch Tag" error={errors.batchTag} icon={<Tag />}>
+                <input type="text" value={form.batchTag} onChange={handleChange('batchTag')} placeholder="BTC-2026-MAY-####" className={`${inputBase} ${errors.batchTag ? inputErr : inputOk}`} />
+              </Field>
 
-                <Field label="Pen Assignment" error={errors.penId} icon={<Home />}>
-                  <select value={form.penId} onChange={handleChange('penId')} disabled={isLoadingData || !!initialData?.penId} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none ${!!initialData?.penId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
-                    <option value="">{isLoadingData ? 'Loading…' : 'Select Pen'}</option>
-                    {availablePensForBatch.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
-                  <input type="date" min={minDobStr} max={todayStr} value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} disabled={!!initialData?.dateOfBirth} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk} ${!!initialData?.dateOfBirth ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`} />
-                </Field>
-
-                <Field label="Mother Sow (optional)" icon={<Heart />}>
-                  <select value={form.sowId} onChange={handleSowChange} disabled={isLoadingData || !!initialData?.sowId} className={`${inputBase} ${inputOk} appearance-none ${!!initialData?.sowId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
-                    <option value="">{isLoadingData ? 'Loading…' : 'None / Unknown'}</option>
-                    {sows.map(s => (
-                      <option key={s.id} value={s.id}>#{s.tag} — {s.breed}</option>
-                    ))}
-                  </select>
-                </Field>
-
-                {/* Breed combo-box */}
-                <div className="relative" ref={breedWrapRef}>
-                  <Field label="Breed" icon={<PlusCircle />}>
-                    <input
-                      type="text"
-                      value={form.breed}
-                      onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
-                      onFocus={() => setBreedOpen(true)}
-                      placeholder={isLoadingData ? 'Loading…' : 'Select or type a breed'}
-                      disabled={isLoadingData}
-                      className={`${inputBase} ${inputOk}`}
-                      autoComplete="off"
-                    />
-                  </Field>
-                  {breedOpen && !isLoadingData && (
-                    <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                      {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
-                        <li key={b.breed_id} onClick={() => { setForm(p => ({...p, breed: b.name})); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                <Field label="Status" error={errors.status} icon={<Activity />}>
-                  <select value={form.status} onChange={handleChange('status')} className={`${inputBase} ${errors.status ? inputErr : inputOk} appearance-none`}>
-                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-                  </select>
-                </Field>
-
-                <Field label="Growth Program (optional)" icon={<Bookmark />}>
-                  <select value={form.assignedProgramId || ''} onChange={handleChange('assignedProgramId')} disabled={isLoadingData || !!initialData?.assignedProgramId} className={`${inputBase} ${inputOk} appearance-none ${!!initialData?.assignedProgramId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
-                    <option value="">{isLoadingData ? 'Loading…' : 'None / Default'}</option>
-                    {programsState.map(p => (
-                      <option key={p.program_id} value={p.program_id}>{p.name}</option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-
-              {/* Source Origin */}
-              <div className="mt-5">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Source Origin</p>
-                <div className="grid grid-cols-3 gap-3">
-                  {SOURCE_OPTIONS.map(opt => (
-                    <label key={opt.value} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl border px-3 py-3 text-xs transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50 shadow-sm' : 'border-slate-200 hover:bg-slate-50'}`}>
-                      <span className="flex items-center gap-2 font-semibold text-slate-700">
-                        <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
-                        {opt.label}
-                      </span>
-                      <span className="pl-5 text-[10px] text-slate-400">{opt.hint}</span>
-                    </label>
+              <Field label="Pen Assignment" error={errors.penId} icon={<Home />}>
+                <select value={form.penId} onChange={handleChange('penId')} disabled={isLoadingData || !!initialData?.penId} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none ${!!initialData?.penId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
+                  <option value="">{isLoadingData ? 'Loading…' : 'Select Pen'}</option>
+                  {availablePensForBatch.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
+                    </option>
                   ))}
-                </div>
+                </select>
+              </Field>
+
+              <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
+                <input type="date" min={minDobStr} max={todayStr} value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} disabled={!!initialData?.dateOfBirth} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk} ${!!initialData?.dateOfBirth ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`} />
+              </Field>
+
+              <Field label="Mother Sow (optional)" icon={<Heart />}>
+                <select value={form.sowId} onChange={handleSowChange} disabled={isLoadingData || !!initialData?.sowId} className={`${inputBase} ${inputOk} appearance-none ${!!initialData?.sowId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
+                  <option value="">{isLoadingData ? 'Loading…' : 'None / Unknown'}</option>
+                  {sows.map(s => (
+                    <option key={s.id} value={s.id}>#{s.tag} — {s.breed}</option>
+                  ))}
+                </select>
+              </Field>
+
+              {/* Breed combo-box */}
+              <div className="relative" ref={breedWrapRef}>
+                <Field label="Breed" icon={<PlusCircle />}>
+                  <input
+                    type="text"
+                    value={form.breed}
+                    onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
+                    onFocus={() => setBreedOpen(true)}
+                    placeholder={isLoadingData ? 'Loading…' : 'Select or type a breed'}
+                    disabled={isLoadingData}
+                    className={`${inputBase} ${inputOk}`}
+                    autoComplete="off"
+                  />
+                </Field>
+                {breedOpen && !isLoadingData && (
+                  <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                    {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
+                      <li key={b.breed_id} onClick={() => { setForm(p => ({ ...p, breed: b.name })); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
-              {/* Supplier tracking when purchased or transferred */}
-              <div
-                className={`grid transition-all duration-300 ease-in-out ${
-                  form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
-                    ? 'grid-rows-[1fr] opacity-100 mt-4'
-                    : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+              <Field label="Status" error={errors.status} icon={<Activity />}>
+                <select value={form.status} onChange={handleChange('status')} className={`${inputBase} ${errors.status ? inputErr : inputOk} appearance-none`}>
+                  {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                </select>
+              </Field>
+
+              <Field label="Growth Program (optional)" icon={<Bookmark />}>
+                <select value={form.assignedProgramId || ''} onChange={handleChange('assignedProgramId')} disabled={isLoadingData || !!initialData?.assignedProgramId} className={`${inputBase} ${inputOk} appearance-none ${!!initialData?.assignedProgramId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
+                  <option value="">{isLoadingData ? 'Loading…' : 'None / Default'}</option>
+                  {programsState.map(p => (
+                    <option key={p.program_id} value={p.program_id}>{p.name}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            {/* Source Origin */}
+            <div className="mt-5">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Source Origin</p>
+              <div className="grid grid-cols-3 gap-3">
+                {SOURCE_OPTIONS.map(opt => (
+                  <label key={opt.value} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-3 text-xs font-semibold transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50 text-slate-900 shadow-sm' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                    <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Supplier tracking when purchased or transferred */}
+            <div
+              className={`grid transition-all duration-300 ease-in-out ${form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
+                  ? 'grid-rows-[1fr] opacity-100 mt-4'
+                  : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
                 }`}
-              >
-                <div className="overflow-hidden">
-                  <div className="grid grid-cols-2 gap-4 pb-1">
-                    <Field label="Supplier / Breeder Name" icon={<Users />}>
-                      <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
-                    </Field>
-                    <Field label="Arrival Date" icon={<Calendar />}>
-                      <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} max={todayStr} className={`${inputBase} ${inputOk}`} />
-                    </Field>
-                  </div>
+            >
+              <div className="overflow-hidden">
+                <div className="grid grid-cols-2 gap-4 pb-1">
+                  <Field label="Supplier / Breeder Name" icon={<Users />}>
+                    <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
+                  </Field>
+                  <Field label="Arrival Date" icon={<Calendar />}>
+                    <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} max={todayStr} className={`${inputBase} ${inputOk}`} />
+                  </Field>
                 </div>
               </div>
-            </Section>
+            </div>
+          </Section>
 
-            {/* ── Section 2: Count & Vitals ── */}
-            <Section step="2" title="Count & Vitals">
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Total Born Alive" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet born alive' : undefined)} icon={<Baby />}>
-                  <input type="number" min="0" value={form.totalBornAlive} onChange={handleBornAliveChange} placeholder="0" className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`} />
-                </Field>
+          {/* ── Section 2: Count & Vitals ── */}
+          <Section step="2" title="Count & Vitals">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Total Born Alive" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet born alive' : undefined)} icon={<Baby />}>
+                <input type="number" min="0" value={form.totalBornAlive} onChange={handleBornAliveChange} placeholder="0" className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`} />
+              </Field>
 
-                <Field label="Stillborn Count" icon={<Hash />}>
-                  <input type="number" min="0" value={form.stillbornCount} onChange={handleChange('stillbornCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
-                </Field>
+              <Field label="Stillborn Count" icon={<Hash />}>
+                <input type="number" min="0" value={form.stillbornCount} onChange={handleChange('stillbornCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
+              </Field>
 
-                <Field label="Mummy Count" icon={<Shuffle />}>
-                  <input type="number" min="0" value={form.mummyCount} onChange={handleChange('mummyCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
-                </Field>
+              <Field label="Mummy Count" icon={<Shuffle />}>
+                <input type="number" min="0" value={form.mummyCount} onChange={handleChange('mummyCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
+              </Field>
 
-                <Field label="Average Weight (kg)" error={errors.averageWeight || (isInvalidWeight ? (Number(form.averageWeight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
-                  <input type="number" min="0" max="500" step="0.1" value={form.averageWeight} onChange={handleChange('averageWeight')} placeholder="0.0" className={`${inputBase} ${errors.averageWeight || isInvalidWeight ? inputErr : inputOk}`} />
-                </Field>
-              </div>
-            </Section>
+              <Field label="Average Weight (kg)" error={errors.averageWeight || (isInvalidWeight ? (Number(form.averageWeight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
+                <input type="number" min="0" max="500" step="0.1" value={form.averageWeight} onChange={handleChange('averageWeight')} placeholder="0.0" className={`${inputBase} ${errors.averageWeight || isInvalidWeight ? inputErr : inputOk}`} />
+              </Field>
+            </div>
+          </Section>
+        </div>
+
+        {/* Right: live snapshot sidebar */}
+        <aside className="w-64 shrink-0 border-l border-slate-100 bg-slate-50/60 flex flex-col gap-5 px-5 py-6 overflow-y-auto">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Batch Snapshot</p>
+
+          {/* Big count display */}
+          <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-4 text-center">
+            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Current Count</p>
+            <p className="text-4xl font-black text-slate-900 mt-1">{Number(form.totalBornAlive) || 0}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">of {((Number(form.totalBornAlive) || 0) + totalLoss) || 0} total farrowed</p>
           </div>
 
-          {/* Right: live snapshot sidebar */}
-          <aside className="w-64 shrink-0 border-l border-slate-100 bg-slate-50/60 flex flex-col gap-5 px-5 py-6 overflow-y-auto">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Batch Snapshot</p>
+          <div className="space-y-2">
+            <SnapshotRow label="Stillborn" value={Number(form.stillbornCount) || 0} tone="rose" icon={<Hash size={12} />} />
+            <SnapshotRow label="Mummies" value={Number(form.mummyCount) || 0} tone="amber" icon={<Shuffle size={12} />} />
+            <SnapshotRow label="Total Loss" value={totalLoss} tone="rose" icon={<BarChart2 size={12} />} />
+          </div>
 
-            {/* Big count display */}
-            <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-4 text-center">
-              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Current Count</p>
-              <p className="text-4xl font-black text-slate-900 mt-1">{Number(form.totalBornAlive) || 0}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">of {((Number(form.totalBornAlive) || 0) + totalLoss) || 0} total farrowed</p>
+          {/* Survivability bar */}
+          <div className="rounded-xl bg-white border border-slate-100 p-3 space-y-1.5">
+            <div className="flex justify-between items-center">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Survivability</p>
+              <p className="text-xs font-black text-emerald-600">{survivability}%</p>
             </div>
-
-            <div className="space-y-2">
-              <SnapshotRow label="Stillborn" value={Number(form.stillbornCount) || 0} tone="rose" icon={<Hash size={12} />} />
-              <SnapshotRow label="Mummies"   value={Number(form.mummyCount) || 0}     tone="amber" icon={<Shuffle size={12} />} />
-              <SnapshotRow label="Total Loss" value={totalLoss}                         tone="rose" icon={<BarChart2 size={12} />} />
+            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                style={{ width: `${survivability}%` }}
+              />
             </div>
+          </div>
 
-            {/* Survivability bar */}
-            <div className="rounded-xl bg-white border border-slate-100 p-3 space-y-1.5">
-              <div className="flex justify-between items-center">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Survivability</p>
-                <p className="text-xs font-black text-emerald-600">{survivability}%</p>
-              </div>
-              <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-emerald-500 transition-all duration-500"
-                  style={{ width: `${survivability}%` }}
-                />
-              </div>
-            </div>
+          {/* Source badge */}
+          <div className="rounded-xl bg-white border border-slate-100 p-3">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Source</p>
+            <p className="text-xs font-semibold text-slate-700">
+              {SOURCE_OPTIONS.find(o => o.value === form.sourceOrigin)?.label || '—'}
+            </p>
+            {(form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred') && form.supplierName && (
+              <p className="text-[10px] text-slate-500 mt-1 truncate">Supplier: {form.supplierName}</p>
+            )}
+          </div>
 
-            {/* Source badge */}
-            <div className="rounded-xl bg-white border border-slate-100 p-3">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Source</p>
-              <p className="text-xs font-semibold text-slate-700">
-                {SOURCE_OPTIONS.find(o => o.value === form.sourceOrigin)?.label || '—'}
-              </p>
-              {(form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred') && form.supplierName && (
-                <p className="text-[10px] text-slate-500 mt-1 truncate">Supplier: {form.supplierName}</p>
-              )}
-            </div>
-
-            <div className="mt-auto pt-2 space-y-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setForm({ ...EMPTY_FORM, batchTag: generateBatchTag() });
-                  setErrors({});
-                  setSubmitError(null);
-                }}
-                className="w-full py-2.5 border border-slate-200 hover:bg-slate-100 text-slate-500 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-              >
-                Reset Form
-              </button>
-            </div>
-          </aside>
-        </form>
-
-        {/* ── Footer ── */}
-        <div className="px-8 py-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={resetAndClose} className="px-5 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
-              Cancel
-            </button>
+          <div className="mt-auto pt-2 space-y-2">
             <button
               type="button"
               onClick={() => {
-                saveDraft(form);
-                resetAndClose();
+                setForm({ ...EMPTY_FORM, batchTag: generateBatchTag() });
+                setErrors({});
+                setSubmitError(null);
               }}
-              className="flex items-center gap-1.5 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-              title="Save current inputs as a draft and close"
+              className="w-full py-2.5 border border-slate-200 hover:bg-slate-100 text-slate-500 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
             >
-              <Bookmark size={15} className="text-emerald-600" />
-              Save Draft
+              Reset Form
             </button>
           </div>
+        </aside>
+      </form>
+
+      {/* ── Footer ── */}
+      <div className="px-8 py-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={resetAndClose} className="px-5 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
+            Cancel
+          </button>
           <button
-            type="submit"
-            form="batch-form"
-            disabled={isSaving || isLoadingData}
-            className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50"
+            type="button"
+            onClick={() => {
+              saveDraft(form);
+              resetAndClose();
+            }}
+            className="flex items-center gap-1.5 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+            title="Save current inputs as a draft and close"
           >
-            {isSaving && <Loader2 size={14} className="animate-spin" />}
-            Next: Add Vaccinations
+            <Bookmark size={15} className="text-emerald-600" />
+            Save Draft
           </button>
         </div>
+        <button
+          type="submit"
+          form="batch-form"
+          disabled={isSaving || isLoadingData}
+          className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50"
+        >
+          {isSaving && <Loader2 size={14} className="animate-spin" />}
+          Next: Add Vaccinations
+        </button>
       </div>
+    </div>
   );
 }
 
@@ -722,7 +717,7 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
               dosage: v.dosage.trim() || undefined,
               administered_by: 'Admin',
             }),
-          }).then(async r => { 
+          }).then(async r => {
             if (!r.ok) {
               const errData = await r.json().catch(() => ({}));
               throw new Error(errData.error || 'Failed to save a vaccination record');
@@ -752,24 +747,20 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
       <div
         ref={containerRef}
         style={stepTransitionStyle}
-        className={`flex max-h-[86vh] w-full ${
-          step === 'success' ? 'max-w-md' : step === 'vaccinations' ? 'max-w-2xl' : 'max-w-4xl'
-        } flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden transition-[max-width] duration-300 ease-in-out ${panelClassName}`}
+        className={`flex max-h-[86vh] w-full ${step === 'success' ? 'max-w-md' : step === 'vaccinations' ? 'max-w-2xl' : 'max-w-4xl'
+          } flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden transition-[max-width] duration-300 ease-in-out ${panelClassName}`}
       >
         {step === 'success' ? (
           <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
-              <CheckCircle2 size={32} className="animate-bounce" />
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm mx-auto">
+              <CheckCircle2 size={28} strokeWidth={2} />
             </div>
             <div>
-              <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                Piglet Batch Added
-              </span>
               <h4 className="text-xl font-black text-slate-900">
-                Piglet Batch #{successInfo?.tag} Saved!
+                {successInfo?.tag} Added!
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
-                {successInfo?.message || 'The new piglet batch has been saved and synced to your database.'}
+                {successInfo?.message || 'The new record has been saved and synced to your database.'}
               </p>
             </div>
 
@@ -789,7 +780,7 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
                 onClick={handleModalClose}
                 className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
               >
-                Done & Close
+                Done
               </button>
             </div>
           </div>
@@ -954,7 +945,7 @@ function Section({ step, title, children }) {
 
 function SnapshotRow({ label, value, tone, icon }) {
   const tones = {
-    rose:  'text-rose-500  bg-rose-50',
+    rose: 'text-rose-500  bg-rose-50',
     amber: 'text-amber-500 bg-amber-50',
   };
   return (
