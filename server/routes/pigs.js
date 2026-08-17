@@ -911,16 +911,44 @@ router.patch('/api/pigs/:id/unarchive', async (req, res) => {
 
     const updatePayload = { is_archived: false, archived_at: null, archive_reasoning: null };
 
-    // Try pigs table first
-    const { data: pigData, error: pigError } = await supabaseAdmin
+    // 1. Check if it's a single pig
+    const { data: pigCheck } = await supabaseAdmin
       .from('pigs')
-      .update(updatePayload)
+      .select('pig_id, pig_tag, pen_id')
       .eq('pig_id', id)
-      .select();
+      .maybeSingle();
 
-    if (pigError) throw pigError;
+    if (pigCheck) {
+      if (pigCheck.pen_id) {
+        const { data: pen } = await supabaseAdmin.from('pens').select('pen_code, max_capacity, pen_type').eq('pen_id', pigCheck.pen_id).single();
+        if (pen) {
+          const occ = await getPenOccupancy(pigCheck.pen_id);
+          const occupied = occ.total || 0;
+          
+          const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
 
-    if (pigData && pigData.length > 0) {
+          if ((penSection === 'S' || penSection === 'SOW') && (occ.hasSow || occ.sowCount >= 1 || occ.pigCount >= 1)) {
+            return res.status(400).json({ error: `Cannot restore: Sow pen ${pen.pen_code} already houses 1 sow. The farm can only house 1 sow per sow pen.` });
+          }
+
+          if ((penSection === 'B' || penSection === 'BOAR') && (occ.hasBoar || occ.boarCount >= 1 || occ.pigCount >= 1)) {
+            return res.status(400).json({ error: `Cannot restore: Boar pen ${pen.pen_code} already houses 1 boar. The farm can only house 1 boar per boar pen.` });
+          }
+
+          if (occupied >= (pen.max_capacity ?? 0)) {
+            return res.status(400).json({ error: `Cannot restore: Pen ${pen.pen_code} is at full capacity (${pen.max_capacity}). Please free up space in this pen first.` });
+          }
+        }
+      }
+
+      const { data: pigData, error: pigError } = await supabaseAdmin
+        .from('pigs')
+        .update(updatePayload)
+        .eq('pig_id', id)
+        .select();
+
+      if (pigError) throw pigError;
+
       const tag = pigData[0].pig_tag || id;
       await supabaseAdmin.from('activity_logs').insert({
         user_name: creatorName,
@@ -934,7 +962,29 @@ router.patch('/api/pigs/:id/unarchive', async (req, res) => {
       return res.json({ message: 'Pig unarchived successfully', data: pigData[0] });
     }
 
-    // Fallback to piglet_batches
+    // 2. Fallback to piglet_batches
+    const { data: batchCheck } = await supabaseAdmin
+      .from('piglet_batches')
+      .select('batch_id, batch_tag, pen_id, current_count, total_born_alive')
+      .eq('batch_id', id)
+      .maybeSingle();
+
+    if (!batchCheck) {
+      return res.status(404).json({ error: 'Record not found.' });
+    }
+
+    if (batchCheck.pen_id) {
+      const { data: pen } = await supabaseAdmin.from('pens').select('pen_code, max_capacity').eq('pen_id', batchCheck.pen_id).single();
+      if (pen) {
+        const occ = await getPenOccupancy(batchCheck.pen_id);
+        const occupied = occ.total || 0;
+        const incomingCount = batchCheck.current_count ?? batchCheck.total_born_alive ?? 1;
+        if (occupied + incomingCount > (pen.max_capacity ?? 0)) {
+          return res.status(400).json({ error: `Cannot restore: Pen ${pen.pen_code} only has ${(pen.max_capacity ?? 0) - occupied} slot(s) available, but this batch has ${incomingCount} piglets.` });
+        }
+      }
+    }
+
     const { data: batchData, error: batchError } = await supabaseAdmin
       .from('piglet_batches')
       .update(updatePayload)
@@ -942,10 +992,6 @@ router.patch('/api/pigs/:id/unarchive', async (req, res) => {
       .select();
 
     if (batchError) throw batchError;
-
-    if (!batchData || batchData.length === 0) {
-      return res.status(404).json({ error: 'Record not found.' });
-    }
 
     const tag = batchData[0].batch_tag || id;
     await supabaseAdmin.from('activity_logs').insert({

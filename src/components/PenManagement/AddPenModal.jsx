@@ -85,11 +85,8 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
               <CheckCircle2 size={28} strokeWidth={2} />
             </div>
             <div>
-              <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                Housing Unit Saved
-              </span>
               <h4 className="text-xl font-black text-slate-900">
-                Pen #{successInfo.code} Created!
+                {successInfo.code} Added!
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
                 {sections[successInfo.section]?.label || "Pen"} created with a capacity of {successInfo.capacity} {Number(successInfo.capacity) === 1 ? "pig" : "pigs"}.
@@ -113,7 +110,7 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
                 onClick={handleClose}
                 className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
               >
-                Done & Close
+                Done
               </button>
             </div>
           </div>

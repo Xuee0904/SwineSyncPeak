@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Pencil, Loader2, CheckCircle2 } from "lucide-react";
+import { X, Pencil, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
 import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
 
@@ -69,6 +69,7 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
 
   const isBoarLocked = section === "B";
   const minCapacity = Math.max(1, pen?.occupancy || 1);
+  const isCapacityTooLow = !isBoarLocked && Number(capacity) < minCapacity;
 
   const originalSecCat = getSectionCat(pen?.section);
   const newSecCat = getSectionCat(section);
@@ -123,7 +124,8 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
                 <Pencil size={18} />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900">Edit Pen #{pen.code}</h3>
+                <h3 className="text-base font-bold text-slate-900">Edit Pen</h3>
+                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">{pen.code}</p>
               </div>
             </div>
             <button
@@ -143,11 +145,8 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
               <CheckCircle2 size={28} strokeWidth={2} />
             </div>
             <div>
-              <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                Housing Unit Updated
-              </span>
               <h4 className="text-xl font-black text-slate-900">
-                Pen #{successInfo.code} Updated!
+                {successInfo.code} Updated!
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
                 {sections[successInfo.section]?.label || "Pen"} details have been updated successfully.
@@ -160,7 +159,7 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
                 onClick={handleClose}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
               >
-                Done & Close
+                Done
               </button>
             </div>
           </div>
@@ -229,15 +228,20 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
                 placeholder="e.g. 10"
                 value={isBoarLocked ? "1" : capacity}
                 onChange={(e) => setCapacity(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
+                className={`w-full rounded-xl border bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 transition-all disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed ${isCapacityTooLow ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-500/10' : 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500/10'}`}
               />
               {isBoarLocked ? (
                 <p className="text-[11px] font-bold text-amber-600 mt-1">
                   Max capacity is 1 since boars fight other pigs.
                 </p>
+              ) : isCapacityTooLow ? (
+                <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1 mt-1.5 animate-in fade-in slide-in-from-top-1">
+                  <AlertCircle size={12} className="shrink-0" />
+                  Capacity cannot be lower than the currently housed number of swines ({pen.occupancy}).
+                </p>
               ) : pen?.occupancy > 0 ? (
                 <p className="text-[11px] font-medium text-slate-500 mt-1">
-                  Capacity cannot be lower than the current occupancy ({pen.occupancy} pigs).
+                  Capacity must be at least {pen.occupancy} to accommodate currently housed swines.
                 </p>
               ) : null}
             </div>
@@ -253,7 +257,7 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
               </button>
               <button
                 type="submit"
-                disabled={submitting || Boolean(typeWarning)}
+                disabled={submitting || Boolean(typeWarning) || isCapacityTooLow}
                 className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

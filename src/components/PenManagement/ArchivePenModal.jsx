@@ -80,7 +80,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  {hasSwine ? `Cannot Archive #${pen.code}` : `Archive Pen #${pen.code}`}
+                  {hasSwine ? `Cannot Archive ${pen.code}` : `Archive Pen ${pen.code}`}
                 </h3>
               </div>
             </div>
@@ -101,14 +101,11 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
               <CheckCircle2 size={28} strokeWidth={2} />
             </div>
             <div>
-              <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                Pen Archived
-              </span>
               <h4 className="text-xl font-black text-slate-900">
-                Pen #{successInfo.code} Archived!
+                Pen Archived!
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
-                Pen #{successInfo.code} has been successfully archived.
+                {successInfo.code} has been successfully archived.
               </p>
             </div>
 
@@ -127,15 +124,8 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
             <div className="rounded-2xl bg-amber-50/80 border border-amber-200/80 p-4.5 flex gap-3 text-amber-900">
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div className="space-y-1.5 text-xs">
-                <p className="font-bold text-amber-950">
-                  Active Swine Records Currently Housed
-                </p>
                 <p className="text-amber-800 leading-relaxed">
-                  Pen <span className="font-bold">#{pen.code}</span> currently contains{" "}
-                  <span className="font-bold underline">{pen.occupancy} active swine record(s)</span>.
-                </p>
-                <p className="text-amber-800 leading-relaxed pt-1">
-                  To preserve occupancy tracking integrity, you cannot archive or delete a housing unit until all assigned swine are transferred to another pen or archived.
+                  This pen currently houses <span className="font-bold underline">{pen.occupancy} active swine</span>. You must transfer or archive them first.
                 </p>
               </div>
             </div>
@@ -144,16 +134,16 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
               <button
                 type="button"
                 onClick={handleClose}
-                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95"
               >
-                Understood, I'll Relocate Swine First
+                Close
               </button>
             </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4 animate-in fade-in duration-300">
             <p className="text-xs text-slate-600 leading-relaxed">
-              Archiving <span className="font-bold text-slate-900">#{pen.code}</span> will remove it from active housing selections.
+              Archiving <span className="font-bold text-slate-900">{pen.code}</span> will remove it from active housing selections.
             </p>
 
             <div>
