@@ -172,10 +172,6 @@ export default function Admin({ loggedInUser }) {
     loadActivityLogs();
   }, []);
 
-  const handleExport = (tableName) => {
-    alert(`Exporting ${tableName} dataset as CSV…`);
-  };
-
   // ─── Exact email match for "YOU" detection (email is the unique identifier) ───
   const getLoggedInEmail = () => {
     if (!loggedInUser) return '';
@@ -312,13 +308,6 @@ export default function Admin({ loggedInUser }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleExport('Account Management')}
-              className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export
-            </button>
             <button
               onClick={() => setIsAddStaffOpen(true)}
               className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-600/20 active:scale-95 flex items-center gap-1.5"
@@ -542,13 +531,6 @@ export default function Admin({ loggedInUser }) {
               <h2 className="text-sm font-bold text-slate-800">Activity Log</h2>
             </div>
           </div>
-          <button
-            onClick={() => handleExport('Activity Log')}
-            className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export
-          </button>
         </div>
 
         {/* Dynamic Log search & time-period filter bar */}
@@ -640,9 +622,9 @@ export default function Admin({ loggedInUser }) {
             </div>
             {/* Inline validation hint */}
             <div className={`overflow-hidden transition-all duration-300 ease-in-out ${(customStartDate > new Date().toISOString().split('T')[0]) ||
-                (customStartDate && customEndDate && customEndDate < customStartDate)
-                ? 'max-h-10 opacity-100 mt-1.5'
-                : 'max-h-0 opacity-0 mt-0 pointer-events-none'
+              (customStartDate && customEndDate && customEndDate < customStartDate)
+              ? 'max-h-10 opacity-100 mt-1.5'
+              : 'max-h-0 opacity-0 mt-0 pointer-events-none'
               }`}>
               {customStartDate > new Date().toISOString().split('T')[0] ? (
                 <p className="text-[10px] text-amber-600 font-semibold px-1 flex items-center gap-1">
