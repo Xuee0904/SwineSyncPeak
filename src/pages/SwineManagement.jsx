@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   PiggyBank, AlertTriangle, Activity, Download, Plus,
-  Search, ChevronLeft, ChevronRight, MoreVertical, RefreshCw,
+  Search, MoreVertical, RefreshCw,
   X, Grid3X3, AlertCircle, Edit2, Archive, ArchiveX, RotateCcw, Unlock,
 } from 'lucide-react';
+import Pagination from '../components/common/Pagination';
 import AddPigModal from '../components/SwineManagement/AddPigModal.jsx';
 import EditPigModal from '../components/SwineManagement/EditPigModal.jsx';
 import ViewPigModal from '../components/SwineManagement/ViewPigModal.jsx';
@@ -14,22 +15,6 @@ import StatusBadge from '../components/StatusBadge.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const PAGE_SIZE = 5;
-
-/**
- * Returns a page number array with windowed ellipsis for clean UX navigation.
- * e.g. [1, '...', 4, 5, 6, '...', 20]
- */
-function getPageNumbers(current, total) {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages = [];
-  const addPage = (p) => { if (!pages.includes(p)) pages.push(p); };
-  addPage(1);
-  if (current > 3) pages.push('...');
-  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) addPage(p);
-  if (current < total - 2) pages.push('...');
-  addPage(total);
-  return pages;
-}
 
 
 function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
@@ -74,25 +59,25 @@ function TableSkeleton({ rows = 5 }) {
 }
 
 export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab = 'swine_list' }) {
-  const [swineList,    setSwineList]    = useState([]);
-  const [listLoading,  setListLoading]  = useState(true);
-  const [listError,    setListError]    = useState(null);
-  const [totalCount,   setTotalCount]   = useState(0);
+  const [swineList, setSwineList] = useState([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState(null);
+  const [totalCount, setTotalCount] = useState(0);
 
-  const [stats,        setStats]        = useState({ total: 0, pregnant: 0, sick: 0 });
+  const [stats, setStats] = useState({ total: 0, pregnant: 0, sick: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
 
-  const [pens,         setPens]         = useState([]);
-  const [pensLoading,  setPensLoading]  = useState(true);
+  const [pens, setPens] = useState([]);
+  const [pensLoading, setPensLoading] = useState(true);
 
-  const [breeds,       setBreeds]       = useState([]);
+  const [breeds, setBreeds] = useState([]);
 
-  const [filterPen,    setFilterPen]    = useState('all');
-  const [filterCat,    setFilterCat]    = useState('all');
-  const [filterBreed,  setFilterBreed]  = useState('all');
-  const [searchInput,  setSearchInput]  = useState('');
-  const [search,       setSearch]       = useState('');
-  const [page,         setPage]         = useState(1);
+  const [filterPen, setFilterPen] = useState('all');
+  const [filterCat, setFilterCat] = useState('all');
+  const [filterBreed, setFilterBreed] = useState('all');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -116,12 +101,12 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
   const fetchStats = useCallback(async () => {
     setStatsLoading(true);
     try {
-      const res  = await fetch(`${API_BASE}/api/pigs/stats`);
+      const res = await fetch(`${API_BASE}/api/pigs/stats`);
       const data = await res.json();
       setStats({
-        total:    data.total    ?? 0,
+        total: data.total ?? 0,
         pregnant: data.pregnant ?? 0,
-        sick:     data.sick     ?? 0,
+        sick: data.sick ?? 0,
       });
     } catch {
       // Fail silently and keep defaults
@@ -132,7 +117,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
 
   const fetchPens = useCallback(async () => {
     try {
-      const res  = await fetch(`${API_BASE}/api/pens`);
+      const res = await fetch(`${API_BASE}/api/pens`);
       const data = await res.json();
       setPens(data.data ?? []);
     } catch {
@@ -142,7 +127,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
 
   const fetchBreeds = useCallback(async () => {
     try {
-      const res  = await fetch(`${API_BASE}/api/breeds`);
+      const res = await fetch(`${API_BASE}/api/breeds`);
       const data = await res.json();
       setBreeds(data.data ?? []);
     } catch {
@@ -155,15 +140,15 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     setListError(null);
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
-      if (search      && search      !== '')    params.set('search',   search);
-      if (filterPen   && filterPen   !== 'all') params.set('pen',      filterPen);
-      if (filterCat   && filterCat   !== 'all') params.set('category', filterCat);
-      if (filterBreed && filterBreed !== 'all') params.set('breed',    filterBreed);
+      if (search && search !== '') params.set('search', search);
+      if (filterPen && filterPen !== 'all') params.set('pen', filterPen);
+      if (filterCat && filterCat !== 'all') params.set('category', filterCat);
+      if (filterBreed && filterBreed !== 'all') params.set('breed', filterBreed);
 
       const res = await fetch(`${API_BASE}/api/pigs?${params}`);
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
-      setSwineList(data.data  ?? []);
+      setSwineList(data.data ?? []);
       setTotalCount(data.count ?? 0);
     } catch (err) {
       setListError(err.message || 'Failed to load swine data.');
@@ -362,133 +347,126 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="px-5 pt-5 pb-4 border-b border-slate-50">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3">
-              <h3 className="text-sm font-bold text-slate-800">
-                {viewArchived ? 'Archived Records' : 'Swine List'}
-              </h3>
-              {/* Active / Archived tab toggle */}
-              <div className="flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
+          {/* ── Row 1: Search | Tabs | Actions ── */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchInput}
+                onChange={e => setSearchInput(e.target.value)}
+                placeholder="Search by tag or ID…"
+                className="pl-8 pr-8 py-1.5 text-xs font-semibold border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-colors w-48"
+                id="swine-search-input"
+              />
+              {searchInput && (
                 <button
-                  onClick={() => setViewArchived(false)}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                    !viewArchived ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                  id="swine-tab-active"
+                  onClick={() => setSearchInput('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 cursor-pointer"
                 >
-                  Active
-                </button>
-                <button
-                  onClick={() => setViewArchived(true)}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                    viewArchived ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                  id="swine-tab-archived"
-                >
-                  Archived
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-                id="swine-export-btn"
-              >
-                <Download className="w-3.5 h-3.5" /> Export
-              </button>
-              
-              {!viewArchived && (
-                <button
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
-                  id="add-swine-btn"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add new swine
+                  <X className="w-3 h-3" />
                 </button>
               )}
             </div>
+
+            {/* Active / Archived tabs */}
+            <div className="flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
+              <button
+                onClick={() => setViewArchived(false)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${!viewArchived ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                id="swine-tab-active"
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setViewArchived(true)}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${viewArchived ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                id="swine-tab-archived"
+              >
+                Archived
+              </button>
+            </div>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* Action buttons */}
+            <button
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer active:scale-95"
+              id="swine-export-btn"
+            >
+              <Download className="w-3.5 h-3.5" /> Export
+            </button>
+            {!viewArchived && (
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer active:scale-95"
+                id="add-swine-btn"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add new swine
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-end gap-3 mt-4">
-            {!viewArchived && (
-              <>
-                <div className="flex flex-col gap-0.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Pen</label>
-                  <select
-                    value={filterPen}
-                    onChange={e => setFilterPen(e.target.value)}
-                    className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
-                    id="pen-filter-select"
-                  >
-                    <option value="all">All Pens</option>
-                    {pens.map(p => (
-                      <option key={p.id} value={String(p.id)}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
+          {/* ── Row 2: Filters (hidden in archived view) ── */}
+          {!viewArchived && (
+            <div className="flex flex-wrap items-center gap-3 mt-3">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Pen</label>
+                <select
+                  value={filterPen}
+                  onChange={e => setFilterPen(e.target.value)}
+                  className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
+                  id="pen-filter-select"
+                >
+                  <option value="all">All Pens</option>
+                  {pens.map(p => (
+                    <option key={p.id} value={String(p.id)}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
 
-                <div className="flex flex-col gap-0.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Category</label>
-                  <select
-                    value={filterCat}
-                    onChange={e => setFilterCat(e.target.value)}
-                    className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
-                    id="category-filter-select"
-                  >
-                    <option value="all">All Categories</option>
-                    <option value="sow">Sow</option>
-                    <option value="boar">Boar</option>
-                    <option value="piglet_batch">Piglet Batch</option>
-                  </select>
-                </div>
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Category</label>
+                <select
+                  value={filterCat}
+                  onChange={e => setFilterCat(e.target.value)}
+                  className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
+                  id="category-filter-select"
+                >
+                  <option value="all">All Categories</option>
+                  <option value="sow">Sow</option>
+                  <option value="boar">Boar</option>
+                  <option value="piglet_batch">Piglet Batch</option>
+                </select>
+              </div>
 
-                <div className="flex flex-col gap-0.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Breed</label>
-                  <select
-                    value={filterBreed}
-                    onChange={e => setFilterBreed(e.target.value)}
-                    className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
-                    id="breed-filter-select"
-                  >
-                    <option value="all">All Breeds</option>
-                    {breeds.map(b => (
-                      <option key={b.breed_id || b.name} value={b.name}>{b.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            )}
-
-            <div className="flex flex-col gap-0.5 ml-auto">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Search</label>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchInput}
-                  onChange={e => setSearchInput(e.target.value)}
-                  placeholder="Search by tag…"
-                  className="pl-8 pr-8 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-colors w-44"
-                  id="swine-search-input"
-                />
-                {searchInput && (
-                  <button
-                    onClick={() => setSearchInput('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Filter by Breed</label>
+                <select
+                  value={filterBreed}
+                  onChange={e => setFilterBreed(e.target.value)}
+                  className="text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 cursor-pointer transition-colors"
+                  id="breed-filter-select"
+                >
+                  <option value="all">All Breeds</option>
+                  {breeds.map(b => (
+                    <option key={b.breed_id || b.name} value={b.name}>{b.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-slate-50">
-                {['Swine ID', 'Breed', 'Age (Weeks)', 'Current Weight', 'Pig Category', 'Status', 'Actions'].map(h => (
+                {['Swine Tag', 'Breed', 'Age (Weeks)', 'Current Weight', 'Pig Category', 'Status', 'Actions'].map(h => (
                   <th key={h} className={`py-2.5 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap ${h === 'Actions' ? 'text-right pr-6' : ''}`}>
                     {h}
                   </th>
@@ -543,18 +521,16 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                   <tr
                     key={pig.id ?? idx}
                     onClick={() => { setSelectedPig(pig); setIsViewModalOpen(true); }}
-                    className={`border-b border-slate-50 transition-colors group cursor-pointer ${
-                      viewArchived
+                    className={`border-b border-slate-50 transition-colors group cursor-pointer ${viewArchived
                         ? 'opacity-70 hover:opacity-100 hover:bg-amber-50/40'
                         : 'hover:bg-slate-50/70'
-                    }`}
+                      }`}
                   >
                     <td className="py-3 px-4">
-                      <span className={`text-xs font-bold transition-colors ${
-                        viewArchived
+                      <span className={`text-xs font-bold transition-colors ${viewArchived
                           ? 'text-slate-400 group-hover:text-slate-600'
                           : 'text-emerald-600 group-hover:text-emerald-700'
-                      }`}>
+                        }`}>
                         #{pig.pig_tag ?? pig.id ?? '—'}
                       </span>
                     </td>
@@ -581,9 +557,9 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                     <td className="py-3 px-4">
                       {viewArchived
                         ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/60 shadow-sm" title={pig.archive_reasoning || 'Archived'}>
-                            <Archive className="w-3 h-3 text-amber-600 shrink-0" />
-                            <span className="truncate max-w-[170px]">{pig.archive_reasoning || 'Archived'}</span>
-                          </span>
+                          <Archive className="w-3 h-3 text-amber-600 shrink-0" />
+                          <span className="truncate max-w-[170px]">{pig.archive_reasoning || 'Archived'}</span>
+                        </span>
                         : <StatusBadge status={pig.status} />
                       }
                     </td>
@@ -630,68 +606,21 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
           </table>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-5 py-3.5 border-t border-slate-50 text-xs text-slate-400 font-medium">
-          <div>
-            Showing <span className="font-bold text-slate-700">
-              {(viewArchived ? archivedTotal : totalCount) === 0 ? 0 : ((viewArchived ? archivedPage : page) - 1) * PAGE_SIZE + 1}
-            </span> to <span className="font-bold text-slate-700">
-              {Math.min((viewArchived ? archivedPage : page) * PAGE_SIZE, viewArchived ? archivedTotal : totalCount)}
-            </span> of <span className="font-bold text-slate-700">{viewArchived ? archivedTotal : totalCount}</span> records
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => viewArchived ? setArchivedPage(p => Math.max(1, p - 1)) : setPage(p => Math.max(1, p - 1))}
-              disabled={(viewArchived ? archivedPage : page) === 1 || (viewArchived ? archivedLoading : listLoading)}
-              className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer active:scale-95"
-              id="swine-prev-page-btn"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-
-            <div className="flex items-center gap-1">
-              {getPageNumbers(viewArchived ? archivedPage : page, Math.max(1, Math.ceil((viewArchived ? archivedTotal : totalCount) / PAGE_SIZE))).map((pg, idx) =>
-                pg === '...' ? (
-                  <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 select-none">...</span>
-                ) : (
-                  <button
-                    key={pg}
-                    type="button"
-                    onClick={() => viewArchived ? setArchivedPage(pg) : setPage(pg)}
-                    disabled={viewArchived ? archivedLoading : listLoading}
-                    className={[
-                      'w-7 h-7 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 flex items-center justify-center',
-                      pg === (viewArchived ? archivedPage : page)
-                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10'
-                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50',
-                      (viewArchived ? archivedLoading : listLoading) ? 'opacity-60 cursor-not-allowed' : '',
-                    ].join(' ')}
-                    id={`swine-page-${pg}-btn`}
-                  >
-                    {pg}
-                  </button>
-                )
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => viewArchived ? setArchivedPage(p => Math.min(Math.max(1, Math.ceil(archivedTotal / PAGE_SIZE)), p + 1)) : setPage(p => Math.min(Math.max(1, Math.ceil(totalCount / PAGE_SIZE)), p + 1))}
-              disabled={(viewArchived ? archivedPage >= Math.ceil(archivedTotal / PAGE_SIZE) : page >= Math.ceil(totalCount / PAGE_SIZE)) || (viewArchived ? archivedLoading : listLoading)}
-              className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer active:scale-95"
-              id="swine-next-page-btn"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+        <Pagination
+          currentPage={viewArchived ? archivedPage : page}
+          totalPages={viewArchived ? archivedTotalPages : totalPages}
+          onPageChange={viewArchived ? setArchivedPage : setPage}
+          disabled={viewArchived ? archivedLoading : listLoading}
+          totalItems={viewArchived ? archivedTotal : totalCount}
+          itemsPerPage={PAGE_SIZE}
+          itemName="records"
+        />
       </div>
 
       {/* Portal-based confirm dialog (from useConfirmDialog hook) */}
       {confirmDialog}
 
-      <AddPigModal 
+      <AddPigModal
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         onSave={handleSavePig}

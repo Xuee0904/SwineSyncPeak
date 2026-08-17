@@ -116,9 +116,9 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
               <button
                 type="button"
                 onClick={handleClose}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+                className="w-full py-3 bg-rose-600 hover:bg-rose-700 shadow-rose-600/20 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95"
               >
-                Done & Close
+                Done
               </button>
             </div>
           </div>

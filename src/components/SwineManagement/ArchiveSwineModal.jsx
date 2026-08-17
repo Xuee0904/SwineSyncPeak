@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, AlertTriangle, Loader2, Lock, Unlock, Check, PiggyBank, Layers } from 'lucide-react';
+import { X, AlertTriangle, Loader2, Lock, Unlock, Check, PiggyBank, Layers, Archive } from 'lucide-react';
 import StatusBadge from '../StatusBadge';
 import useModalAnimation from '../../hooks/useModalAnimation';
 
@@ -22,20 +22,20 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
 
   const reasonOptions = isBatch
     ? [
-        'Sold Out - Batch Fully Liquidated',
-        'Transitioned to Breeding Herd (Gilts/Boars)',
-        'Merged with Another Batch',
-        'Mortality - Total Batch Loss',
-        'Other (Specify below)',
-      ]
+      'Sold Out - Batch Fully Liquidated',
+      'Transitioned to Breeding Herd (Gilts/Boars)',
+      'Merged with Another Batch',
+      'Mortality - Total Batch Loss',
+      'Other (Specify below)',
+    ]
     : [
-        'Sold / Marketed',
-        'Culled - Age & Productivity',
-        'Culled - Health & Injury',
-        'Mortality - Natural / Medical',
-        'Transferred to Another Facility',
-        'Other (Specify below)',
-      ];
+      'Sold / Marketed',
+      'Culled - Age & Productivity',
+      'Culled - Health & Injury',
+      'Mortality - Natural / Medical',
+      'Transferred to Another Facility',
+      'Other (Specify below)',
+    ];
 
   useEffect(() => {
     if (isOpen) {
@@ -131,24 +131,15 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
         {!showSuccess ? (
           <div className="animate-in fade-in duration-300">
             {/* Header */}
-            <div className="px-8 pt-8 pb-4 flex items-center justify-between border-b border-slate-50">
+            <div className="px-8 pt-8 pb-5 flex items-center justify-between border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-3">
-                <div
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm border ${
-                    isArchiving
-                      ? 'bg-rose-50 text-rose-600 border-rose-100/60'
-                      : 'bg-emerald-50 text-emerald-600 border-emerald-100/60'
-                  }`}
-                >
-                  {isArchiving ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isArchiving ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                  {isArchiving ? <Archive className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-900 leading-tight">
-                    {isArchiving ? 'Archive Swine Record' : 'Restore Swine Record'}
+                    {isArchiving ? 'Archive Record' : 'Restore Record'}
                   </h3>
-                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider truncate max-w-[210px]">
-                    #{tag}
-                  </p>
                 </div>
               </div>
               <button
@@ -156,13 +147,12 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
                 onClick={requestClose}
                 disabled={loading}
                 className="p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer disabled:opacity-50"
-                aria-label="Close"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-8 pt-6 space-y-5">
+            <div className="p-8 pt-6 space-y-6">
               {error && (
                 <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 text-left animate-fade-in">
                   <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
@@ -171,41 +161,23 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
               )}
 
               {/* Swine Profile Card */}
-              <div className="flex items-center gap-3.5 p-3.5 rounded-2xl bg-slate-50 border border-slate-100/80">
-                <div className="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center text-slate-600 shadow-sm shrink-0">
-                  {isBatch ? <Layers className="w-5 h-5 text-indigo-600" /> : <PiggyBank className="w-5 h-5 text-emerald-600" />}
+              <div className="flex items-center gap-4 p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
+                <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+                  {isBatch ? <Layers className="w-6 h-6 text-indigo-500" /> : <PiggyBank className="w-6 h-6 text-emerald-500" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-slate-800 truncate">#{tag}</p>
-                  <p className="text-[11px] text-slate-500 truncate">{pig.category || 'Swine Record'}</p>
+                  <p className="text-sm font-bold text-slate-900 truncate">#{tag}</p>
+                  <p className="text-xs font-medium text-slate-500 truncate">{pig.category || 'Swine Record'}</p>
                 </div>
                 <StatusBadge status={pig.status || (isArchiving ? 'Active' : 'Archived')} />
               </div>
 
-              {/* Concise Warning Message */}
-              <div
-                className={`p-4 rounded-2xl border flex items-start gap-3 text-xs leading-relaxed ${
-                  isArchiving
-                    ? 'bg-rose-50/70 border-rose-100 text-rose-900 font-medium'
-                    : 'bg-emerald-50/70 border-emerald-100 text-emerald-900 font-medium'
-                }`}
-              >
-                <AlertTriangle
-                  className={`w-4 h-4 shrink-0 mt-0.5 ${isArchiving ? 'text-rose-600' : 'text-emerald-600'}`}
-                />
-                <div>
-                  <p className="font-bold">
-                    {isArchiving
-                      ? 'Are you sure you want to archive this swine record?'
-                      : 'Are you sure you want to restore this swine record?'}
-                  </p>
-                  <p className="text-[11px] mt-1 opacity-90">
-                    {isArchiving
-                      ? 'This record will be moved to the Archived view and removed from active circulation. You can view or restore it anytime.'
-                      : 'This record will immediately return to active circulation and appear in the active records list.'}
-                  </p>
-                </div>
-              </div>
+              {/* Subtle Context Message */}
+              <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                {isArchiving
+                  ? 'Archiving this record will remove it from active circulation. It will be safely stored and can be restored at any time.'
+                  : 'Restoring this record will immediately return it to active circulation in your herd.'}
+              </p>
 
               {/* Archive Reason Dropdown (only when archiving) */}
               {isArchiving && (
@@ -269,11 +241,10 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
                   type="button"
                   onClick={handleToggleArchive}
                   disabled={loading}
-                  className={`flex-1 py-3 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50 ${
-                    isArchiving
-                      ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
-                      : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
-                  }`}
+                  className={`flex-1 py-3 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50 ${isArchiving
+                    ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                    : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                    }`}
                 >
                   {loading ? (
                     <>
@@ -281,7 +252,7 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
                     </>
                   ) : isArchiving ? (
                     <>
-                      <Lock className="w-3.5 h-3.5" /> Confirm Archive
+                      Confirm Archive
                     </>
                   ) : (
                     <>
@@ -303,24 +274,26 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
             </button>
 
             <div
-              className={`mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm ${
-                isArchiving
-                  ? 'bg-rose-50 border-rose-100 text-rose-600'
-                  : 'bg-emerald-50 border-emerald-100 text-emerald-600'
-              }`}
+              className={`mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm ${isArchiving
+                ? 'bg-rose-50 border-rose-100 text-rose-600'
+                : 'bg-emerald-50 border-emerald-100 text-emerald-600'
+                }`}
             >
               {isArchiving ? (
-                <Lock className="w-7 h-7 animate-bounce" strokeWidth={2.5} />
+                <Archive className="w-7 h-7" strokeWidth={2.5} />
               ) : (
-                <Check className="w-7 h-7 animate-bounce" strokeWidth={3} />
+                <Check className="w-7 h-7" strokeWidth={3} />
               )}
             </div>
 
             <div>
-              <h3 className="text-lg font-bold text-slate-900">
+              <span className={`inline-block px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider mb-2 ${isArchiving ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
                 {isArchiving ? 'Record Archived' : 'Record Restored'}
-              </h3>
-              <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+              </span>
+              <h4 className="text-xl font-black text-slate-900">
+                #{tag} {isArchiving ? 'Archived!' : 'Restored!'}
+              </h4>
+              <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
                 The swine record for <span className="font-bold text-slate-800">#{tag}</span> has been successfully{' '}
                 {isArchiving ? 'archived and moved to the archived view' : 'restored to active circulation'}.
               </p>
@@ -329,11 +302,10 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
             <button
               type="button"
               onClick={handleSuccessClose}
-              className={`w-full py-3 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 ${
-                isArchiving
-                  ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
-                  : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
-              }`}
+              className={`w-full py-3 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 ${isArchiving
+                ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                }`}
             >
               Done
             </button>

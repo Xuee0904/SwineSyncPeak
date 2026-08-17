@@ -670,8 +670,8 @@ export function PigEditView({
   if (saveSuccess) {
     return (
       <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">
-        <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
-          <CheckCircle2 size={32} className="animate-bounce" />
+        <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm mx-auto">
+          <CheckCircle2 size={28} strokeWidth={2} />
         </div>
         <div>
           <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
@@ -726,9 +726,33 @@ export function PigEditView({
       </div>
 
       {isLoadingDetail ? (
-        <div className="p-12 flex flex-col items-center justify-center gap-3 text-slate-400">
-          <Loader2 size={24} className="animate-spin text-emerald-600" />
-          <p className="text-xs font-semibold">Loading record details…</p>
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-hidden p-8 pt-6 space-y-5">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><div className="h-3 w-20 bg-slate-200 rounded-md animate-pulse" /><div className="h-11 w-full bg-slate-100 rounded-xl animate-pulse" /></div>
+              <div className="space-y-2"><div className="h-3 w-24 bg-slate-200 rounded-md animate-pulse" /><div className="h-11 w-full bg-slate-100 rounded-xl animate-pulse" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><div className="h-3 w-16 bg-slate-200 rounded-md animate-pulse" /><div className="h-11 w-full bg-slate-100 rounded-xl animate-pulse" /></div>
+              <div className="space-y-2"><div className="h-3 w-28 bg-slate-200 rounded-md animate-pulse" /><div className="h-11 w-full bg-slate-100 rounded-xl animate-pulse" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><div className="h-3 w-20 bg-slate-200 rounded-md animate-pulse" /><div className="h-11 w-full bg-slate-100 rounded-xl animate-pulse" /></div>
+              <div className="space-y-2"><div className="h-3 w-16 bg-slate-200 rounded-md animate-pulse" /><div className="h-11 w-full bg-slate-100 rounded-xl animate-pulse" /></div>
+            </div>
+            <div className="pt-4 border-t border-slate-100 space-y-3 mt-2">
+              <div className="h-3 w-28 bg-slate-200 rounded-md animate-pulse" />
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="h-10 w-full bg-slate-100 rounded-xl animate-pulse" />
+                <div className="h-10 w-full bg-slate-100 rounded-xl animate-pulse" />
+                <div className="h-10 w-full bg-slate-100 rounded-xl animate-pulse" />
+              </div>
+            </div>
+          </div>
+          <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-3 shrink-0">
+            <div className="flex-1 h-11 bg-slate-100 rounded-xl animate-pulse" />
+            <div className="flex-1 h-11 bg-slate-200/60 rounded-xl animate-pulse" />
+          </div>
         </div>
       ) : detailError ? (
         <div className="p-8 pt-6 space-y-4 text-left">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ChevronLeft, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle, Bookmark, CheckCircle2, Syringe, Trash2, Plus } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
@@ -29,9 +29,9 @@ const COMMON_VACCINES = [
 ];
 
 const SOURCE_OPTIONS = [
-  { value: 'born_in_farm', label: 'Born in Farm', hint: 'Internal breeding cycle' },
-  { value: 'purchased', label: 'Purchased', hint: 'External supplier acquisition' },
-  { value: 'transferred', label: 'Transferred', hint: 'Moved from another facility' },
+  { value: 'born_in_farm', label: 'Born in Farm' },
+  { value: 'purchased', label: 'Purchased' },
+  { value: 'transferred', label: 'Transferred' },
 ];
 
 const EMPTY_FORM = {
@@ -77,10 +77,30 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
   const [batchDraftInfo, setBatchDraftInfo] = useState(null);
   const [savedPigId, setSavedPigId] = useState(null);
   const [savedBatchId, setSavedBatchId] = useState(null);
-  const [vaccinations, setVaccinations] = useState([{ vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
+  const [vaccinations, setVaccinations] = useState([{ id: Date.now(), vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
   const [isSavingVaccinations, setIsSavingVaccinations] = useState(false);
   const [openVaccineIdx, setOpenVaccineIdx] = useState(null);
   const [animationParent] = useAutoAnimate();
+
+  // Direct DOM opacity fade between steps (bypasses React batching)
+  // useLayoutEffect fires BEFORE browser paint — opacity is set to 0
+  // before the new step content is ever visible, then fades in cleanly.
+  const contentRef = useRef(null);
+  const isFirstStep = useRef(true);
+  useLayoutEffect(() => {
+    if (isFirstStep.current) { isFirstStep.current = false; return; }
+    const el = contentRef.current;
+    if (!el) return;
+    // Snap to invisible before browser paints new content
+    el.style.transition = 'none';
+    el.style.opacity = '0';
+    // Next frame: start the fade-in transition
+    const raf = requestAnimationFrame(() => {
+      el.style.transition = 'opacity 280ms ease-in-out';
+      el.style.opacity = '1';
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [step]);
 
   const checkBatchDraft = useCallback(async () => {
     try {
@@ -126,7 +146,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
           ]);
           const pensData = await pensRes.json();
           const breedsData = await breedsRes.json();
-          
+
           setPens(pensData.data || []);
           setBreeds(breedsData.data || []);
         } catch (err) {
@@ -193,9 +213,9 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
           supabase.from('form_drafts').delete()
             .eq('user_id', session.user.id)
             .eq('draft_key', 'swinesync_draft_add_piglet_batch')
-            .then(() => {});
+            .then(() => { });
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
   };
 
@@ -269,13 +289,19 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
         message: `${gender === 'Female' ? 'Sow' : 'Boar'} #${form.tagNumber.trim()} added to your swine inventory.`
       });
       setVaccinationError(null);
-      setVaccinations([{ vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
+      setVaccinations([{ id: Date.now(), vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
       setStep('vaccinations');
     } catch (err) {
       if (isOffline || err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network')) {
         saveDraft(form, { step, gender });
       }
-      setSubmitError(err.message || 'Something went wrong while saving. Please try again.');
+      
+      let errorMessage = err.message || 'Something went wrong while saving. Please try again.';
+      if (errorMessage.includes('pigs_pig_tag_key') || errorMessage.includes('duplicate key value violates unique constraint')) {
+        setErrors(prev => ({ ...prev, tagNumber: 'A swine with this Tag Number already exists' }));
+      } else {
+        setSubmitError(errorMessage);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -303,7 +329,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
               dosage: v.dosage.trim() || undefined,
               administered_by: loggedInUser?.name || loggedInUser || 'Admin',
             }),
-          }).then(async r => { 
+          }).then(async r => {
             if (!r.ok) {
               const errData = await r.json().catch(() => ({}));
               throw new Error(errData.error || 'Failed to save a vaccination record');
@@ -360,9 +386,8 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
           <div
             ref={containerRef}
             style={stepTransitionStyle}
-            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[86vh] transition-[max-width] duration-300 ease-in-out ${
-              step === 'select' || step === 'success' ? 'max-w-md' : step === 'batch' ? 'max-w-4xl' : 'max-w-2xl'
-            } ${panelClassName}`}
+            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[86vh] transition-[max-width] duration-300 ease-in-out ${step === 'select' || step === 'success' ? 'max-w-md' : step === 'batch' ? 'max-w-4xl' : 'max-w-2xl'
+              } ${panelClassName}`}
           >
             {/* Header */}
             {step !== 'batch' && step !== 'success' && step !== 'vaccinations' && (
@@ -378,10 +403,9 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                     </div>
                   )}
                   <div>
-                    <h3 className="text-lg font-bold text-slate-900">Add New Swine</h3>
-                    <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                      {step === 'select' ? 'Select Record Type' : `${gender} Swine`}
-                    </p>
+                    <h3 className="text-lg font-bold text-slate-900">
+                      {step === 'form' ? (gender === 'Female' ? 'Add New Sow' : 'Add New Boar') : 'Add New Swine'}
+                    </h3>
                   </div>
                 </div>
                 <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors">
@@ -392,29 +416,32 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
 
             {step !== 'batch' && step !== 'success' && step !== 'vaccinations' && (
               <div className="px-8 pt-2 space-y-2">
-              <DraftBanner
-                hasDraft={hasDraft && (step === 'select' || (step === 'form' && (!draftInfo?.extraMeta?.gender || draftInfo.extraMeta.gender === gender)))}
-                draftInfo={draftInfo}
-                onRestore={handleRestoreDraft}
-                onDiscard={handleDiscardDraft}
-                isOffline={isOffline}
-                label={step === 'select' ? "Unsaved Sow/Boar Draft Available" : "Unsaved Draft Available"}
-                description={step === 'select' ? `We found a Sow/Boar draft saved on ${formatTimestamp(draftInfo?.timestamp)}. Would you like to restore your previous entries?` : undefined}
-              />
-              {step === 'select' && batchDraftInfo && (
                 <DraftBanner
-                  hasDraft={true}
-                  draftInfo={batchDraftInfo}
-                  onRestore={handleRestoreBatchDraft}
-                  onDiscard={handleDiscardBatchDraft}
-                  isOffline={isOffline && !hasDraft}
-                  label="Unsaved Piglet Batch Draft Available"
-                  description={`We found a Piglet Batch draft saved on ${formatTimestamp(batchDraftInfo?.timestamp)}. Would you like to open the Batch record form and restore it?`}
+                  hasDraft={hasDraft && (step === 'select' || (step === 'form' && (!draftInfo?.extraMeta?.gender || draftInfo.extraMeta.gender === gender)))}
+                  draftInfo={draftInfo}
+                  onRestore={handleRestoreDraft}
+                  onDiscard={handleDiscardDraft}
+                  isOffline={isOffline}
+                  label={step === 'select' ? "Unsaved Sow/Boar Draft Available" : "Unsaved Draft Available"}
+                  description={step === 'select' ? `We found a Sow/Boar draft saved on ${formatTimestamp(draftInfo?.timestamp)}. Would you like to restore your previous entries?` : undefined}
                 />
-              )}
-            </div>
+                {step === 'select' && batchDraftInfo && (
+                  <DraftBanner
+                    hasDraft={true}
+                    draftInfo={batchDraftInfo}
+                    onRestore={handleRestoreBatchDraft}
+                    onDiscard={handleDiscardBatchDraft}
+                    isOffline={isOffline && !hasDraft}
+                    label="Unsaved Piglet Batch Draft Available"
+                    description={`We found a Piglet Batch draft saved on ${formatTimestamp(batchDraftInfo?.timestamp)}. Would you like to open the Batch record form and restore it?`}
+                  />
+                )}
+              </div>
             )}
-            <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div
+              ref={contentRef}
+              className="flex flex-col flex-1 min-h-0 overflow-hidden"
+            >
               {step === 'select' && (
                 <div className="px-8 pb-8 pt-2 text-left">
                   <p className="mb-6 text-xs text-slate-400 font-medium uppercase tracking-wider">
@@ -436,116 +463,112 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
               {step === 'form' && (
                 <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
                   <div className="flex-1 min-h-0 overflow-y-auto p-8 pt-2 space-y-4 text-left">
-                  <div className="p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-2">
-                    {gender === 'Female' ? <Venus size={14} /> : <Mars size={14} />}
-                    <span>Gender is automatically recorded as {gender}</span>
-                  </div>
-
-                  {submitError && (
-                    <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
-                      <AlertCircle size={14} className="text-rose-500" />
-                      <span>{submitError}</span>
+                    <div className="p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-2">
+                      {gender === 'Female' ? <Venus size={14} /> : <Mars size={14} />}
+                      <span>Gender is automatically recorded as {gender}</span>
                     </div>
-                  )}
 
-                  {/* Tag and DOB */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Tag Number" error={errors.tagNumber} icon={<Tag />}>
-                      <input type="text" value={form.tagNumber} onChange={handleChange('tagNumber')} placeholder="e.g. SW-29401" className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
-                    </Field>
-                    <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
-                      <input type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} min={minDobStr} max={todayStr} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
-                    </Field>
-                  </div>
+                    {submitError && (
+                      <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+                        <AlertCircle size={14} className="text-rose-500" />
+                        <span>{submitError}</span>
+                      </div>
+                    )}
 
-                  {/* Breed and Weight */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="relative" ref={breedWrapRef}>
-                      <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
-                        <input
-                          type="text"
-                          value={form.breed}
-                          onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
-                          onFocus={() => setBreedOpen(true)}
-                          placeholder={isLoadingData ? 'Loading...' : 'Select or type'}
-                          disabled={isLoadingData}
-                          className={`${inputBase} ${errors.breed ? inputErr : inputOk}`}
-                          autoComplete="off"
-                        />
+                    {/* Tag and DOB */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Tag Number" error={errors.tagNumber} icon={<Tag />}>
+                        <input type="text" value={form.tagNumber} onChange={handleChange('tagNumber')} placeholder="e.g. SW-29401" className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
                       </Field>
-                      {breedOpen && !isLoadingData && (
-                        <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                          {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
-                            <li key={b.breed_id} onClick={() => { setForm(p => ({...p, breed: b.name})); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
-                          ))}
-                        </ul>
-                      )}
+                      <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
+                        <input type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} min={minDobStr} max={todayStr} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
+                      </Field>
                     </div>
-                    <Field label="Weight (kg)" error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
-                      <input type="number" step="0.1" min="0" max="500" value={form.weight} onChange={handleChange('weight')} placeholder="0.0" className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`} />
-                    </Field>
-                  </div>
 
-                  {/* Pen and Status */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <Field label="Pen Code" error={errors.penId} icon={<Home />}>
-                      <select value={form.penId} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`} disabled={isLoadingData}>
-                        <option value="">{isLoadingData ? 'Loading...' : availablePensForGender.length === 0 ? `No available pens for ${gender}` : 'Select Pen'}</option>
-                        {availablePensForGender.map(p => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Status" icon={<Activity />}>
-                      <select value={form.status} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
-                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </Field>
-                  </div>
+                    {/* Breed and Weight */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="relative" ref={breedWrapRef}>
+                        <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
+                          <input
+                            type="text"
+                            value={form.breed}
+                            onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
+                            onFocus={() => setBreedOpen(true)}
+                            placeholder={isLoadingData ? 'Loading...' : 'Select or type'}
+                            disabled={isLoadingData}
+                            className={`${inputBase} ${errors.breed ? inputErr : inputOk}`}
+                            autoComplete="off"
+                          />
+                        </Field>
+                        {breedOpen && !isLoadingData && (
+                          <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                            {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
+                              <li key={b.breed_id} onClick={() => { setForm(p => ({ ...p, breed: b.name })); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                      <Field label="Weight (kg)" error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
+                        <input type="number" step="0.1" min="0" max="500" value={form.weight} onChange={handleChange('weight')} placeholder="0.0" className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`} />
+                      </Field>
+                    </div>
 
-                  {gender === 'Female' && (
-                    <Field label="Parity Count" icon={<Ruler />}>
-                      <input type="number" value={form.parityCount} onChange={handleChange('parityCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
-                    </Field>
-                  )}
+                    {/* Pen and Status */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field label="Pen Code" error={errors.penId} icon={<Home />}>
+                        <select value={form.penId} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`} disabled={isLoadingData}>
+                          <option value="">{isLoadingData ? 'Loading...' : availablePensForGender.length === 0 ? `No available pens for ${gender}` : 'Select Pen'}</option>
+                          {availablePensForGender.map(p => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Status" icon={<Activity />}>
+                        <select value={form.status} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
+                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </Field>
+                    </div>
 
-                  {/* Source Origin */}
-                  <div className="pt-2">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
-                    <div className="grid grid-cols-3 gap-2.5">
-                      {SOURCE_OPTIONS.map(opt => (
-                        <label key={opt.value} className={`flex cursor-pointer flex-col gap-0.5 rounded-xl border px-3 py-2.5 text-xs transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 shadow-xs' : 'border-slate-200 hover:bg-slate-50'}`}>
-                          <span className="flex items-center gap-2 font-semibold text-slate-700">
+                    {gender === 'Female' && (
+                      <Field label="Parity Count" icon={<Ruler />}>
+                        <input type="number" value={form.parityCount} onChange={handleChange('parityCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
+                      </Field>
+                    )}
+
+                    {/* Source Origin */}
+                    <div className="pt-2">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
+                      <div className="grid grid-cols-3 gap-2.5">
+                        {SOURCE_OPTIONS.map(opt => (
+                          <label key={opt.value} className={`flex items-center gap-2.5 cursor-pointer rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 text-emerald-800 shadow-xs' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
                             <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
                             {opt.label}
-                          </span>
-                          <span className="pl-5 text-[10px] text-slate-400 leading-tight">{opt.hint}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Supplier tracking when purchased or transferred */}
-                  <div
-                    className={`grid transition-all duration-300 ease-in-out ${
-                      form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
-                        ? 'grid-rows-[1fr] opacity-100 pt-1'
-                        : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
-                    }`}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="grid grid-cols-2 gap-4 pb-1">
-                        <Field label="Supplier / Breeder Name" icon={<Users />}>
-                          <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
-                        </Field>
-                        <Field label="Arrival Date" icon={<Calendar />}>
-                          <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} max={todayStr} className={`${inputBase} ${inputOk}`} />
-                        </Field>
+                          </label>
+                        ))}
                       </div>
                     </div>
-                  </div>
+
+                    {/* Supplier tracking when purchased or transferred */}
+                    <div
+                      className={`grid transition-all duration-300 ease-in-out ${form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
+                        ? 'grid-rows-[1fr] opacity-100 pt-1'
+                        : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
+                        }`}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="grid grid-cols-2 gap-4 pb-1">
+                          <Field label="Supplier / Breeder Name" icon={<Users />}>
+                            <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
+                          </Field>
+                          <Field label="Arrival Date" icon={<Calendar />}>
+                            <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} max={todayStr} className={`${inputBase} ${inputOk}`} />
+                          </Field>
+                        </div>
+                      </div>
+                    </div>
 
                   </div>
 
@@ -606,9 +629,9 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                   )}
 
                   {/* Vaccine rows */}
-                  <div className="flex-1 min-h-0 overflow-y-auto px-8 pb-4 space-y-3" ref={animationParent}>
+                  <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-8 pb-4 gap-3" ref={animationParent} style={{ scrollbarGutter: 'stable' }}>
                     {vaccinations.map((vac, idx) => (
-                      <div key={idx} className="grid grid-cols-[1fr_1fr_auto_auto] gap-3 items-start">
+                      <div key={vac.id} className="grid grid-cols-[1fr_1fr_auto_auto] gap-3 items-start">
                         <div className="space-y-1.5 flex flex-col justify-end h-full">
                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                             {idx === 0 ? 'Vaccine Name *' : 'Vaccine Name *'}
@@ -668,7 +691,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                     ))}
                     <button
                       type="button"
-                      onClick={() => setVaccinations(prev => [...prev, { vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }])}
+                      onClick={() => setVaccinations(prev => [...prev, { id: Date.now() + Math.random(), vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }])}
                       className="flex items-center gap-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700 mt-1 transition-colors"
                     >
                       <Plus size={14} /> Add Another Vaccine
@@ -723,9 +746,9 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
               )}
 
               {step === 'success' && (
-                <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">
-                  <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
-                    <CheckCircle2 size={32} className="animate-bounce" />
+                <div className="p-8 text-center flex flex-col items-center justify-center space-y-5">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm mx-auto">
+                    <CheckCircle2 size={28} strokeWidth={2} />
                   </div>
                   <div>
                     <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
@@ -770,12 +793,12 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
         </div>
       )}
 
-      <AddPigletBatchModal 
-        isOpen={batchModalOpen} 
-        onClose={() => setBatchModalOpen(false)} 
-        onSave={onSaveBatch} 
-        pens={pens} 
-        breeds={breeds} 
+      <AddPigletBatchModal
+        isOpen={batchModalOpen}
+        onClose={() => setBatchModalOpen(false)}
+        onSave={onSaveBatch}
+        pens={pens}
+        breeds={breeds}
       />
     </>,
     document.body
@@ -787,11 +810,10 @@ function TypeCard({ icon, label, onClick, hasDraftBadge }) {
     <button
       type="button"
       onClick={onClick}
-      className={`group relative flex flex-col items-center gap-3 rounded-2xl border px-3 py-6 transition-all duration-200 cursor-pointer ${
-        hasDraftBadge
-          ? 'border-emerald-300 bg-emerald-50/30 shadow-xs hover:border-emerald-400 hover:bg-emerald-50/70 hover:shadow-md'
-          : 'border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/60 hover:shadow-sm'
-      }`}
+      className={`group relative flex flex-col items-center gap-3 rounded-2xl border px-3 py-6 transition-all duration-200 cursor-pointer ${hasDraftBadge
+        ? 'border-emerald-300 bg-emerald-50/30 shadow-xs hover:border-emerald-400 hover:bg-emerald-50/70 hover:shadow-md'
+        : 'border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/60 hover:shadow-sm'
+        }`}
     >
       {hasDraftBadge && (
         <span className="absolute top-2.5 right-2.5 flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase tracking-wide">
@@ -800,11 +822,10 @@ function TypeCard({ icon, label, onClick, hasDraftBadge }) {
         </span>
       )}
       <span
-        className={`flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-200 ${
-          hasDraftBadge
-            ? 'bg-emerald-500/15 text-emerald-600 group-hover:scale-105 group-hover:bg-emerald-500/20'
-            : 'bg-slate-100/80 text-slate-600 group-hover:scale-105 group-hover:bg-emerald-50 group-hover:text-emerald-600'
-        }`}
+        className={`flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-200 ${hasDraftBadge
+          ? 'bg-emerald-500/15 text-emerald-600 group-hover:scale-105 group-hover:bg-emerald-500/20'
+          : 'bg-slate-100/80 text-slate-600 group-hover:scale-105 group-hover:bg-emerald-50 group-hover:text-emerald-600'
+          }`}
       >
         {icon}
       </span>
