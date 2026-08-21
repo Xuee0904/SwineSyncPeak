@@ -6,7 +6,7 @@ import {
   AlertCircle, ChevronRight, CheckCircle2,
   PlusCircle, Home, Weight, Baby, Hash, Shuffle, Ruler, ArrowLeft,
   Syringe, ShieldCheck, Stethoscope, Pill, FileText, Clock, User, AlertTriangle, RotateCcw,
-  Heart, XCircle, Baby as BabyIcon, Target
+  Heart, XCircle, Baby as BabyIcon, Target, Download, ChevronDown
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import StatusBadge from '../../components/StatusBadge';
@@ -14,6 +14,7 @@ import toast from '../../utils/toast';
 import { PigEditView } from './EditPigModal';
 import AddHealthLogModal from '../HealthManagement/AddHealthLogModal';
 import VaccinationFormModal from '../HealthManagement/VaccinationFormModal';
+import { exportSwineProfile } from '../../utils/exportUtils';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
@@ -59,10 +60,24 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
   const [error, setError] = useState(null);
   const [showAddHealth, setShowAddHealth] = useState(false);
   const [showAddVaccine, setShowAddVaccine] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const exportMenuRef = useRef(null);
 
   // Animated content height
   const tabContentRef = useRef(null);
   const [panelHeight, setPanelHeight] = useState(null);
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setShowExportMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Reset mode when modal opens/closes
   useEffect(() => {
@@ -233,7 +248,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
               <div className="relative px-6 pt-5 pb-5 bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-between gap-4 overflow-hidden rounded-t-3xl border-b border-slate-800 shadow-inner">
                 {/* Subtle highlight ring */}
                 <div className="absolute inset-0 border-t border-white/10 rounded-t-3xl pointer-events-none" />
-                
+
                 <div className="flex items-center gap-4 relative z-10">
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg shrink-0 ${isBatch
                     ? 'bg-gradient-to-br from-amber-500 to-orange-600 shadow-orange-500/20 ring-1 ring-orange-500/50'
@@ -1097,7 +1112,84 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
 
               {/* View Footer */}
               <div className="px-5 py-3 bg-white border-t border-slate-100 flex items-center justify-between gap-3">
-                <button type="button" onClick={requestClose} className="px-5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-all cursor-pointer">Close</button>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={requestClose} className="px-5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-all cursor-pointer">Close</button>
+
+                  {/* Export Profile Dropdown */}
+                  <div className="relative" ref={exportMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setShowExportMenu(v => !v)}
+                      disabled={isExporting}
+                      className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all cursor-pointer shadow-sm"
+                    >
+                      <Download className="w-3.5 h-3.5 text-emerald-600" />
+                      {isExporting ? 'Exporting…' : 'Export Profile'}
+                      <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {showExportMenu && (
+                      <div className="absolute left-0 bottom-full mb-2 w-64 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                        <div className="px-3 py-2 border-b border-slate-50">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Export as PDF</p>
+                        </div>
+                        <div className="p-1">
+                          {/* Full profile */}
+                          <button
+                            onClick={() => {
+                              setShowExportMenu(false);
+                              setIsExporting(true);
+                              try {
+                                exportSwineProfile(data, healthLogs, vaccinations, breedingHistory, { includeHealth: true, includeVaccinations: true, includeBreeding: true });
+                              } finally { setIsExporting(false); }
+                            }}
+                            className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer group"
+                          >
+                            <FileText className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-xs font-bold text-slate-700 group-hover:text-emerald-700">Full Profile</p>
+                            </div>
+                          </button>
+                          {/* Health passport only */}
+                          <button
+                            onClick={() => {
+                              setShowExportMenu(false);
+                              setIsExporting(true);
+                              try {
+                                exportSwineProfile(data, healthLogs, vaccinations, [], { includeHealth: true, includeVaccinations: true, includeBreeding: false });
+                              } finally { setIsExporting(false); }
+                            }}
+                            className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-teal-50 rounded-lg transition-colors cursor-pointer group"
+                          >
+                            <Stethoscope className="w-4 h-4 text-teal-600 mt-0.5 shrink-0" />
+                            <div>
+                              <p className="text-xs font-bold text-slate-700 group-hover:text-teal-700">Health Passport</p>
+                            </div>
+                          </button>
+                          {/* Breeding history only — sow only */}
+                          {data.category === 'Sow' && (
+                            <button
+                              onClick={() => {
+                                setShowExportMenu(false);
+                                setIsExporting(true);
+                                try {
+                                  exportSwineProfile(data, [], [], breedingHistory, { includeHealth: false, includeVaccinations: false, includeBreeding: true });
+                                } finally { setIsExporting(false); }
+                              }}
+                              className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-rose-50 rounded-lg transition-colors cursor-pointer group"
+                            >
+                              <Heart className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+                              <div>
+                                <p className="text-xs font-bold text-slate-700 group-hover:text-rose-700">Breeding History</p>
+                              </div>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2.5">
                   {isArchived ? (
                     onUnarchive && (

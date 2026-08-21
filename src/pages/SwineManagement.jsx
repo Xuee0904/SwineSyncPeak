@@ -12,6 +12,7 @@ import ArchiveSwineModal from '../components/SwineManagement/ArchiveSwineModal.j
 import useConfirmDialog from '../hooks/useConfirmDialog.jsx';
 import toast from '../utils/toast';
 import StatusBadge from '../components/StatusBadge.jsx';
+import ExportDropdown from '../components/common/ExportDropdown.jsx';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const PAGE_SIZE = 5;
@@ -134,6 +135,32 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
       // Fail silently
     }
   }, []);
+
+  // Columns for CSV/PDF export — matches what the user sees in the list + extra detail
+  const exportColumns = [
+    { header: 'Swine Tag', accessor: (row) => row.pig_tag ?? row.id ?? '—' },
+    { header: 'Category', accessor: (row) => row.category ?? '—' },
+    { header: 'Breed', accessor: (row) => row.breed ?? '—' },
+    { header: 'Date of Birth', accessor: (row) => row.date_of_birth ? new Date(row.date_of_birth).toLocaleDateString() : '—' },
+    { header: 'Age (Weeks)', accessor: (row) => row.age_weeks ?? '—' },
+    { header: 'Current Weight (kg)', accessor: (row) => row.current_weight != null ? Number(row.current_weight).toFixed(1) : '—' },
+    { header: 'Pen', accessor: (row) => row.pen_code || '' },
+    { header: 'Status', accessor: (row) => viewArchived ? (row.archive_reasoning || 'Archived') : (row.status || '—') },
+  ];
+
+  // Fetches ALL records (bypasses pagination) for export, respecting current filters
+  const fetchAllForExport = async () => {
+    const endpoint = viewArchived ? '/api/pigs/archived' : '/api/pigs';
+    const params = new URLSearchParams({ limit: '9999' });
+    if (search && search !== '') params.set('search', search);
+    if (filterPen && filterPen !== 'all') params.set('pen', filterPen);
+    if (filterCat && filterCat !== 'all') params.set('category', filterCat);
+    if (filterBreed && filterBreed !== 'all') params.set('breed', filterBreed);
+    const res = await fetch(`${API_BASE}${endpoint}?${params}`);
+    if (!res.ok) throw new Error(`Export fetch failed: ${res.status}`);
+    const json = await res.json();
+    return json.data ?? [];
+  };
 
   const fetchSwine = useCallback(async () => {
     setListLoading(true);
@@ -398,21 +425,23 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
             <div className="flex-1" />
 
             {/* Action buttons */}
-            <button
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer active:scale-95"
-              id="swine-export-btn"
-            >
-              <Download className="w-3.5 h-3.5" /> Export
-            </button>
-            {!viewArchived && (
-              <button
-                onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer active:scale-95"
-                id="add-swine-btn"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add new swine
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              <ExportDropdown
+                onFetchAll={fetchAllForExport}
+                columns={exportColumns}
+                filename={viewArchived ? 'swine_sync_archived_records' : 'swine_sync_active_records'}
+                pdfTitle={viewArchived ? 'Archived Swine Records' : 'Active Swine Records'}
+              />
+              {!viewArchived && (
+                <button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm shadow-emerald-600/20 transition-all cursor-pointer active:scale-95"
+                  id="add-swine-btn"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add new swine
+                </button>
+              )}
+            </div>
           </div>
 
           {/* ── Row 2: Filters (Visible in both views) ── */}

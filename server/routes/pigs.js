@@ -122,7 +122,7 @@ router.get('/api/pigs', async (req, res) => {
 
     if (queryPigs) {
       // Join breeds so we get the breed name, not just the breed_id UUID stored on pigs.
-      let q = supabase.from('pigs').select('*, breeds(name)').eq('is_archived', false);
+      let q = supabase.from('pigs').select('*, breeds(name), pens(pen_code)').eq('is_archived', false);
       if (pen && pen !== 'all') q = q.eq('pen_id', pen);
       if (status && status !== 'all') q = q.eq('status', status.toLowerCase());
       if (search) q = q.ilike('pig_tag', `%${search}%`);
@@ -131,7 +131,7 @@ router.get('/api/pigs', async (req, res) => {
     }
 
     if (queryBatches) {
-      let q = supabase.from('piglet_batches').select('*, breeds(name)').eq('is_archived', false);
+      let q = supabase.from('piglet_batches').select('*, breeds(name), pens(pen_code)').eq('is_archived', false);
       if (pen && pen !== 'all') q = q.eq('pen_id', pen);
       if (status && status !== 'all') q = q.eq('status', status.toLowerCase());
       if (search) q = q.ilike('batch_tag', `%${search}%`);
@@ -142,12 +142,13 @@ router.get('/api/pigs', async (req, res) => {
     const unifiedPigs = pigData.map(pig => ({
       id: pig.pig_id, 
       pig_tag: pig.pig_tag, 
-      breed: pig.breeds?.name || '—',
+      breed: pig.breeds?.name || '',
       breed_id: pig.breed_id,
       date_of_birth: pig.date_of_birth || null,
-      age_weeks: pig.date_of_birth ? Math.floor((Date.now() - new Date(pig.date_of_birth)) / 604800000) : '—',
+      age_weeks: pig.date_of_birth ? Math.floor((Date.now() - new Date(pig.date_of_birth)) / 604800000) : '',
       current_weight: pig.weight,
       pen_id: pig.pen_id || null,
+      pen_code: pig.pens?.pen_code || '',
       category: (pig.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
       status: pig.status || 'healthy',
       source_origin: pig.source_origin || 'born_in_farm',
@@ -163,15 +164,16 @@ router.get('/api/pigs', async (req, res) => {
       id: batch.batch_id,
       pig_tag: batch.batch_tag,
       batch_tag: batch.batch_tag,
-      breed: batch.breeds?.name || '—',
+      breed: batch.breeds?.name || '',
       breed_id: batch.breed_id,
       date_of_birth: batch.date_of_birth || null,
       age_weeks: batch.date_of_birth
         ? Math.floor((Date.now() - new Date(batch.date_of_birth)) / 604800000)
-        : '—',
+        : '',
       current_weight: batch.average_weight,
       average_weight: batch.average_weight,
       pen_id: batch.pen_id || null,
+      pen_code: batch.pens?.pen_code || '',
       sow_id: batch.sow_id || null,
       category: 'Piglet Batch',
       status: batch.status || 'suckling',
@@ -216,7 +218,7 @@ router.get('/api/pigs/archived', async (req, res) => {
     const queryBatches = !category || ['all', 'piglet_batch'].includes(category);
 
     if (queryPigs) {
-      let q = supabase.from('pigs').select('*, breeds(name)').eq('is_archived', true);
+      let q = supabase.from('pigs').select('*, breeds(name), pens(pen_code)').eq('is_archived', true);
       if (pen && pen !== 'all') q = q.eq('pen_id', pen);
       if (search) q = q.ilike('pig_tag', `%${search}%`);
       const { data } = await q;
@@ -224,7 +226,7 @@ router.get('/api/pigs/archived', async (req, res) => {
     }
 
     if (queryBatches) {
-      let q = supabase.from('piglet_batches').select('*, breeds(name)').eq('is_archived', true);
+      let q = supabase.from('piglet_batches').select('*, breeds(name), pens(pen_code)').eq('is_archived', true);
       if (pen && pen !== 'all') q = q.eq('pen_id', pen);
       if (search) q = q.ilike('batch_tag', `%${search}%`);
       const { data } = await q;
@@ -234,10 +236,13 @@ router.get('/api/pigs/archived', async (req, res) => {
     const unifiedPigs = pigData.map(pig => ({
       id: pig.pig_id,
       pig_tag: pig.pig_tag,
-      breed: pig.breeds?.name || '—',
+      breed: pig.breeds?.name || '',
       breed_id: pig.breed_id,
-      age_weeks: pig.date_of_birth ? Math.floor((Date.now() - new Date(pig.date_of_birth)) / 604800000) : '—',
+      date_of_birth: pig.date_of_birth || null,
+      age_weeks: pig.date_of_birth ? Math.floor((Date.now() - new Date(pig.date_of_birth)) / 604800000) : '',
       current_weight: pig.weight,
+      pen_id: pig.pen_id || null,
+      pen_code: pig.pens?.pen_code || '',
       category: (pig.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
       status: pig.status || 'healthy',
       is_archived: true,
@@ -248,10 +253,13 @@ router.get('/api/pigs/archived', async (req, res) => {
     const unifiedBatches = batchData.map(batch => ({
       id: batch.batch_id,
       pig_tag: batch.batch_tag,
-      breed: batch.breeds?.name || '—',
+      breed: batch.breeds?.name || '',
       breed_id: batch.breed_id,
-      age_weeks: batch.date_of_birth ? Math.floor((Date.now() - new Date(batch.date_of_birth)) / 604800000) : '—',
+      date_of_birth: batch.date_of_birth || null,
+      age_weeks: batch.date_of_birth ? Math.floor((Date.now() - new Date(batch.date_of_birth)) / 604800000) : '',
       current_weight: batch.average_weight,
+      pen_id: batch.pen_id || null,
+      pen_code: batch.pens?.pen_code || '',
       category: 'Piglet Batch',
       status: batch.status || 'suckling',
       is_archived: true,
