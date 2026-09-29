@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import useModalAnimation from "../hooks/useModalAnimation";
 import {
   Plus, ClipboardList, Wheat, Syringe, FlaskConical, Scissors,
-  ArrowRight, Activity, AlertTriangle, X, Trash2,
+  ArrowRight, Activity, AlertTriangle, AlertCircle, X, Trash2,
   ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink, Target, Pill
 } from "lucide-react";
 import { toast } from "../utils/toast";
@@ -11,11 +11,11 @@ import { toast } from "../utils/toast";
 const FONT_DISPLAY = "font-['Space_Grotesk',_sans-serif]";
 
 const ACTIVITY_TYPES = [
-  { value: 'FEED',       label: 'Feed',       icon: Wheat,        bg: 'bg-[#fbf0dd]', text: 'text-[#b8791f]', border: 'border-[#f2ddba]', dot: 'bg-[#b8791f]' },
-  { value: 'MEDICATION', label: 'Medication', icon: Pill,         bg: 'bg-[#fbeae6]', text: 'text-[#a8412a]', border: 'border-[#f2c9bf]', dot: 'bg-[#a8412a]' },
-  { value: 'VACCINATION',label: 'Vaccination',icon: Syringe,      bg: 'bg-blue-50',   text: 'text-blue-700',  border: 'border-blue-200',  dot: 'bg-blue-600' },
+  { value: 'FEED', label: 'Feed', icon: Wheat, bg: 'bg-[#fbf0dd]', text: 'text-[#b8791f]', border: 'border-[#f2ddba]', dot: 'bg-[#b8791f]' },
+  { value: 'MEDICATION', label: 'Medication', icon: Pill, bg: 'bg-[#fbeae6]', text: 'text-[#a8412a]', border: 'border-[#f2c9bf]', dot: 'bg-[#a8412a]' },
+  { value: 'VACCINATION', label: 'Vaccination', icon: Syringe, bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-600' },
   { value: 'SUPPLEMENT', label: 'Supplement', icon: FlaskConical, bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', dot: 'bg-emerald-600' },
-  { value: 'PROCEDURE',  label: 'Procedure',  icon: Scissors,     bg: 'bg-indigo-50',  text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-600' },
+  { value: 'PROCEDURE', label: 'Procedure', icon: Scissors, bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-600' },
 ];
 
 const VACCINE_OPTIONS = [
@@ -50,33 +50,6 @@ function getActivityStyle(type) {
   return ACTIVITY_TYPES.find(a => a.value === type) || ACTIVITY_TYPES[3];
 }
 
-/* ---------------------------------------------------------------------- */
-/* Stat Card                                                               */
-/* ---------------------------------------------------------------------- */
-function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
-  return (
-    <div className={`relative overflow-hidden rounded-2xl border border-slate-100 shadow-sm ${bg || 'bg-white'} p-5 flex items-center gap-4`}>
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${accentColor || 'bg-slate-50'}`}>
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          {loading ? (
-            <div className="h-7 w-16 bg-slate-100 animate-pulse rounded-md" />
-          ) : (
-            <h3 className="text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
-          )}
-          {badge && (
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeColor || 'bg-slate-100 text-slate-600'}`}>
-              {badge}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ---------------------------------------------------------------------- */
 /* Timeline Preview (right panel in modal)                                */
@@ -87,7 +60,7 @@ function TimelinePreview({ guidelines }) {
 
   if (sorted.filter(g => !g._isRemoving).length === 0 && sorted.every(g => g._isRemoving)) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-slate-400 py-16 gap-3">
+      <div className="sticky top-32 flex flex-col items-center text-center text-slate-400 gap-3">
         <ClipboardList className="w-10 h-10 opacity-30" />
         <p className="text-sm font-medium">Add activities on the left<br />to see the timeline preview here.</p>
       </div>
@@ -96,7 +69,7 @@ function TimelinePreview({ guidelines }) {
 
   if (guidelines.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center text-slate-400 py-16 gap-3">
+      <div className="sticky top-32 flex flex-col items-center text-center text-slate-400 gap-3">
         <ClipboardList className="w-10 h-10 opacity-30" />
         <p className="text-sm font-medium">Add activities on the left<br />to see the timeline preview here.</p>
       </div>
@@ -308,6 +281,7 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
   const [targetWeight, setTargetWeight] = useState('');
   const [guidelines, setGuidelines] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState({});
   const isEdit = !!editProgram;
 
   // Populate form when editing
@@ -326,6 +300,7 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
       setDescription('');
       setTargetWeight('');
       setGuidelines([]);
+      setErrors({});
     }
   }, [editProgram, isOpen]);
 
@@ -364,8 +339,9 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
   };
 
   const handleSave = async () => {
+    setErrors({});
     if (!name.trim()) {
-      toast.error('Program name is required.');
+      setErrors({ name: 'Program name is required.' });
       return;
     }
     setSaving(true);
@@ -377,6 +353,7 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
         target_weight: targetWeight || null,
         guidelines: guidelines
           .filter(g => !g._isRemoving)
+          // eslint-disable-next-line no-unused-vars
           .map(({ _tempId, _isRemoving, ...g }) => g),
       };
       const url = isEdit
@@ -391,15 +368,18 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Failed to save program');
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to save program');
       }
 
-      toast.success(isEdit ? 'Program updated successfully!' : 'Program created successfully!');
+      toast.success(
+        isEdit ? 'Program Updated' : 'Program Created',
+        `"${name}" has been ${isEdit ? 'updated' : 'created'} successfully.`
+      );
       onSaved();
       onClose();
     } catch (err) {
-      toast.error(err.message);
+      setErrors({ api: err.message });
     } finally {
       setSaving(false);
     }
@@ -449,26 +429,19 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
       `}</style>
 
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0 bg-white">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-            <ClipboardList className="w-4 h-4 text-emerald-700" />
-          </div>
-          <div>
-            <h2 className={`${FONT_DISPLAY} text-[16px] font-bold text-slate-900 leading-tight`}>
-              {isEdit ? 'Edit Growth Program' : 'Create Growth Program'}
-            </h2>
-            <p className="text-[12px] text-slate-400">
-              {isEdit ? `Editing: ${editProgram.name}` : 'Configure a new piglet growth template'}
-            </p>
-          </div>
-        </div>
+      <div className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-100 shrink-0 bg-white">
         <button
           onClick={onClose}
-          className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+          title="Back"
         >
-          <X className="w-5 h-5" />
+          <ArrowRight className="w-4 h-4 rotate-180" />
         </button>
+        <div className="flex-1 min-w-0">
+          <h2 className={`${FONT_DISPLAY} text-[15px] font-bold text-slate-900 leading-tight truncate`}>
+            {isEdit ? `Edit: ${editProgram?.name || 'Program'}` : 'Create Growth Program'}
+          </h2>
+        </div>
       </div>
 
       {/* Body — two-panel layout */}
@@ -476,120 +449,127 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
 
         {/* LEFT: Form */}
         <div className="flex flex-col w-full lg:w-1/2 border-r border-slate-100 overflow-y-auto">
-          <div className="p-6 space-y-5">
+              <div className="p-6 space-y-5">
 
-            {/* Program Name */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Program Name *</label>
-              <input
-                type="text"
-                placeholder="e.g. Commercial Fast-Track"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                className="w-full text-sm font-semibold text-slate-800 border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-300 transition-colors"
-              />
-            </div>
+                {errors.api && (
+                  <div className="bg-rose-50 border border-rose-100 text-rose-600 px-4 py-3 rounded-xl text-sm font-medium flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                    <p>{errors.api}</p>
+                  </div>
+                )}
 
-            {/* Description */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Description <span className="normal-case text-slate-400 font-medium">(optional)</span></label>
-              <textarea
-                placeholder="e.g. High protein diet for 4-month market readiness"
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                rows={2}
-                className="w-full text-sm text-slate-800 border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-300 resize-none transition-colors"
-              />
-            </div>
+                {/* Program Name */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Program Name *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Commercial Fast-Track"
+                    value={name}
+                    onChange={e => {
+                      setName(e.target.value);
+                      if (errors.name) setErrors(prev => ({ ...prev, name: null }));
+                    }}
+                    className={`w-full text-sm font-semibold text-slate-800 border rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 transition-colors placeholder:text-slate-300 ${
+                      errors.name
+                        ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-500/20'
+                        : 'border-slate-200 focus:border-emerald-400 focus:ring-emerald-500/30'
+                    }`}
+                  />
+                  {errors.name && (
+                    <div className="flex items-center gap-1.5 text-rose-500 pt-0.5 animate-in fade-in slide-in-from-top-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <p className="text-[12px] font-semibold">{errors.name}</p>
+                    </div>
+                  )}
+                </div>
 
-            {/* Target Weight */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Target Weight (kg) <span className="normal-case text-slate-400 font-medium">(optional)</span></label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="e.g. 105.00"
-                value={targetWeight}
-                onChange={e => setTargetWeight(e.target.value)}
-                className="w-full text-sm text-slate-800 border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-300 transition-colors"
-              />
-            </div>
+                {/* Description */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Description <span className="normal-case text-slate-400 font-medium">(optional)</span></label>
+                  <textarea
+                    placeholder="e.g. High protein diet for 4-month market readiness"
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    rows={2}
+                    className="w-full text-sm text-slate-800 border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-300 resize-none transition-colors"
+                  />
+                </div>
 
-            {/* Activity Builder */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
+                {/* Target Weight */}
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Target Weight (kg) <span className="normal-case text-slate-400 font-medium">(optional)</span></label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="e.g. 105.00"
+                    value={targetWeight}
+                    onChange={e => setTargetWeight(e.target.value)}
+                    className="w-full text-sm text-slate-800 border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-300 transition-colors"
+                  />
+                </div>
+
+                {/* Activity Builder */}
                 <div>
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Timeline Activities</p>
-                  <p className="text-[11.5px] text-slate-400 mt-0.5">Define what happens at each milestone day.</p>
-                </div>
-                <span className="text-[11px] text-slate-400 font-medium">{guidelines.length} {guidelines.length === 1 ? 'activity' : 'activities'}</span>
-              </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Timeline Activities</p>
+                    <span className="text-[11px] text-slate-400 font-medium">{guidelines.length} {guidelines.length === 1 ? 'activity' : 'activities'}</span>
+                  </div>
 
-              {guidelines.length === 0 ? (
-                <div
-                  onClick={addActivity}
-                  className="border-2 border-dashed border-slate-200 rounded-xl py-10 flex flex-col items-center gap-2 text-slate-400 hover:border-emerald-400 hover:text-emerald-600 cursor-pointer transition-colors"
-                >
-                  <Plus className="w-6 h-6" />
-                  <p className="text-sm font-semibold">Click to add your first activity</p>
+                  {guidelines.length === 0 ? (
+                    <div
+                      onClick={addActivity}
+                      className="border-2 border-dashed border-slate-200 rounded-xl py-10 flex flex-col items-center gap-2 text-slate-400 hover:border-emerald-400 hover:text-emerald-600 cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-6 h-6" />
+                      <p className="text-sm font-semibold">Click to add your first activity</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {guidelines.map((activity, idx) => (
+                        <ActivityRow
+                          key={activity._tempId}
+                          index={idx}
+                          activity={activity}
+                          onChange={(updated) => updateActivity(activity._tempId, updated)}
+                          onDelete={() => deleteActivity(activity._tempId)}
+                          onRequestSort={sortActivities}
+                        />
+                      ))}
+                      <button
+                        type="button"
+                        onClick={addActivity}
+                        className="w-full py-2.5 border-2 border-dashed border-slate-200 rounded-xl text-sm font-semibold text-slate-400 hover:border-emerald-400 hover:text-emerald-600 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" /> Add Activity
+                      </button>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {guidelines.map((activity, idx) => (
-                    <ActivityRow
-                      key={activity._tempId}
-                      index={idx}
-                      activity={activity}
-                      onChange={(updated) => updateActivity(activity._tempId, updated)}
-                      onDelete={() => deleteActivity(activity._tempId)}
-                      onRequestSort={sortActivities}
-                    />
-                  ))}
-                  <button
-                    type="button"
-                    onClick={addActivity}
-                    className="w-full py-2.5 border-2 border-dashed border-slate-200 rounded-xl text-sm font-semibold text-slate-400 hover:border-emerald-400 hover:text-emerald-600 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Plus className="w-4 h-4" /> Add Activity
-                  </button>
-                </div>
-              )}
+              </div>
+            </div>
+
+            {/* RIGHT: Live Timeline Preview */}
+            <div className="hidden lg:flex flex-col w-1/2 bg-slate-50/40 overflow-y-auto">
+              <div className="px-6 py-4 border-b border-slate-100 shrink-0">
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Live Preview</p>
+              </div>
+              <div className="flex-1 px-6 py-4 overflow-y-auto">
+                <TimelinePreview guidelines={guidelines} />
+              </div>
             </div>
           </div>
 
-          {/* Footer actions */}
-          <div className="shrink-0 flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/60 mt-auto">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-            >
+          {/* Footer */}
+          <div className="sticky bottom-0 z-10 shrink-0 flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 bg-white">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer">
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold shadow-sm transition-all disabled:opacity-60"
-            >
+            <button type="button" onClick={handleSave} disabled={saving} className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-sm shadow-emerald-600/20 transition-all disabled:opacity-60 cursor-pointer">
               <Save className="w-4 h-4" />
               {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Program'}
             </button>
           </div>
-        </div>
-
-        {/* RIGHT: Live Timeline Preview */}
-        <div className="hidden lg:flex flex-col w-1/2 bg-slate-50/40 overflow-y-auto">
-          <div className="px-6 py-4 border-b border-slate-100 shrink-0">
-            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Live Preview</p>
-            <p className="text-[12px] text-slate-400 mt-0.5">Timeline updates as you add activities</p>
-          </div>
-          <div className="flex-1 px-6 py-4 overflow-y-auto">
-            <TimelinePreview guidelines={guidelines} />
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -673,11 +653,10 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
           )}
           <button
             onClick={() => onViewBatches(program)}
-            className={`inline-flex items-center gap-1.5 transition-colors ${
-              batchCount > 0
-                ? 'text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer'
-                : 'text-neutral-400 cursor-default'
-            }`}
+            className={`inline-flex items-center gap-1.5 transition-colors ${batchCount > 0
+              ? 'text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer'
+              : 'text-neutral-400 cursor-default'
+              }`}
           >
             <Users className="w-3.5 h-3.5" />
             <strong className={batchCount > 0 ? 'text-indigo-700' : 'text-neutral-400'}>{batchCount}</strong>
@@ -741,8 +720,8 @@ function EnrolledBatchesModal({ program, onClose }) {
   if (!shouldRender || !program) return null;
 
   const statusColors = {
-    Active:   'bg-emerald-100 text-emerald-700',
-    Weaning:  'bg-amber-100 text-amber-700',
+    Active: 'bg-emerald-100 text-emerald-700',
+    Weaning: 'bg-amber-100 text-amber-700',
     Archived: 'bg-slate-100 text-slate-500',
   };
 
@@ -841,19 +820,20 @@ function EnrolledBatchesModal({ program, onClose }) {
 /* ---------------------------------------------------------------------- */
 function ArchiveConfirmModal({ program, onCancel, onSuccess }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const { shouldRender, requestClose, overlayClassName, panelClassName } = useModalAnimation(!!program, onCancel);
 
   useEffect(() => {
     if (program) {
-      setShowSuccess(false);
       setLoading(false);
+      setError('');
+      setShowSuccess(false);
     }
   }, [program]);
 
-  if (!shouldRender || !program) return null;
-
   const handleArchive = async () => {
+    setError('');
     setLoading(true);
     try {
       const res = await fetch(`/api/growth/programs/${program.program_id}/archive`, {
@@ -862,9 +842,10 @@ function ArchiveConfirmModal({ program, onCancel, onSuccess }) {
         body: JSON.stringify({ performed_by: 'Admin' }),
       });
       if (!res.ok) throw new Error('Failed to archive program');
+      
       setShowSuccess(true);
     } catch (err) {
-      toast.error(err.message);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -876,8 +857,10 @@ function ArchiveConfirmModal({ program, onCancel, onSuccess }) {
     requestClose();
   };
 
+  if (!shouldRender || !program) return null;
+
   return createPortal(
-    <div 
+    <div
       className={`fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
       onClick={(e) => {
         if (e.target === e.currentTarget && !loading) requestClose();
@@ -898,6 +881,12 @@ function ArchiveConfirmModal({ program, onCancel, onSuccess }) {
       <div className={`bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full mx-auto ${panelClassName || 'animate-modal-in'}`}>
         {!showSuccess ? (
           <div className="animate-in fade-in duration-300">
+            {error && (
+              <div className="bg-rose-50 border border-rose-100 text-rose-600 px-4 py-2.5 rounded-xl text-[13px] font-medium flex items-start gap-2 mb-4">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>{error}</p>
+              </div>
+            )}
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
                 <Archive className="w-5 h-5 text-rose-600" />
@@ -912,34 +901,39 @@ function ArchiveConfirmModal({ program, onCancel, onSuccess }) {
               Any piglet batches currently using this program may be affected.
             </p>
             <div className="flex gap-3 justify-end">
-              <button 
-                onClick={() => { if (!loading) requestClose(); }} 
-                disabled={loading}
-                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleArchive}
-                disabled={loading}
-                className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
-              >
+              <button onClick={() => { if (!loading) requestClose(); }} disabled={loading} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50">Cancel</button>
+              <button onClick={handleArchive} disabled={loading} className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
                 {loading ? 'Archiving...' : 'Yes, Archive'}
               </button>
             </div>
           </div>
         ) : (
-          <div className="px-4 py-6 text-center animate-in zoom-in-95 duration-300 flex flex-col items-center">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center mb-6">
-              <Check className="w-8 h-8 text-emerald-500" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Program Archived</h3>
-            <p className="text-sm text-slate-500 mb-8 max-w-[260px]">
-              "{program.name}" has been removed from active templates successfully.
-            </p>
+          <div className="p-4 text-center space-y-5 animate-in fade-in duration-300">
             <button
               onClick={handleSuccessClose}
-              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md shadow-slate-900/10 transition-all"
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm bg-rose-50 border-rose-100 text-rose-600">
+              <Archive className="w-7 h-7" strokeWidth={2.5} />
+            </div>
+
+            <div>
+              <h4 className="text-xl font-black text-slate-900">
+                Program Archived!
+              </h4>
+              <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto leading-relaxed">
+                <span className="font-bold text-slate-700">"{program.name}"</span> has been removed from active templates.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSuccessClose}
+              className="w-full py-3 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 bg-rose-600 hover:bg-rose-700 shadow-rose-600/20"
             >
               Done
             </button>
@@ -956,19 +950,20 @@ function ArchiveConfirmModal({ program, onCancel, onSuccess }) {
 /* ---------------------------------------------------------------------- */
 function RestoreConfirmModal({ program, onCancel, onSuccess }) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const { shouldRender, requestClose, overlayClassName, panelClassName } = useModalAnimation(!!program, onCancel);
 
   useEffect(() => {
     if (program) {
-      setShowSuccess(false);
       setLoading(false);
+      setError('');
+      setShowSuccess(false);
     }
   }, [program]);
 
-  if (!shouldRender || !program) return null;
-
   const handleRestore = async () => {
+    setError('');
     setLoading(true);
     try {
       const res = await fetch(`/api/growth/programs/${program.program_id}/restore`, {
@@ -977,9 +972,10 @@ function RestoreConfirmModal({ program, onCancel, onSuccess }) {
         body: JSON.stringify({ performed_by: 'Admin' }),
       });
       if (!res.ok) throw new Error('Failed to restore program');
+      
       setShowSuccess(true);
     } catch (err) {
-      toast.error(err.message);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -991,8 +987,10 @@ function RestoreConfirmModal({ program, onCancel, onSuccess }) {
     requestClose();
   };
 
+  if (!shouldRender || !program) return null;
+
   return createPortal(
-    <div 
+    <div
       className={`fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
       onClick={(e) => {
         if (e.target === e.currentTarget && !loading) requestClose();
@@ -1001,6 +999,12 @@ function RestoreConfirmModal({ program, onCancel, onSuccess }) {
       <div className={`bg-white rounded-3xl shadow-2xl p-6 max-w-sm w-full mx-auto ${panelClassName || 'animate-modal-in'}`}>
         {!showSuccess ? (
           <div className="animate-in fade-in duration-300">
+            {error && (
+              <div className="bg-rose-50 border border-rose-100 text-rose-600 px-4 py-2.5 rounded-xl text-[13px] font-medium flex items-start gap-2 mb-4">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>{error}</p>
+              </div>
+            )}
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
                 <Unlock className="w-5 h-5 text-indigo-600" />
@@ -1015,34 +1019,39 @@ function RestoreConfirmModal({ program, onCancel, onSuccess }) {
               It will become available for assignment to piglet batches again.
             </p>
             <div className="flex gap-3 justify-end">
-              <button 
-                onClick={() => { if (!loading) requestClose(); }} 
-                disabled={loading}
-                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRestore}
-                disabled={loading}
-                className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
-              >
+              <button onClick={() => { if (!loading) requestClose(); }} disabled={loading} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50">Cancel</button>
+              <button onClick={handleRestore} disabled={loading} className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
                 {loading ? 'Restoring...' : 'Yes, Restore'}
               </button>
             </div>
           </div>
         ) : (
-          <div className="px-4 py-6 text-center animate-in zoom-in-95 duration-300 flex flex-col items-center">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center mb-6">
-              <Check className="w-8 h-8 text-emerald-500" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Program Restored</h3>
-            <p className="text-sm text-slate-500 mb-8 max-w-[260px]">
-              "{program.name}" has been restored successfully.
-            </p>
+          <div className="p-4 text-center space-y-5 animate-in fade-in duration-300">
             <button
               onClick={handleSuccessClose}
-              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md shadow-slate-900/10 transition-all"
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm bg-emerald-50 border-emerald-100 text-emerald-600">
+              <Check className="w-7 h-7" strokeWidth={3} />
+            </div>
+
+            <div>
+              <h4 className="text-xl font-black text-slate-900">
+                Program Restored!
+              </h4>
+              <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto leading-relaxed">
+                <span className="font-bold text-slate-700">"{program.name}"</span> is now active and available for assignment.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSuccessClose}
+              className="w-full py-3 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
             >
               Done
             </button>
@@ -1094,8 +1103,6 @@ export default function GrowthProgramManagement() {
     setEditProgram(null);
   };
 
-  const totalTasks = programs.reduce((acc, p) => acc + (p.guidelines?.length || 0), 0);
-  const incompleteTemplates = programs.filter(p => !p.guidelines || p.guidelines.length === 0).length;
 
   return (
     <div ref={containerRef} className="relative p-5 lg:p-6 space-y-5 animate-fade-in font-sans text-neutral-900" style={{ minHeight: '100%' }}>
@@ -1110,17 +1117,10 @@ export default function GrowthProgramManagement() {
         .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
       `}</style>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <StatCard icon={<ClipboardList className="w-6 h-6 text-emerald-600" />} label="Total Templates" value={programs.length} badge="ACTIVE" badgeColor="bg-emerald-100 text-emerald-700" accentColor="bg-emerald-50" loading={loading} />
-        <StatCard icon={<Activity className="w-6 h-6 text-indigo-500" />} label="Scheduled Tasks" value={totalTasks} badge="STEPS" badgeColor="bg-indigo-100 text-indigo-700" accentColor="bg-indigo-50" loading={loading} />
-        <StatCard icon={<AlertTriangle className={`w-6 h-6 ${incompleteTemplates > 0 ? 'text-rose-600' : 'text-slate-400'}`} />} label="Incomplete Templates" value={incompleteTemplates} badge={incompleteTemplates > 0 ? "WARNING" : "GOOD"} badgeColor={incompleteTemplates > 0 ? "bg-rose-500 text-white" : "bg-slate-100 text-slate-600"} accentColor={incompleteTemplates > 0 ? "bg-rose-50" : "bg-slate-50"} bg={incompleteTemplates > 0 ? "bg-rose-50/60" : "bg-white"} loading={loading} />
-      </div>
-
       {/* List header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h3 className="text-sm font-bold text-slate-800">Templates List</h3>
+          <h3 className="text-sm font-bold text-slate-800">Growth Programs List</h3>
           <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
             <button
               onClick={() => setViewArchived(false)}
@@ -1141,7 +1141,7 @@ export default function GrowthProgramManagement() {
             onClick={() => { setEditProgram(null); setShowForm(true); }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" /> Create Template
+            <Plus className="w-3.5 h-3.5" /> Create Growth Program
           </button>
         )}
       </div>

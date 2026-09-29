@@ -18,7 +18,6 @@ import ArchiveBreedingLogModal from "../components/BreedingLogs/ArchiveBreedingL
 import LogFarrowingModal from "../components/BreedingLogs/LogFarrowingModal";
 import AddPigletBatchModal from "../components/SwineManagement/AddPigletBatchModal";
 import ReportMiscarriageModal from "../components/BreedingLogs/ReportMiscarriageModal";
-import toast from "../utils/toast";
 
 // ---- Domain constants ---------------------------------------------------
 // A sow's gestation runs exactly 114 days — "3 months, 3 weeks, 3 days".
@@ -697,7 +696,6 @@ export default function BreedingLogs({ loggedInUser }) {
         onClose={() => setShowAddModal(false)}
         loggedInUser={loggedInUser}
         onSaved={() => {
-          toast.success("Breeding log saved successfully!");
           refreshLogs();
         }}
       />
@@ -709,7 +707,6 @@ export default function BreedingLogs({ loggedInUser }) {
         loggedInUser={loggedInUser}
         initialData={editLogData}
         onSaved={() => {
-          toast.success("Breeding log updated successfully!");
           setShowEditModal(false);
           refreshLogs();
         }}
@@ -722,7 +719,6 @@ export default function BreedingLogs({ loggedInUser }) {
         loggedInUser={loggedInUser}
         initialData={checkLogData}
         onSaved={() => {
-          toast.success("Milestone check recorded successfully!");
           refreshLogs();
         }}
       />

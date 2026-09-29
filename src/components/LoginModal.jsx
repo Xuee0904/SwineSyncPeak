@@ -201,7 +201,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
         </div>
 
         {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto modal-scroll-container px-5 sm:px-8 pt-7 sm:pt-9 pb-4 sm:pb-5 space-y-3.5 sm:space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto modal-scroll-container px-5 sm:px-8 pt-7 sm:pt-9 pb-4 sm:pb-5 space-y-3.5 sm:space-y-4">
 
           {/* Logo + Title */}
           <div className="flex flex-col items-center gap-1.5 sm:gap-2 text-center">
@@ -295,7 +295,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
 
           {/* Submit */}
           <button
-            onClick={handleSubmit}
+            type="submit"
             disabled={isLoading}
             className={[
               'w-full py-2.5 sm:py-3',
@@ -314,7 +314,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
               <>Log In <span className="text-base leading-none">→</span></>
             )}
           </button>
-        </div>
+        </form>
 
         {/* Footer */}
         <div className="sticky bottom-0 px-5 sm:px-8 py-3 bg-slate-50 border-t border-slate-100 text-[10px] text-center text-slate-400 tracking-wide shrink-0">

@@ -50,22 +50,9 @@ export default function Protocols() {
         </div>
       </section>
 
-      {/* Notice banner */}
-      <section className="bg-gradient-to-r from-rose-50 to-swine-50 border border-rose-100 rounded-2xl p-5 flex gap-4 items-start" id="emergency-banner">
-        <div className="p-2.5 rounded-xl bg-rose-100 text-rose-700 shrink-0">
-          <ShieldAlert className="w-5 h-5" />
-        </div>
-        <div>
-          <h3 className="font-extrabold text-rose-900 text-sm">African Swine Fever (ASF) and Other Disease Mitigation</h3>
-          <p className="text-xs text-rose-700 mt-0.5 leading-relaxed">
-            We enforce daily sanitization checks and strict vehicle disinfection protocols.
-          </p>
-        </div>
-      </section>
-
       {/* Side-by-Side Dual Protocol Columns */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-8" id="protocols-grid">
-        
+
         {/* Column 1: Visitor Requirements */}
         <div className="bg-white border border-slate-100 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 flex flex-col justify-between">
           <div className="space-y-5">
@@ -75,7 +62,6 @@ export default function Protocols() {
               </div>
               <div>
                 <h3 className="text-lg font-bold font-display text-slate-900">Visitor Pre-Arrival Requirements</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Measures you must meet before entering our facility boundary.</p>
               </div>
             </div>
 
@@ -111,7 +97,6 @@ export default function Protocols() {
               </div>
               <div>
                 <h3 className="text-lg font-bold font-display text-slate-900">Swine Sanitization Standards</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Strict daily practices we follow to ensure optimal animal safety.</p>
               </div>
             </div>
 

@@ -35,8 +35,8 @@ const METHODS = [
   },
 ];
 
-const STEP_METHOD  = 'method';
-const STEP_FORM    = 'form';
+const STEP_METHOD = 'method';
+const STEP_FORM = 'form';
 const STEP_SUCCESS = 'success';
 
 const TRANSITION_MS = 320;
@@ -60,24 +60,26 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
     useModalAnimation(isOpen, onClose);
 
   /* ── step state ───────────────────────────────────────────────── */
-  const [step, setStep]           = useState(STEP_METHOD);
-  const [method, setMethod]       = useState(null);
+  const [step, setStep] = useState(STEP_METHOD);
+  const [method, setMethod] = useState(null);
   const [successInfo, setSuccessInfo] = useState(null);
 
   /* ── form fields ──────────────────────────────────────────────── */
-  const [sowId, setSowId]             = useState('');
-  const [boarId, setBoarId]           = useState('');
+  const [sowId, setSowId] = useState('');
+  const [boarId, setBoarId] = useState('');
   const [breedingDate, setBreedingDate] = useState('');
-  const [submitting, setSubmitting]   = useState(false);
-  const [formError, setFormError]     = useState('');
-  const [dateError, setDateError]     = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [sowError, setSowError] = useState('');
+  const [boarError, setBoarError] = useState('');
+  const [dateError, setDateError] = useState('');
+  const [submitError, setSubmitError] = useState('');
 
   /* ── dropdown data ────────────────────────────────────────────── */
-  const [sows, setSows]   = useState([]);
+  const [sows, setSows] = useState([]);
   const [boars, setBoars] = useState([]);
   const [loadingDropdowns, setLoadingDropdowns] = useState(false);
 
-  /* ── smooth step transition (snapshot pattern) ────────────────── */
+  /* ── smooth step transition ────────────────── */
   const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(step);
 
   const goTo = (newStep) => {
@@ -92,8 +94,10 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
       setSowId('');
       setBoarId('');
       setBreedingDate('');
-      setFormError('');
+      setSowError('');
+      setBoarError('');
       setDateError('');
+      setSubmitError('');
       setSuccessInfo(null);
     }
   }, [isOpen]);
@@ -119,7 +123,7 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
 
   const selectedMethod = METHODS.find(m => m.id === method?.id);
   const expectedFarrowing = calcExpectedFarrowingDate(breedingDate);
-  const selectedSow  = sows.find(s => s.id === sowId);
+  const selectedSow = sows.find(s => s.id === sowId);
   const selectedBoar = boars.find(b => b.id === boarId);
 
   const handleClose = () => requestClose();
@@ -127,23 +131,18 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
   /* ── submit ───────────────────────────────────────────────────── */
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setFormError('');
+    setSowError('');
+    setBoarError('');
     setDateError('');
+    setSubmitError('');
 
-    if (!sowId) { setFormError('Please select a sow.'); return; }
-    if (!breedingDate) { setFormError('Please enter the breeding date.'); return; }
-    
-    // Future date validation check
+    let hasError = false;
     const today = new Date().toISOString().split('T')[0];
-    if (breedingDate > today) {
-      setDateError('Breeding date cannot be in the future.');
-      return;
-    }
-
-    if (method.id === 'natural_mating' && !boarId) {
-      setFormError('Please select a boar for Natural Mating.');
-      return;
-    }
+    if (!sowId) { setSowError('Please select a sow.'); hasError = true; }
+    if (!breedingDate) { setDateError('Please enter the breeding date.'); hasError = true; }
+    else if (breedingDate > today) { setDateError('Breeding date cannot be in the future.'); hasError = true; }
+    if (method.id === 'natural_mating' && !boarId) { setBoarError('Please select a boar for Natural Mating.'); hasError = true; }
+    if (hasError) return;
 
     setSubmitting(true);
     try {
@@ -171,7 +170,19 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
       goTo(STEP_SUCCESS);
       onSaved?.();
     } catch (err) {
-      setFormError(err.message);
+      const msg = err.message || '';
+      // Sow-specific errors → inline below the Sow field
+      if (
+        msg.toLowerCase().includes('active breeding cycle') ||
+        msg.toLowerCase().includes('active cycle') ||
+        msg.toLowerCase().includes('already pregnant') ||
+        msg.toLowerCase().includes('sow already')
+      ) {
+        setSowError(msg);
+      } else {
+        // Generic network / server errors → bottom banner
+        setSubmitError(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -184,7 +195,18 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
       className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
       onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) handleClose(); }}
     >
-      <div 
+      <style>{`
+        @keyframes field-error-in {
+          0%   { opacity: 0; transform: translateY(-6px) scaleY(0.85); }
+          60%  { opacity: 1; transform: translateY(1px) scaleY(1.02); }
+          100% { opacity: 1; transform: translateY(0) scaleY(1); }
+        }
+        .animate-field-error {
+          animation: field-error-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+          transform-origin: top;
+        }
+      `}</style>
+      <div
         ref={containerRef}
         style={stepTransitionStyle}
         className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 ${maxWidth} ${panelClassName}`}
@@ -200,7 +222,6 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">Log Breeding Event</h3>
-                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Step 1 — Select breeding method</p>
                 </div>
               </div>
               <button type="button" onClick={handleClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer">
@@ -209,39 +230,35 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
             </div>
 
             {/* Method cards */}
-            <div className="p-6 space-y-3">
-              <p className="text-xs text-slate-500 font-medium mb-4">
-                Choose the breeding method used. This determines which fields are required in the next step.
+            <div className="px-8 pb-8 pt-2 text-left">
+              <p className="mb-6 text-xs text-slate-400 font-medium uppercase tracking-wider">
+                Select breeding method
               </p>
-              {METHODS.map((m) => {
-                const Icon = m.icon;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => { setMethod(m); goTo(STEP_FORM); }}
-                    className={`w-full text-left p-4 rounded-2xl border-2 transition-all duration-200 group hover:shadow-md hover:-translate-y-0.5 cursor-pointer ${m.tint} hover:border-opacity-80`}
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${m.iconBg} group-hover:scale-105 transition-transform`}>
+              <div className="grid grid-cols-2 gap-3.5">
+                {METHODS.map((m) => {
+                  const Icon = m.icon;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => { setMethod(m); goTo(STEP_FORM); }}
+                      className="group relative flex flex-col items-center gap-3 rounded-2xl border px-3 py-6 transition-all duration-200 cursor-pointer border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/60 hover:shadow-sm"
+                    >
+                      <span className="flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-200 bg-slate-100/80 text-slate-600 group-hover:scale-105 group-hover:bg-emerald-50 group-hover:text-emerald-600">
                         <Icon size={22} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold text-sm text-slate-900">{m.label}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${m.badge}`}>{m.abbr}</span>
-                        </div>
-                        <p className="text-[12px] text-slate-500 font-medium leading-relaxed">{m.description}</p>
-                      </div>
-                      <div className="shrink-0 text-slate-300 group-hover:text-slate-500 transition-colors mt-1">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                          <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+                      </span>
+                      <span className="text-xs font-bold text-slate-800 tracking-tight group-hover:text-emerald-950 transition-colors">
+                        {m.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-6">
+                <button type="button" onClick={handleClose} className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -269,7 +286,6 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Step 2 — Fill in details</p>
                 </div>
               </div>
               <button type="button" onClick={handleClose} disabled={submitting} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50">
@@ -278,7 +294,7 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
             </div>
 
             {/* Form body */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 animate-in fade-in duration-200">
+            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4 animate-in fade-in duration-200">
 
               {/* Method reminder banner */}
               {selectedMethod && (
@@ -297,11 +313,10 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
                   <div className="w-full h-10 rounded-xl bg-slate-100 animate-pulse" />
                 ) : (
                   <select
-                    required
                     disabled={submitting}
                     value={sowId}
-                    onChange={(e) => setSowId(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all cursor-pointer disabled:opacity-50"
+                    onChange={(e) => { setSowId(e.target.value); setSowError(''); }}
+                    className={`w-full rounded-xl border ${sowError ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-red-500/10' : 'border-slate-200 bg-slate-50 focus:border-emerald-500 focus:ring-emerald-500/10'} px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 transition-all cursor-pointer disabled:opacity-50`}
                   >
                     <option value="">— Select a sow —</option>
                     {sows.map(s => (
@@ -310,6 +325,12 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
                       </option>
                     ))}
                   </select>
+                )}
+                {sowError && (
+                  <p className="animate-field-error flex items-start gap-1.5 text-[11px] text-rose-600 font-semibold mt-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                    {sowError}
+                  </p>
                 )}
                 {sows.length === 0 && !loadingDropdowns && (
                   <p className="text-[11px] text-amber-600 font-medium mt-1">⚠️ No active female pigs found.</p>
@@ -326,11 +347,10 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
                     <div className="w-full h-10 rounded-xl bg-slate-100 animate-pulse" />
                   ) : (
                     <select
-                      required={method?.id === 'natural_mating'}
                       disabled={submitting}
                       value={boarId}
-                      onChange={(e) => setBoarId(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all cursor-pointer disabled:opacity-50"
+                      onChange={(e) => { setBoarId(e.target.value); setBoarError(''); }}
+                      className={`w-full rounded-xl border ${boarError ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-red-500/10' : 'border-slate-200 bg-slate-50 focus:border-emerald-500 focus:ring-emerald-500/10'} px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 transition-all cursor-pointer disabled:opacity-50`}
                     >
                       <option value="">— Select a boar —</option>
                       {boars.map(b => (
@@ -339,6 +359,12 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
                         </option>
                       ))}
                     </select>
+                  )}
+                  {boarError && (
+                    <p className="animate-field-error flex items-start gap-1.5 text-[11px] text-rose-600 font-semibold mt-1.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                      {boarError}
+                    </p>
                   )}
                   {boars.length === 0 && !loadingDropdowns && (
                     <p className="text-[11px] text-amber-600 font-medium mt-1">⚠️ No active male pigs found.</p>
@@ -353,9 +379,7 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
                 </label>
                 <input
                   type="date"
-                  required
                   disabled={submitting}
-                  max={new Date().toISOString().split('T')[0]}
                   value={breedingDate}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -370,7 +394,10 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
                   className={`w-full rounded-xl border ${dateError ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-red-500/10' : 'border-slate-200 bg-slate-50 focus:border-emerald-500 focus:ring-emerald-500/10'} px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 transition-all disabled:opacity-50`}
                 />
                 {dateError && (
-                  <p className="text-[11px] text-red-600 font-medium mt-1 animate-in fade-in slide-in-from-top-1 duration-200">{dateError}</p>
+                  <p className="animate-field-error flex items-start gap-1.5 text-[11px] text-rose-600 font-semibold mt-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                    {dateError}
+                  </p>
                 )}
               </div>
 
@@ -388,10 +415,10 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
                 </div>
               )}
 
-              {/* Error banner */}
-              {formError && (
+              {/* Submit error (network/server errors only) */}
+              {submitError && (
                 <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-start gap-2 animate-in fade-in">
-                  <span>⚠️ {formError}</span>
+                  <span>⚠️ {submitError}</span>
                 </div>
               )}
 
@@ -420,57 +447,27 @@ export default function AddBreedingLogModal({ isOpen, onClose, onSaved, loggedIn
 
         {/* ══ STEP: SUCCESS ═══════════════════════════════════════ */}
         {step === STEP_SUCCESS && successInfo && (
-          <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
-            {/* Icon */}
-            <div className={`w-16 h-16 rounded-full border-4 border-emerald-50 flex items-center justify-center bg-emerald-100 text-emerald-600 shadow-inner mx-auto`}>
-              <CheckCircle2 size={32} className="animate-bounce" />
+          <div className="p-8 text-center space-y-5">
+            <div className="mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm bg-emerald-50 border-emerald-100 text-emerald-600">
+              <CheckCircle2 size={28} strokeWidth={2.5} />
             </div>
 
-            {/* Title */}
             <div>
-              <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                Breeding Log Saved
-              </span>
-              <h4 className="text-xl font-black text-slate-900">Record Created!</h4>
+              <h4 className="text-xl font-black text-slate-900">Breeding Log Saved!</h4>
+              <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto leading-relaxed">
+                Sow <span className="font-bold text-slate-700">#{successInfo.sowTag}</span> has been successfully logged
+                {successInfo.boarTag ? <> with Boar <span className="font-bold text-slate-700">#{successInfo.boarTag}</span></> : ''}.
+                Expected farrowing on <span className="font-bold text-slate-700">{formatDisplayDate(successInfo.expectedFarrowing)}</span>.
+              </p>
             </div>
 
-            {/* Details card */}
-            <div className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2.5 text-left">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400 font-semibold uppercase tracking-wider">Method</span>
-                <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase ${successInfo.method?.badge}`}>
-                  {successInfo.method?.label}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400 font-semibold uppercase tracking-wider">Sow</span>
-                <span className="font-bold text-slate-800">#{successInfo.sowTag}</span>
-              </div>
-              {successInfo.boarTag && (
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400 font-semibold uppercase tracking-wider">Boar</span>
-                  <span className="font-bold text-slate-800">#{successInfo.boarTag}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400 font-semibold uppercase tracking-wider">Breeding Date</span>
-                <span className="font-bold text-slate-800">{formatDisplayDate(successInfo.breedingDate)}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs border-t border-slate-200 pt-2.5 mt-1">
-                <span className="text-slate-400 font-semibold uppercase tracking-wider">Expected Farrowing</span>
-                <span className="font-bold text-emerald-700">{formatDisplayDate(successInfo.expectedFarrowing)}</span>
-              </div>
-            </div>
-
-            <div className="pt-1 w-full">
-              <button
-                type="button"
-                onClick={handleClose}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
-              >
-                Done &amp; Close
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="w-full py-3 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
+            >
+              Done
+            </button>
           </div>
         )}
       </div>
