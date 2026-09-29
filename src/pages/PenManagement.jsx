@@ -444,9 +444,9 @@ export default function PenManagement({ loggedInUser }) {
       {/* Pen Cards/Table */}
       {viewMode === "table" ? (
         /* --- TABLE VIEW --- */
-        <div key="table-view" className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden tab-enter">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+        <div key="table-view" className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-visible tab-enter">
+          <div className="overflow-visible rounded-2xl">
+            <table className="w-full text-left" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
                   <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Pen Details</th>
@@ -471,10 +471,11 @@ export default function PenManagement({ loggedInUser }) {
                     </td>
                   </tr>
                 ) : (
-                  paginatedTablePens.map((pen) => {
+                  paginatedTablePens.map((pen, idx) => {
                     const section = SECTIONS[pen.section] || Object.values(SECTIONS)[0] || { label: pen.section || "Pen", color: "text-emerald-800", bg: "bg-emerald-50 border-emerald-200/60" };
                     const status = getStatus(pen.occupancy, pen.capacity);
                     const pct = pen.capacity > 0 ? Math.min(100, Math.round((pen.occupancy / pen.capacity) * 100)) : 0;
+                    const isNearBottom = idx >= paginatedTablePens.length - 2;
                     
                     const barColor = status.tone === "full" ? "bg-rose-500" : status.tone === "warn" ? "bg-amber-500" : status.tone === "empty" ? "bg-slate-300" : "bg-emerald-500";
 
@@ -533,7 +534,7 @@ export default function PenManagement({ loggedInUser }) {
                                   <MoreVertical className="w-4 h-4" />
                                 </button>
                                 {openMenu === pen.id && (
-                                  <div ref={menuRef} className="absolute right-6 top-10 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden min-w-[155px] py-1 text-left animate-in fade-in zoom-in-95 duration-150">
+                                  <div ref={menuRef} className={`absolute right-6 ${isNearBottom ? 'bottom-10 slide-in-from-bottom-2 origin-bottom-right' : 'top-10 slide-in-from-top-2 origin-top-right'} bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden min-w-[155px] py-1 text-left animate-in fade-in zoom-in-95 duration-150`}>
                                     <button type="button" onClick={() => { setOpenMenu(null); setViewingPen(pen); }} className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors">
                                       <Eye className="w-3.5 h-3.5 text-slate-400" /> View details
                                     </button>

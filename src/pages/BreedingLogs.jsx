@@ -317,11 +317,15 @@ export default function BreedingLogs({ loggedInUser }) {
         .brl-menu { 
           position: absolute; right: 16px; top: 52px; background: var(--surface); 
           border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(28,36,32,0.14); 
-          z-index: 10; overflow: hidden; min-width: 150px; transform-origin: top right;
+          z-index: 50; overflow: hidden; min-width: 160px; transform-origin: top right;
           animation: menuFadeIn 0.15s ease-out forwards;
         }
         @keyframes menuFadeIn {
           from { opacity: 0; transform: scale(0.95) translateY(-5px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        @keyframes menuFadeInUp {
+          from { opacity: 0; transform: scale(0.95) translateY(5px); }
           to { opacity: 1; transform: scale(1) translateY(0); }
         }
         .brl-menu button { width: 100%; text-align: left; padding: 9px 13px; font-size: 13.5px; font-weight: 600; background: none; border: none; cursor: pointer; color: var(--ink); }
@@ -336,7 +340,7 @@ export default function BreedingLogs({ loggedInUser }) {
         }
 
         /* --- Table View CSS --- */
-        .brl-table-container { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(28,36,32,0.03); }
+        .brl-table-container { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: visible; box-shadow: 0 4px 12px rgba(28,36,32,0.03); }
         .brl-table { width: 100%; border-collapse: collapse; text-align: left; }
         .brl-table th { padding: 14px 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); border-bottom: 1px solid var(--border); background: var(--bg); }
         .brl-table td { padding: 16px 20px; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -489,10 +493,11 @@ export default function BreedingLogs({ loggedInUser }) {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((sow) => {
+                  filtered.map((sow, idx) => {
                     const meta = STATUS_META[sow.status];
                     const overdue = sow.day > GESTATION_DAYS;
                     const fillPct = Math.min(100, (sow.day / GESTATION_DAYS) * 100);
+                    const isNearBottom = idx >= filtered.length - 2;
 
                     return (
                       <tr key={sow.breeding_id || sow.id}>
@@ -536,8 +541,8 @@ export default function BreedingLogs({ loggedInUser }) {
                             <MoreVertical size={16} />
                           </button>
                           {openMenu === (sow.breeding_id || sow.id) && (
-                            <div className="brl-menu" style={{ right: 20, top: 40 }}>
-                              {sow.status !== 'pregnant' && (
+                            <div className="brl-menu" style={{ right: 20, ...(isNearBottom ? { bottom: 40, top: 'auto' } : { top: 40 }) }}>
+                              {sow.status !== 'pregnant' && sow.day >= 21 && (
                                 <button onClick={() => { setCheckLogData(sow); setShowCheckModal(true); setOpenMenu(null); }}>Log new check</button>
                               )}
                               {sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
@@ -620,7 +625,7 @@ export default function BreedingLogs({ loggedInUser }) {
                             </button>
                             {openMenu === (sow.breeding_id || sow.id) && (
                               <div className="brl-menu">
-                                {sow.status !== 'pregnant' && (
+                                {sow.status !== 'pregnant' && sow.day >= 21 && (
                                   <button onClick={() => { setCheckLogData(sow); setShowCheckModal(true); setOpenMenu(null); }}>Log new check</button>
                                 )}
                                 {sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
