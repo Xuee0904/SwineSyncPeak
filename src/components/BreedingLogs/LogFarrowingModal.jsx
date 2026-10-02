@@ -100,16 +100,13 @@ export default function LogFarrowingModal({ isOpen, onClose, onSaved, onRegister
         className={`w-full max-w-sm rounded-3xl bg-white shadow-2xl overflow-hidden border border-slate-100 flex flex-col ${panelClassName}`}
       >
         {isSuccess ? (
-          <div className="p-8 text-center flex flex-col items-center justify-center space-y-4 animate-in fade-in duration-300">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 border-4 border-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
-              <CheckCircle2 size={32} className="animate-bounce" />
+          <div className="p-8 text-center space-y-5">
+            <div className="mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm bg-emerald-50 border-emerald-100 text-emerald-600">
+              <CheckCircle2 size={28} strokeWidth={2.5} />
             </div>
             <div>
-              <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                Farrowing Logged
-              </span>
               <h4 className="text-xl font-black text-slate-900 leading-tight">
-                Sow #{initialData.id} Farrowed
+                Sow #{initialData.id} Farrowed!
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1">
                 Her status is now Healthy and parity has increased.

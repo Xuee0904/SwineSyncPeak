@@ -389,7 +389,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
             </button>
 
             <div className="mx-auto w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shadow-sm">
-              <Check className="w-7 h-7 text-emerald-600 animate-bounce" strokeWidth={3} />
+              <Check className="w-7 h-7 text-emerald-600" strokeWidth={3} />
             </div>
 
             <div>

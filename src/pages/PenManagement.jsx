@@ -810,8 +810,6 @@ export default function PenManagement({ loggedInUser }) {
         loggedInUser={loggedInUser}
         onEdit={(updatedPen, wasSaved) => {
           if (wasSaved) {
-            // Post-save: show a toast and refresh the pen list
-            toast.success(`Updated pen #${updatedPen.code?.toUpperCase() || ''}`);
             fetchPens();
           }
         }}

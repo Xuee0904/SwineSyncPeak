@@ -195,7 +195,6 @@ export default function BreedingLogs({ loggedInUser }) {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || "Failed to archive record");
-      toast.success("Breeding record archived successfully!");
       refreshLogs();
     } catch (err) {
       toast.error(err.message);
@@ -712,7 +711,6 @@ export default function BreedingLogs({ loggedInUser }) {
         loggedInUser={loggedInUser}
         initialData={editLogData}
         onSaved={() => {
-          setShowEditModal(false);
           refreshLogs();
         }}
       />

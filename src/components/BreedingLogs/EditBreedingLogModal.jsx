@@ -373,57 +373,27 @@ export default function EditBreedingLogModal({ isOpen, onClose, onSaved, loggedI
 
         {/* ══ STEP: SUCCESS ═══════════════════════════════════════ */}
         {step === STEP_SUCCESS && successInfo && (
-          <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
-            {/* Icon */}
-            <div className={`w-16 h-16 rounded-full border-4 border-emerald-50 flex items-center justify-center bg-emerald-100 text-emerald-600 shadow-inner mx-auto`}>
-              <CheckCircle2 size={32} className="animate-bounce" />
+          <div className="p-8 text-center space-y-5">
+            <div className="mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm bg-emerald-50 border-emerald-100 text-emerald-600">
+              <CheckCircle2 size={28} strokeWidth={2.5} />
             </div>
 
-            {/* Title */}
             <div>
-              <span className="inline-block px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                Breeding Log Updated
-              </span>
-              <h4 className="text-xl font-black text-slate-900">Record Updated!</h4>
+              <h4 className="text-xl font-black text-slate-900">Breeding Log Updated!</h4>
+              <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto leading-relaxed">
+                Sow <span className="font-bold text-slate-700">#{successInfo.sowTag}</span> record has been updated
+                {successInfo.boarTag ? <> with Boar <span className="font-bold text-slate-700">#{successInfo.boarTag}</span></> : ''}.
+                Expected farrowing on <span className="font-bold text-slate-700">{formatDisplayDate(successInfo.expectedFarrowing)}</span>.
+              </p>
             </div>
 
-            {/* Details card */}
-            <div className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2.5 text-left">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400 font-semibold uppercase tracking-wider">Method</span>
-                <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase ${successInfo.method?.badge}`}>
-                  {successInfo.method?.label}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400 font-semibold uppercase tracking-wider">Sow</span>
-                <span className="font-bold text-slate-800">#{successInfo.sowTag}</span>
-              </div>
-              {successInfo.boarTag && (
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400 font-semibold uppercase tracking-wider">Boar</span>
-                  <span className="font-bold text-slate-800">#{successInfo.boarTag}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400 font-semibold uppercase tracking-wider">Breeding Date</span>
-                <span className="font-bold text-slate-800">{formatDisplayDate(successInfo.breedingDate)}</span>
-              </div>
-              <div className="flex items-center justify-between text-xs border-t border-slate-200 pt-2.5 mt-1">
-                <span className="text-slate-400 font-semibold uppercase tracking-wider">Expected Farrowing</span>
-                <span className="font-bold text-emerald-700">{formatDisplayDate(successInfo.expectedFarrowing)}</span>
-              </div>
-            </div>
-
-            <div className="pt-1 w-full">
-              <button
-                type="button"
-                onClick={handleClose}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
-              >
-                Done &amp; Close
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="w-full py-3 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
+            >
+              Done
+            </button>
           </div>
         )}
       </div>

@@ -218,7 +218,7 @@ export default function ArchiveStaffModal({ isOpen, onClose, staff, onArchiveCon
               ? 'bg-rose-50 border-rose-100 text-rose-600'
               : 'bg-emerald-50 border-emerald-100 text-emerald-600'
               }`}>
-              {archiveType ? <Lock className="w-7 h-7 animate-bounce" strokeWidth={2.5} /> : <Check className="w-7 h-7 animate-bounce" strokeWidth={3} />}
+              {archiveType ? <Lock className="w-7 h-7" strokeWidth={2.5} /> : <Check className="w-7 h-7" strokeWidth={3} />}
             </div>
 
             <div>

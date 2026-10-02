@@ -258,27 +258,25 @@ export default function LogCheckModal({ isOpen, onClose, onSaved, loggedInUser, 
 
         {/* ══ SUCCESS ═════════════════════════════════════════════ */}
         {isSuccess && (
-          <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in zoom-in-95 duration-300">
-            <div className="w-16 h-16 rounded-full border-4 border-indigo-50 flex items-center justify-center bg-indigo-100 text-indigo-600 shadow-inner mx-auto">
-              <CheckCircle2 size={32} className="animate-bounce" />
+          <div className="p-8 text-center space-y-5">
+            <div className="mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm bg-indigo-50 border-indigo-100 text-indigo-600">
+              <CheckCircle2 size={28} strokeWidth={2.5} />
             </div>
 
             <div>
-              <span className="inline-block px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-extrabold uppercase tracking-wider mb-2">
-                Check Logged
-              </span>
               <h4 className="text-xl font-black text-slate-900">Milestone Recorded!</h4>
+              <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto leading-relaxed">
+                The milestone check has been successfully logged for this breeding cycle.
+              </p>
             </div>
 
-            <div className="pt-1 w-full">
-              <button
-                type="button"
-                onClick={handleClose}
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
-              >
-                Done &amp; Close
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-600/20 transition-all cursor-pointer active:scale-95"
+            >
+              Done
+            </button>
           </div>
         )}
       </div>
