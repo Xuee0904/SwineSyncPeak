@@ -2,14 +2,11 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   Search,
-  Download,
   ChevronDown,
   SlidersHorizontal,
   X,
   MoreVertical,
   ArrowUpRight,
-  ChevronLeft,
-  ChevronRight,
   ShieldAlert,
   Eye,
   CheckCircle2,
@@ -18,6 +15,10 @@ import {
 } from "lucide-react";
 import { toast } from "../utils/toast";
 import AddHealthLogModal from "../components/HealthManagement/AddHealthLogModal";
+import Pagination from "../components/common/Pagination";
+import ExportDropdown from "../components/common/ExportDropdown";
+
+const PAGE_SIZE = 10;
 
 // ---------------------------------------------------------------------------
 // Data fetched from backend API
@@ -52,6 +53,18 @@ const medicationDotColor = {
   Enrofloxacin: "bg-orange-500",
   Penicillin: "bg-emerald-500",
 };
+
+// Columns used for Excel/PDF export
+const treatmentExportColumns = [
+  { header: "Treatment ID", accessor: "treatmentId" },
+  { header: "Pig/Batch ID", accessor: "pigId" },
+  { header: "Diagnosis", accessor: "diagnosis" },
+  { header: "Medication", accessor: "medication" },
+  { header: "Dosage", accessor: "dosage" },
+  { header: "Start Date", accessor: "startDate" },
+  { header: "Duration (days)", accessor: "daysInStatus" },
+  { header: "Status", accessor: (r) => statusMeta[r.status]?.label ?? r.status },
+];
 
 // ---------------------------------------------------------------------------
 // Small building blocks
@@ -225,6 +238,8 @@ function RowActions({ row, onEdit, onRefresh }) {
 export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -303,9 +318,34 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
           .toLowerCase()
           .includes(query.toLowerCase());
       const matchesStatus = statusFilter === "all" || row.status === statusFilter;
-      return matchesQuery && matchesStatus;
+
+      let matchesDate = true;
+      if (dateFrom || dateTo) {
+        const started = new Date(row._raw?.log_date);
+        if (dateFrom && started < new Date(dateFrom)) matchesDate = false;
+        if (dateTo) {
+          const toEnd = new Date(dateTo);
+          toEnd.setHours(23, 59, 59, 999);
+          if (started > toEnd) matchesDate = false;
+        }
+      }
+
+      return matchesQuery && matchesStatus && matchesDate;
     });
-  }, [treatmentLog, query, statusFilter]);
+  }, [treatmentLog, query, statusFilter, dateFrom, dateTo]);
+
+  const filteredArchived = useMemo(() => {
+    return archivedLog.filter((row) =>
+      query.trim() === "" ||
+      [row.pigId, row.diagnosis, row.medication].join(" ").toLowerCase().includes(query.toLowerCase())
+    );
+  }, [archivedLog, query]);
+
+  // Pagination over whichever list (active/archived) is currently displayed
+  const displayedRows = showArchived ? filteredArchived : filtered;
+  const totalPages = Math.ceil(displayedRows.length / PAGE_SIZE) || 1;
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const pagedRows = displayedRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const resolvedCount = treatmentLog.filter(t => t.status === 'resolved').length;
   const totalCount = treatmentLog.length;
@@ -315,38 +355,10 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-[1400px] px-6 py-8">
 
-        {/* Critical Cases */}
-        <div className="mt-2">
-          <div className="mb-3 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-rose-600">
-                <ShieldAlert className="h-4 w-4" />
-                Active Sick Cases
-              </h2>
-              <button
-                type="button"
-                onClick={() => {
-                  setStatusFilter("sick");
-                  setFiltersOpen(true);
-                  // Scroll to table
-                  document.getElementById("treatment-log-table")?.scrollIntoView({ behavior: "smooth" });
-                }}
-                className="text-xs font-medium text-emerald-600 hover:text-emerald-700"
-              >
-                View All Sick
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-4">
-              {sickCases.map((c) => (
-              <CriticalCaseCard key={c.id} item={c} />
-            ))}
-            <RecoveryRateCard rate={recoveryRate} resolvedCount={resolvedCount} totalCount={totalCount} />
-          </div>
-        </div>
-
         {/* Treatment pipeline overview across all active treatments */}
         <div className="mt-4">
-            <StatusDistributionBar
-              distribution={["sick", "monitoring", "resolved"].map(st => ({
+          <StatusDistributionBar
+            distribution={["sick", "monitoring", "resolved"].map(st => ({
               status: st,
               count: treatmentLog.filter(t => t.status === st).length
             }))}
@@ -358,24 +370,22 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
         <div id="treatment-log-table" className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <h2 className="text-base font-semibold text-slate-900">Treatment Log</h2>
+              <h2 className="text-base font-semibold text-slate-900">Treatment Logs</h2>
               {/* Active / Archived toggle */}
               <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                 <button
                   type="button"
                   onClick={() => { setShowArchived(false); setPage(1); }}
-                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
-                    !showArchived ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'
-                  }`}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${!showArchived ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'
+                    }`}
                 >
                   Active
                 </button>
                 <button
                   type="button"
                   onClick={() => { setShowArchived(true); setPage(1); }}
-                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
-                    showArchived ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'
-                  }`}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${showArchived ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'
+                    }`}
                 >
                   Archived
                 </button>
@@ -407,13 +417,12 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
                   />
                 </button>
               )}
-              <button
-                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                type="button"
-              >
-                <Download className="h-4 w-4" />
-                Export
-              </button>
+              <ExportDropdown
+                data={displayedRows}
+                columns={treatmentExportColumns}
+                filename={showArchived ? "archived_treatment_logs" : "treatment_logs"}
+                pdfTitle={showArchived ? "Archived Treatment Logs" : "Treatment Logs"}
+              />
               {!showArchived && (
                 <button
                   onClick={() => { setEditRecord(null); setModalOpen(true); }}
@@ -426,7 +435,12 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
             </div>
           </div>
 
-          {filtersOpen && !showArchived && (
+          {/* Filter panel — animated open/close */}
+          <div
+            aria-hidden={!(filtersOpen && !showArchived)}
+            className={`grid transition-all duration-300 ease-in-out ${filtersOpen && !showArchived ? "grid-rows-[1fr] opacity-100 visible" : "grid-rows-[0fr] opacity-0 invisible"}`}
+          >
+          <div className="min-h-0 overflow-hidden">
             <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
               <div className="flex items-center gap-2">
                 <label className="text-xs font-medium text-slate-500">Status</label>
@@ -448,18 +462,24 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
                 <label className="text-xs font-medium text-slate-500">Start date</label>
                 <input
                   type="date"
+                  value={dateFrom}
+                  onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
                   className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                 />
                 <span className="text-xs text-slate-400">to</span>
                 <input
                   type="date"
+                  value={dateTo}
+                  onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
                   className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                 />
               </div>
-              {(statusFilter !== "all" || query) && (
+              {(statusFilter !== "all" || dateFrom || dateTo || query) && (
                 <button
                   onClick={() => {
                     setStatusFilter("all");
+                    setDateFrom("");
+                    setDateTo("");
                     setQuery("");
                     setPage(1);
                   }}
@@ -471,7 +491,8 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
                 </button>
               )}
             </div>
-          )}
+          </div>
+          </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -501,17 +522,14 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
                     </tr>
                   ))
                 ) : showArchived ? (
-                  archivedLog.length === 0 ? (
+                  filteredArchived.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-400">
-                        No archived treatment records yet.
+                        {archivedLog.length === 0 ? "No archived treatment records yet." : "No archived records match your search."}
                       </td>
                     </tr>
                   ) : (
-                    archivedLog.filter(row =>
-                      query.trim() === '' ||
-                      [row.pigId, row.diagnosis, row.medication].join(' ').toLowerCase().includes(query.toLowerCase())
-                    ).map((row) => (
+                    pagedRows.map((row) => (
                       <tr key={row.treatmentId} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60 transition-colors">
                         <td className="px-5 py-4 font-medium text-slate-800">{row.pigId}</td>
                         <td className="px-5 py-4 text-slate-600">{row.diagnosis}</td>
@@ -535,7 +553,7 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((row) => (
+                  pagedRows.map((row) => (
                     <tr
                       key={row.treatmentId}
                       className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 transition-colors ${statusMeta[row.status]?.rowAccent || ""}`}
@@ -568,31 +586,24 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
             </table>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-slate-400">
-              {showArchived
-                ? `${archivedLog.length} archived record${archivedLog.length !== 1 ? 's' : ''}`
-                : `Showing ${filtered.length} of ${treatmentLog.length} active treatments`}
-            </p>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:bg-slate-50 disabled:opacity-40"
-                type="button"
-                disabled={page === 1}
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
-              <span className="px-2 text-xs font-medium text-slate-500">Page {page}</span>
-              <button
-                onClick={() => setPage((p) => p + 1)}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:bg-slate-50"
-                type="button"
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
+          {displayedRows.length > PAGE_SIZE ? (
+            <Pagination
+              currentPage={safePage}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              totalItems={displayedRows.length}
+              itemsPerPage={PAGE_SIZE}
+              itemName={showArchived ? "archived records" : "treatments"}
+            />
+          ) : (
+            <div className="border-t border-slate-100 px-5 py-4">
+              <p className="text-xs text-slate-400">
+                {showArchived
+                  ? `${filteredArchived.length} archived record${filteredArchived.length !== 1 ? 's' : ''}`
+                  : `Showing ${filtered.length} of ${treatmentLog.length} active treatments`}
+              </p>
             </div>
-          </div>
+          )}
         </div>
       </div>
 

@@ -22,7 +22,7 @@ export const NAV_ITEMS = [
   { 
     id: 'health_management', label: 'Health Management', icon: HeartPulse, sub: true,
     children: [
-      { id: 'medication_treatment', label: 'Medication Logs', icon: ClipboardList },
+      { id: 'medication_treatment', label: 'Treatment Logs', icon: ClipboardList },
       { id: 'mortality_record', label: 'Mortality Records', icon: Skull },
     ]
   },

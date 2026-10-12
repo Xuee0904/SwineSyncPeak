@@ -583,8 +583,12 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
             </div>
           </div>
 
-          {/* Filter panel — only shown in Active view */}
-          {filtersOpen && !showArchived && (
+          {/* Filter panel — only available in Active view, animated open/close */}
+          <div
+            aria-hidden={!(filtersOpen && !showArchived)}
+            className={`grid transition-all duration-300 ease-in-out ${filtersOpen && !showArchived ? "grid-rows-[1fr] opacity-100 visible" : "grid-rows-[0fr] opacity-0 invisible"}`}
+          >
+          <div className="min-h-0 overflow-hidden">
             <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
               <div className="flex items-center gap-2">
                 <label className="text-xs font-medium text-slate-500">Status</label>
@@ -646,7 +650,8 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                 </button>
               )}
             </div>
-          )}
+          </div>
+          </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
