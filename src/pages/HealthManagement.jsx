@@ -170,6 +170,8 @@ function SubModuleCard({ icon: Icon, title, description, accent, onClick }) {
 // Main page
 // ---------------------------------------------------------------------------
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 export default function HealthManagement({ setActiveTab, loggedInUser }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -201,10 +203,10 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
     setLoading(true);
     try {
       const [vacRes, vacArchivedRes, healthRes, tasksRes] = await Promise.all([
-        fetch("/api/vaccination-records?t=" + Date.now()),
-        fetch("/api/vaccination-records?archived=true&t=" + Date.now()),
-        fetch("/api/health-logs?t=" + Date.now()),
-        fetch("/api/growth-tasks?status=pending&t=" + Date.now())
+        fetch(`${API_BASE}/api/vaccination-records?t=` + Date.now()),
+        fetch(`${API_BASE}/api/vaccination-records?archived=true&t=` + Date.now()),
+        fetch(`${API_BASE}/api/health-logs?t=` + Date.now()),
+        fetch(`${API_BASE}/api/growth-tasks?status=pending&t=` + Date.now())
       ]);
       const vacData = await vacRes.json();
       const vacArchivedData = await vacArchivedRes.json();
@@ -738,7 +740,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                               if (!confirm(`Archive vaccination record for ${row.pigHerdId}?`)) return;
                               setArchivingId(row._raw.vaccination_id);
                               try {
-                                const res = await fetch(`/api/vaccination-records/${row._raw.vaccination_id}/archive`, {
+                                const res = await fetch(`${API_BASE}/api/vaccination-records/${row._raw.vaccination_id}/archive`, {
                                   method: "PATCH",
                                   headers: { "Content-Type": "application/json" },
                                   body: JSON.stringify({ performed_by: "Admin" }),
@@ -838,7 +840,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         currentUser={loggedInUser}
         onSuccess={async (createdLog) => {
           if (activeGrowthTask) {
-            await fetch(`/api/growth-tasks/${activeGrowthTask.task_id}`, {
+            await fetch(`${API_BASE}/api/growth-tasks/${activeGrowthTask.task_id}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ status: 'completed', linked_vaccination_id: createdLog?.vaccination_id })

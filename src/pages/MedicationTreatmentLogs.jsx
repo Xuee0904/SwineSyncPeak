@@ -235,6 +235,8 @@ function RowActions({ row, onEdit, onRefresh }) {
 // Main page
 // ---------------------------------------------------------------------------
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -256,8 +258,8 @@ export default function MedicationTreatmentLogs({ setActiveTab, loggedInUser }) 
     const fetchData = async () => {
       try {
         const [activeRes, archivedRes] = await Promise.all([
-          fetch("/api/health-logs?t=" + Date.now()),
-          fetch("/api/health-logs?archived=true&t=" + Date.now()),
+          fetch(`${API_BASE}/api/health-logs?t=` + Date.now()),
+          fetch(`${API_BASE}/api/health-logs?archived=true&t=` + Date.now()),
         ]);
         const activeJson = await activeRes.json();
         const archivedJson = await archivedRes.json();

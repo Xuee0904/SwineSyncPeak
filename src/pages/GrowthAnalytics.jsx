@@ -3,6 +3,7 @@ import { AlertTriangle, TrendingUp, Target, Activity, ChevronLeft, ChevronRight 
 import { toast } from "../utils/toast";
 
 const FONT_DISPLAY = "font-['Space_Grotesk',_sans-serif]";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 /* ---------------------------------------------------------------------- */
 /* Chart geometry helpers (repurposed for Feed Consumption)               */
@@ -504,7 +505,7 @@ export default function GrowthAnalytics() {
   const fetchPrograms = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/growth/analytics');
+      const res = await fetch(`${API_BASE}/api/growth/analytics`);
       if (!res.ok) throw new Error('Failed to fetch analytics data');
       const data = await res.json();
       setPrograms(data);

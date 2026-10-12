@@ -296,6 +296,8 @@ function PenHotZones({ penRisk }) {
 // Main page
 // ---------------------------------------------------------------------------
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 export default function MortalityRecord({ setActiveTab }) {
   const [query, setQuery] = useState("");
   const [causeFilter, setCauseFilter] = useState("all");
@@ -307,7 +309,7 @@ export default function MortalityRecord({ setActiveTab }) {
   React.useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch("/api/mortality-logs?t=" + Date.now());
+        const res = await fetch(`${API_BASE}/api/mortality-logs?t=` + Date.now());
         const json = await res.json();
 
         const logs = (json.data || []).map(m => ({

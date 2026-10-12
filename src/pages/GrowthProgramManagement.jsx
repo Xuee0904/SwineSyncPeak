@@ -9,6 +9,7 @@ import {
 import { toast } from "../utils/toast";
 
 const FONT_DISPLAY = "font-['Space_Grotesk',_sans-serif]";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 const ACTIVITY_TYPES = [
   { value: 'FEED', label: 'Feed', icon: Wheat, bg: 'bg-[#fbf0dd]', text: 'text-[#b8791f]', border: 'border-[#f2ddba]', dot: 'bg-[#b8791f]' },
@@ -357,8 +358,8 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
           .map(({ _tempId, _isRemoving, ...g }) => g),
       };
       const url = isEdit
-        ? `/api/growth/programs/${editProgram.program_id}`
-        : '/api/growth/programs';
+        ? `${API_BASE}/api/growth/programs/${editProgram.program_id}`
+        : `${API_BASE}/api/growth/programs`;
       const method = isEdit ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -710,7 +711,7 @@ function EnrolledBatchesModal({ program, onClose }) {
     if (!program) return;
     setLoading(true);
     setBatches([]);
-    fetch(`/api/growth/programs/${program.program_id}/batches`)
+    fetch(`${API_BASE}/api/growth/programs/${program.program_id}/batches`)
       .then(r => r.json())
       .then(data => setBatches(Array.isArray(data) ? data : []))
       .catch(() => toast.error('Failed to load enrolled batches.'))
@@ -836,7 +837,7 @@ function ArchiveConfirmModal({ program, onCancel, onSuccess }) {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`/api/growth/programs/${program.program_id}/archive`, {
+      const res = await fetch(`${API_BASE}/api/growth/programs/${program.program_id}/archive`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ performed_by: 'Admin' }),
@@ -966,7 +967,7 @@ function RestoreConfirmModal({ program, onCancel, onSuccess }) {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`/api/growth/programs/${program.program_id}/restore`, {
+      const res = await fetch(`${API_BASE}/api/growth/programs/${program.program_id}/restore`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ performed_by: 'Admin' }),
@@ -1082,7 +1083,7 @@ export default function GrowthProgramManagement() {
   const fetchPrograms = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/growth/programs?archived=${viewArchived}`);
+      const res = await fetch(`${API_BASE}/api/growth/programs?archived=${viewArchived}`);
       if (!res.ok) throw new Error('Failed to fetch growth programs');
       setPrograms(await res.json());
     } catch (err) {
