@@ -1,6 +1,7 @@
 import React from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
 import { ArrowUpRight, ChevronRight, Syringe, Award, ShieldCheck } from 'lucide-react';
+import farmLogo from '../assets/Logo.jpg';
 
 export default function Hero({ scrollToSection }) {
   return (
@@ -22,10 +23,23 @@ export default function Hero({ scrollToSection }) {
         <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
           {/* Left Column: Farm Identity, Copy & CTAs */}
           <div className="lg:col-span-7 space-y-6">
-            {/* Farm Origin Badge */}
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold uppercase tracking-wider">
-              <span>🐷</span>
-              <span>Ambo & Ang&apos;s Oink Yard &middot; Biosecure Farm Operations</span>
+            {/* Farm Origin Identity Card */}
+            <div className="inline-flex items-center gap-3.5 sm:gap-4 p-2 sm:p-2.5 pr-4 sm:pr-5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 shadow-xl">
+              <img
+                src={farmLogo}
+                alt="Ambo & Ang's Oink Yard Logo"
+                className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-contain bg-[#fdfbf7] p-0.5 shadow-md border border-white/30 shrink-0"
+              />
+              <div className="flex flex-col text-left">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm sm:text-base font-black text-white tracking-tight">
+                    Ambo & Ang&apos;s Oink Yard
+                  </span>
+                </div>
+                <span className="text-xs font-semibold text-emerald-400 tracking-wide mt-0.5">
+                  Biosecure Farm Operations
+                </span>
+              </div>
             </div>
 
             {/* Main Headline */}
@@ -35,7 +49,7 @@ export default function Hero({ scrollToSection }) {
 
             {/* Authentic Body Copy */}
             <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-xl">
-              From farrow to finish, we raise premium breeder gilts, fatteners, and piglet batches with veterinary-supervised health care, complete vaccination records, and strict biosecurity protocols.
+              From farrow to finish, we raise fatteners, and piglet batches with veterinary-supervised health care, complete vaccination records, and strict biosecurity protocols.
             </p>
 
             {/* Action Buttons */}

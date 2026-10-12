@@ -41,9 +41,6 @@ export default function Protocols() {
       {/* Header Title with Icon */}
       <section className="border-b border-slate-100 pb-5">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-2xl bg-primary-50 text-primary-600 shrink-0">
-            <ShieldCheck className="w-6 h-6" />
-          </div>
           <div>
             <h1 className="text-3xl font-extrabold font-display text-slate-900 tracking-tight">Safety Protocols</h1>
           </div>

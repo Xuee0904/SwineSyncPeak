@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, LogIn, LogOut, User, Shield, ChevronDown } from 'lucide-react';
+import { Menu, X, LogIn, LogOut } from 'lucide-react';
 
 export default function Navbar({ activeSection, scrollToSection, onOpenLogin, loggedInUser, onLogout, isLandingMode }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -41,28 +41,19 @@ export default function Navbar({ activeSection, scrollToSection, onOpenLogin, lo
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-20">
 
-          {/* Logo Brand Area */}
+          {/* Logo Brand Area (Clean Footer Style) */}
           <div className="flex items-center shrink-0">
             <button
               onClick={() => handleNavClick('home')}
-              className="flex items-center gap-3 cursor-pointer group"
+              className="flex items-center gap-2.5 cursor-pointer group"
               id="brand-logo-btn"
             >
-              <div className="relative flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-br from-primary-50 to-primary-700 shadow-md shadow-primary-700/20 text-white group-hover:scale-105 transition-transform">
-                <Shield className="w-6 h-6 text-white" />
-                <span className="absolute -bottom-1 -right-1 flex h-4 w-4">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-swine-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-4 w-4 bg-swine-500 border-2 border-white"></span>
-                </span>
+              <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary-600 text-white font-extrabold text-base shadow-sm group-hover:bg-primary-500 transition-colors">
+                S
               </div>
-              <div className="flex flex-col items-start text-left">
-                <span className="text-xl font-extrabold font-display tracking-tight text-slate-900 group-hover:text-primary-700 transition-colors">
-                  Swine<span className="text-primary-600">Sync</span>
-                </span>
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest leading-none">
-                  Livestock Ecosystem
-                </span>
-              </div>
+              <span className="font-black font-display text-xl tracking-tight text-slate-900 group-hover:text-primary-700 transition-colors">
+                Swine<span className="text-primary-600">Sync</span>
+              </span>
             </button>
           </div>
 

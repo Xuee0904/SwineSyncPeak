@@ -12,6 +12,7 @@ import { ArrowUp } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import ToastContainer from './components/ToastContainer';
 import { toast as globalToast } from './utils/toast';
+import farmLogo from './assets/Logo.jpg';
 import './App.css';
 
 export default function App() {
@@ -258,11 +259,32 @@ export default function App() {
       {!loggedInUser && <footer className="bg-slate-900 text-slate-400 border-t border-slate-800" id="swinesync-footer">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-slate-800">
-            <div className="flex items-center gap-2.5 text-white shrink-0">
-              <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-primary-600 text-white font-extrabold text-sm shadow-md">
-                S
+            {/* Co-Branded Footer Identity Lockup */}
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-white shrink-0">
+              {/* SwineSync Brand */}
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-primary-600 text-white font-extrabold text-sm shadow-md">
+                  S
+                </div>
+                <span className="font-black font-display text-lg tracking-tight">Swine<span className="text-primary-400">Sync</span></span>
               </div>
-              <span className="font-black font-display text-lg tracking-tight">Swine<span className="text-primary-400">Sync</span></span>
+
+              {/* Vertical Divider */}
+              <div className="hidden sm:block h-7 w-px bg-slate-700/80" />
+
+              {/* Client Farm Identity */}
+              <div className="flex items-center gap-2.5">
+                <img
+                  src={farmLogo}
+                  alt="Ambo & Ang's Oink Yard Logo"
+                  className="w-8 h-8 rounded-lg object-contain bg-[#fdfbf7] p-0.5 border border-slate-700 shadow-sm"
+                />
+                <div className="flex flex-col text-left">
+                  <span className="text-xs font-bold text-slate-200 leading-tight">
+                    Ambo & Ang&apos;s Oink Yard
+                  </span>
+                </div>
+              </div>
             </div>
             <nav aria-label="Footer platform links">
               <ul className="flex flex-wrap items-center gap-x-6 sm:gap-x-8 lg:gap-x-10 gap-y-3 text-xs font-semibold">
