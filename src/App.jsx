@@ -3,8 +3,8 @@ import Navbar from './components/Navbar';
 import LoginModal from './components/LoginModal';
 import UpdatePasswordModal from './components/UpdatePasswordModal';
 import Dashboard from './pages/Dashboard';
+import Hero from './landing-page/Hero';
 import Protocols from './landing-page/Protocols';
-import News from './landing-page/News';
 import Catalog from './landing-page/Catalog';
 import FAQs from './landing-page/FAQs';
 import Contact from './landing-page/Contact';
@@ -68,7 +68,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const sectionIds = ['home', 'protocols', 'news', 'catalog', 'faqs', 'contact'];
+    const sectionIds = ['home', 'protocols', 'catalog', 'faqs', 'contact'];
 
     observerRef.current = new IntersectionObserver(
       (entries) => {
@@ -176,7 +176,7 @@ export default function App() {
 
           {/* HERO / HOME */}
           <section id="home" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-20">
-            <Dashboard scrollToSection={scrollToSection} />
+            <Hero scrollToSection={scrollToSection} />
           </section>
 
           {/* DIVIDER */}
@@ -189,14 +189,6 @@ export default function App() {
 
           {/* DIVIDER */}
           <div className="w-full bg-slate-900/3 border-t border-slate-100" />
-
-          {/* NEWS */}
-          <section id="news" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
-            <News />
-          </section>
-
-          {/* DIVIDER */}
-          <div className="w-full border-t border-slate-100" />
 
           {/* CATALOG */}
           <section id="catalog" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
@@ -277,7 +269,6 @@ export default function App() {
                 {[
                   { label: 'Home', id: 'home' },
                   { label: 'Safety Protocols', id: 'protocols' },
-                  { label: 'News & Announcements', id: 'news' },
                   { label: 'Swine Catalog', id: 'catalog' },
                   { label: 'FAQs', id: 'faqs' },
                   { label: 'Contact Us', id: 'contact' }

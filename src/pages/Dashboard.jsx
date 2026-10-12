@@ -137,37 +137,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
     return '?';
   };
 
-  if (!loggedInUser) {
-    return (
-      <div className="animate-fade-in text-left pb-16" id="dashboard-section">
-        <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-8 sm:p-12 shadow-xl">
-          <div className="absolute inset-0 opacity-10 pointer-events-none"
-            style={{ backgroundImage: 'radial-gradient(circle at 70% 30%, #16a34a 0%, transparent 60%)' }} />
-          <div className="relative space-y-5 max-w-2xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
-              <Sparkles className="w-3 h-3" /> Precision Agriculture Portal
-            </div>
-            <h1 className="text-3xl sm:text-4xl font-black font-display tracking-tight leading-snug">
-              Optimized Swine Operations
-            </h1>
-            <p className="text-sm text-slate-300 leading-relaxed">
-              Monitor real-time herd telemetry, review biosecurity guidelines, and browse our swine catalog across all facility sectors.
-            </p>
-            <div className="flex flex-wrap gap-3 pt-1">
-              <button onClick={() => scrollToSection?.('protocols')}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer">
-                View Protocols <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => scrollToSection?.('catalog')}
-                className="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer">
-                Swine Catalog <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </section>
-      </div>
-    );
-  }
+
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden" id="staff-portal">

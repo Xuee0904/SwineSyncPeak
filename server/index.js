@@ -4,7 +4,6 @@ import cors from 'cors';
 
 // Import modular routers
 import adminRouter from './routes/admin.js';
-import newsRouter from './routes/news.js';
 import pensRouter from './routes/pens.js';
 import breedsRouter from './routes/breeds.js';
 import pigsRouter from './routes/pigs.js';
@@ -35,7 +34,6 @@ app.use(express.json());
 
 // Mount routers
 app.use(adminRouter);
-app.use(newsRouter);
 app.use(pensRouter);
 app.use(breedsRouter);
 app.use(pigsRouter);
