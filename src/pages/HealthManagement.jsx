@@ -2,7 +2,6 @@ import React, { useState, useMemo } from "react";
 import {
   Search,
   Plus,
-  Download,
   Syringe,
   CalendarClock,
   AlertTriangle,
@@ -20,6 +19,38 @@ import {
 import { toast } from "../utils/toast";
 import VaccinationFormModal from "../components/HealthManagement/VaccinationFormModal";
 import AddHealthLogModal from "../components/HealthManagement/AddHealthLogModal";
+import Pagination from "../components/common/Pagination";
+import ExportDropdown from "../components/common/ExportDropdown";
+
+// Export column definitions
+const vaccinationExportColumns = [
+  { header: "Pig/Herd ID", accessor: "pigHerdId" },
+  { header: "Type", accessor: "pigType" },
+  { header: "Vaccine Name", accessor: "vaccineName" },
+  { header: "Date Given", accessor: "dateGiven" },
+  { header: "Next Due Date", accessor: "nextDue" },
+  { header: "Veterinarian", accessor: "vet" },
+  { header: "Dosage", accessor: "dosage" },
+  { header: "Status", accessor: (r) => (r.status === "alert" ? "Overdue" : "Logged") },
+];
+
+const archivedVaccinationExportColumns = [
+  { header: "Pig/Herd ID", accessor: "pigHerdId" },
+  { header: "Type", accessor: "pigType" },
+  { header: "Vaccine Name", accessor: "vaccineName" },
+  { header: "Date Given", accessor: "dateGiven" },
+  { header: "Veterinarian", accessor: "vet" },
+  { header: "Dosage", accessor: "dosage" },
+];
+
+const healthEventsExportColumns = [
+  { header: "Date", accessor: "date" },
+  { header: "Swine/Herd ID", accessor: "swineId" },
+  { header: "Event Type", accessor: "eventType" },
+  { header: "Medication", accessor: "medication" },
+  { header: "Veterinarian", accessor: "vet" },
+  { header: "Status", accessor: (r) => r.status || "—" },
+];
 
 // ---------------------------------------------------------------------------
 // Data fetched from backend API
@@ -89,27 +120,27 @@ function EventTypePill({ type }) {
   );
 }
 
-function StatCard({ icon: Icon, label, value, tone, hint, loading }) {
-  const tones = {
-    emerald: "bg-emerald-50 text-emerald-600",
-    amber: "bg-amber-50 text-amber-600",
-    rose: "bg-rose-50 text-rose-600",
-    sky: "bg-sky-50 text-sky-600",
-  };
+function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
   return (
-    <div className="flex-1 min-w-[220px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${tones[tone]}`}>
-          <Icon className="h-5 w-5" />
+    <div className={`relative overflow-hidden rounded-2xl border border-slate-100 shadow-sm ${bg || 'bg-white'} p-5 flex items-center gap-4`}>
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${accentColor || 'bg-slate-50'}`}>
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</p>
+        <div className="flex items-baseline gap-2 mt-0.5">
+          {loading ? (
+            <div className="h-7 w-16 bg-slate-100 animate-pulse rounded-md" />
+          ) : (
+            <h3 className="text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
+          )}
+          {badge && (
+            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeColor || 'bg-slate-100 text-slate-600'}`}>
+              {badge}
+            </span>
+          )}
         </div>
       </div>
-      {loading ? (
-        <div className="mt-4 h-8 w-16 animate-pulse rounded-md bg-slate-200" />
-      ) : (
-        <p className="mt-4 text-2xl font-semibold text-slate-900">{value}</p>
-      )}
-      <p className="mt-1 text-sm text-slate-500">{label}</p>
-      {hint && <p className="mt-2 text-xs font-medium text-slate-400">{hint}</p>}
     </div>
   );
 }
@@ -143,6 +174,8 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [vetFilter, setVetFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [vacModal, setVacModal] = useState(false);
   const [editVacRecord, setEditVacRecord] = useState(null);
@@ -155,6 +188,11 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
   const [archivedRegistry, setArchivedRegistry] = useState([]);
   const [healthEventsLog, setHealthEventsLog] = useState([]);
   const [growthTasks, setGrowthTasks] = useState([]);
+  const [tasksPage, setTasksPage] = useState(1);
+  const TASKS_PER_PAGE = 5;
+  const [taskQuery, setTaskQuery] = useState("");
+  const [taskTypeFilter, setTaskTypeFilter] = useState("all");
+  const [taskStatusFilter, setTaskStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
   const [archivingId, setArchivingId] = useState(null);
@@ -202,7 +240,8 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         status: h.status
       })));
 
-      setGrowthTasks(tasksData.data || []);
+      // FEED tasks are routine husbandry, not health events — managed in Growth Program Management
+      setGrowthTasks((tasksData.data || []).filter(t => t.activity_type !== 'FEED'));
     } catch (err) {
       console.error(err);
       toast.error("Failed to load health data");
@@ -228,16 +267,38 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
           .includes(query.toLowerCase());
       const matchesStatus = statusFilter === "all" || row.status === statusFilter;
       const matchesVet = vetFilter === "all" || row.vet === vetFilter;
-      return matchesQuery && matchesStatus && matchesVet;
-    });
-  }, [vaccinationRegistry, query, statusFilter, vetFilter]);
 
-  const overdueCount = vaccinationRegistry.filter((r) => {
+      let matchesDate = true;
+      if (dateFrom || dateTo) {
+        const given = new Date(row._raw?.administered_date);
+        if (dateFrom && given < new Date(dateFrom)) matchesDate = false;
+        if (dateTo) {
+          const toEnd = new Date(dateTo);
+          toEnd.setHours(23, 59, 59, 999);
+          if (given > toEnd) matchesDate = false;
+        }
+      }
+
+      return matchesQuery && matchesStatus && matchesVet && matchesDate;
+    });
+  }, [vaccinationRegistry, query, statusFilter, vetFilter, dateFrom, dateTo]);
+
+  const filteredArchivedRegistry = useMemo(() => {
+    return archivedRegistry.filter((row) => {
+      if (query.trim() === "") return true;
+      return [row.id, row.pigHerdId, row.vaccineName, row.vet]
+        .join(" ")
+        .toLowerCase()
+        .includes(query.toLowerCase());
+    });
+  }, [archivedRegistry, query]);
+
+  const overdueVacCount = vaccinationRegistry.filter((r) => {
     if (!r.nextDueDate) return false;
     return new Date(r.nextDueDate) < new Date();
   }).length;
 
-  const dueSoonCount = vaccinationRegistry.filter((r) => {
+  const dueSoonVacCount = vaccinationRegistry.filter((r) => {
     if (!r.nextDueDate) return false;
     const due = new Date(r.nextDueDate);
     const now = new Date();
@@ -245,133 +306,209 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
     return diffDays >= 0 && diffDays <= 7;
   }).length;
 
-  const activeTreatmentsCount = healthEventsLog.filter(h => 
+  const overdueTasksCount = growthTasks.filter(task => {
+    if (!task.due_date) return false;
+    return new Date(task.due_date) < new Date();
+  }).length;
+
+  const dueSoonTasksCount = growthTasks.filter(task => {
+    if (!task.due_date) return false;
+    const due = new Date(task.due_date);
+    const now = new Date();
+    const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 7;
+  }).length;
+
+  const totalOverdueCount = overdueVacCount + overdueTasksCount;
+  const totalDueSoonCount = dueSoonVacCount + dueSoonTasksCount;
+
+  const activeTreatmentsCount = healthEventsLog.filter(h =>
     ["sick", "monitoring"].includes(h.status)
   ).length;
+
+  const filteredGrowthTasks = useMemo(() => {
+    return growthTasks.filter(task => {
+      const q = taskQuery.toLowerCase();
+      const matchesQuery =
+        taskQuery.trim() === "" ||
+        task.task_name?.toLowerCase().includes(q) ||
+        task.piglet_batches?.batch_tag?.toLowerCase().includes(q) ||
+        task.growth_programs?.name?.toLowerCase().includes(q);
+
+      const matchesType = taskTypeFilter === "all" || task.activity_type === taskTypeFilter;
+
+      const isOverdue = new Date(task.due_date) < new Date();
+      let matchesStatus = true;
+      if (taskStatusFilter === "overdue") matchesStatus = isOverdue;
+      else if (taskStatusFilter === "upcoming") matchesStatus = !isOverdue;
+
+      return matchesQuery && matchesType && matchesStatus;
+    });
+  }, [growthTasks, taskQuery, taskTypeFilter, taskStatusFilter]);
+
+  const totalTaskPages = Math.ceil(filteredGrowthTasks.length / TASKS_PER_PAGE) || 1;
+  const safeTasksPage = Math.min(Math.max(1, tasksPage), totalTaskPages);
+  const paginatedGrowthTasks = useMemo(() => {
+    const start = (safeTasksPage - 1) * TASKS_PER_PAGE;
+    return filteredGrowthTasks.slice(start, start + TASKS_PER_PAGE);
+  }, [filteredGrowthTasks, safeTasksPage]);
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-[1400px] px-6 py-8">
 
         {/* Stat cards */}
-        <div className="flex flex-wrap gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            icon={Syringe}
+            icon={<Syringe className="w-6 h-6 text-emerald-600" />}
             label="Vaccinations logged"
             value={String(vaccinationRegistry.length)}
-            tone="emerald"
-            hint="This quarter"
+            badge="This quarter"
+            badgeColor="bg-emerald-100 text-emerald-700"
+            accentColor="bg-emerald-50"
             loading={loading}
           />
           <StatCard
-            icon={CalendarClock}
+            icon={<CalendarClock className="w-6 h-6 text-sky-600" />}
             label="Upcoming schedules"
-            value={String(dueSoonCount)}
-            tone="sky"
-            hint="Next 7 days"
+            value={String(totalDueSoonCount)}
+            badge="Next 7 days"
+            badgeColor="bg-sky-100 text-sky-700"
+            accentColor="bg-sky-50"
             loading={loading}
           />
           <StatCard
-            icon={AlertTriangle}
+            icon={<AlertTriangle className="w-6 h-6 text-rose-600" />}
             label="Overdue alerts"
-            value={String(overdueCount)}
-            tone="rose"
-            hint="Needs attention"
+            value={String(totalOverdueCount)}
+            badge="Needs attention"
+            badgeColor="bg-rose-100 text-rose-700"
+            accentColor="bg-rose-50"
             loading={loading}
           />
           <StatCard
-            icon={Stethoscope}
+            icon={<Stethoscope className="w-6 h-6 text-amber-600" />}
             label="Active treatments"
             value={String(activeTreatmentsCount)}
-            tone="amber"
-            hint="Currently ongoing"
+            badge="Currently ongoing"
+            badgeColor="bg-amber-100 text-amber-700"
+            accentColor="bg-amber-50"
             loading={loading}
-          />
-        </div>
-
-        {/* Quick access to sub-modules */}
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <SubModuleCard
-            icon={ClipboardList}
-            title="Medication & Treatment Logs"
-            description="View and record ongoing treatments and medication history."
-            accent="bg-sky-50 text-sky-600"
-            onClick={() => setActiveTab?.('medication_treatment')}
-          />
-          <SubModuleCard
-            icon={Skull}
-            title="Mortality Record"
-            description="Log and review mortality entries across batches."
-            accent="bg-slate-100 text-slate-600"
-            onClick={() => setActiveTab?.('mortality_record')}
           />
         </div>
 
         {/* Growth Program Tasks (To-Do List) */}
         {growthTasks.length > 0 && (
           <div className="mt-8 rounded-2xl border border-emerald-100 bg-white shadow-sm overflow-hidden">
-            <div className="bg-emerald-50/50 p-4 border-b border-emerald-100 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-emerald-800">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                <h3 className="font-semibold">Growth Program Tasks</h3>
-                <span className="bg-emerald-200 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full ml-2">
-                  {growthTasks.length} PENDING
-                </span>
+            <div className="bg-emerald-50/50 flex flex-col border-b border-emerald-100">
+              <div className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-emerald-800 shrink-0">
+                  <h3 className="font-semibold">Growth Program Tasks</h3>
+                  <span className="bg-emerald-200 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full ml-2">
+                    {filteredGrowthTasks.length} PENDING
+                  </span>
+                </div>
+              </div>
+              <div className="px-4 pb-4 flex flex-wrap items-center gap-3">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={taskQuery}
+                    onChange={(e) => { setTaskQuery(e.target.value); setTasksPage(1); }}
+                    placeholder="Search tasks, batch..."
+                    className="w-48 rounded-lg border border-emerald-200 py-1.5 pl-8 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                  />
+                </div>
+                <select
+                  value={taskTypeFilter}
+                  onChange={(e) => { setTaskTypeFilter(e.target.value); setTasksPage(1); }}
+                  className="rounded-lg border border-emerald-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                >
+                  <option value="all">All Types</option>
+                  <option value="VACCINATION">Vaccination</option>
+                  <option value="MEDICATION">Medication</option>
+                  <option value="PROCEDURE">Procedure</option>
+                  <option value="SUPPLEMENT">Supplement</option>
+                </select>
+                <select
+                  value={taskStatusFilter}
+                  onChange={(e) => { setTaskStatusFilter(e.target.value); setTasksPage(1); }}
+                  className="rounded-lg border border-emerald-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                >
+                  <option value="all">All Status</option>
+                  <option value="overdue">Overdue</option>
+                  <option value="upcoming">Upcoming</option>
+                </select>
               </div>
             </div>
             <div className="divide-y divide-slate-100">
-              {growthTasks.map(task => {
-                const isOverdue = new Date(task.due_date) < new Date();
-                const dueText = isOverdue ? 'Overdue' : 'Due ' + new Date(task.due_date).toLocaleDateString();
-                
-                return (
-                  <div key={task.task_id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                    <div className="flex items-start gap-3">
-                      <div className={`mt-0.5 w-2 h-2 rounded-full ${isOverdue ? 'bg-rose-500' : 'bg-emerald-500'}`} />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{task.task_name}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {task.activity_type} &middot; Batch: <span className="font-medium text-slate-700">{task.piglet_batches?.batch_tag}</span> &middot; Program: {task.growth_programs?.name}
-                        </p>
+              {paginatedGrowthTasks.length === 0 ? (
+                <div className="p-8 text-center text-sm text-slate-500">
+                  No tasks match your filters.
+                </div>
+              ) : (
+                paginatedGrowthTasks.map(task => {
+                  const isOverdue = new Date(task.due_date) < new Date();
+                  const dueText = isOverdue ? 'Overdue' : 'Due ' + new Date(task.due_date).toLocaleDateString();
+
+                  return (
+                    <div key={task.task_id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                      <div className="flex items-start gap-3">
+                        <div className={`mt-0.5 w-2 h-2 rounded-full ${isOverdue ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{task.task_name}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {task.activity_type} &middot; Batch: <span className="font-medium text-slate-700">{task.piglet_batches?.batch_tag}</span> &middot; Program: {task.growth_programs?.name}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className={`text-xs font-semibold ${isOverdue ? 'text-rose-600' : 'text-slate-500'}`}>
+                          {dueText}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setActiveGrowthTask(task);
+                            if (task.activity_type === 'VACCINATION') {
+                              setPrefillVac({
+                                targetType: 'batch',
+                                batch_id: task.batch_id,
+                                vaccine_name: task.task_name,
+                                administered_date: new Date().toISOString().split('T')[0]
+                              });
+                              setVacModal(true);
+                            } else {
+                              setPrefillHealth({
+                                targetType: 'batch',
+                                batch_id: task.batch_id,
+                                treatment: task.task_name,
+                                isProcedure: task.activity_type === 'PROCEDURE',
+                                medication_name: task.activity_type === 'MEDICATION' ? task.task_name : '',
+                                status: task.activity_type === 'MEDICATION' ? 'sick' : 'healthy',
+                                log_date: new Date().toISOString().split('T')[0] + 'T09:00'
+                              });
+                              setHealthModal(true);
+                            }
+                          }}
+                          className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+                        >
+                          Log It
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className={`text-xs font-semibold ${isOverdue ? 'text-rose-600' : 'text-slate-500'}`}>
-                        {dueText}
-                      </span>
-                      <button
-                        onClick={() => {
-                          setActiveGrowthTask(task);
-                          if (task.activity_type === 'VACCINATION') {
-                            setPrefillVac({
-                              targetType: 'batch',
-                              batch_id: task.batch_id,
-                              vaccine_name: task.task_name,
-                              administered_date: new Date().toISOString().split('T')[0]
-                            });
-                            setVacModal(true);
-                          } else {
-                            setPrefillHealth({
-                              targetType: 'batch',
-                              batch_id: task.batch_id,
-                              treatment: task.task_name,
-                              isProcedure: task.activity_type === 'PROCEDURE',
-                              medication_name: task.activity_type === 'MEDICATION' ? task.task_name : '',
-                              status: task.activity_type === 'PROCEDURE' ? 'healthy' : 'sick',
-                              log_date: new Date().toISOString().split('T')[0] + 'T09:00'
-                            });
-                            setHealthModal(true);
-                          }
-                        }}
-                        className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                      >
-                        Log It
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                }))}
             </div>
+            {filteredGrowthTasks.length > TASKS_PER_PAGE && (
+              <Pagination
+                currentPage={safeTasksPage}
+                totalPages={totalTaskPages}
+                onPageChange={setTasksPage}
+                totalItems={filteredGrowthTasks.length}
+                itemsPerPage={TASKS_PER_PAGE}
+                itemName="tasks"
+              />
+            )}
           </div>
         )}
 
@@ -385,22 +522,20 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                 <button
                   type="button"
                   onClick={() => setShowArchived(false)}
-                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
-                    !showArchived
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${!showArchived
                       ? 'bg-white shadow-sm text-slate-800'
                       : 'text-slate-500 hover:text-slate-700'
-                  }`}
+                    }`}
                 >
                   Active
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowArchived(true)}
-                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
-                    showArchived
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${showArchived
                       ? 'bg-white shadow-sm text-slate-800'
                       : 'text-slate-500 hover:text-slate-700'
-                  }`}
+                    }`}
                 >
                   Archived
                 </button>
@@ -429,22 +564,21 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   />
                 </button>
               )}
-              <button
-                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                type="button"
-              >
-                <Download className="h-4 w-4" />
-                Export
-              </button>
+              <ExportDropdown
+                data={showArchived ? filteredArchivedRegistry : filteredRegistry}
+                columns={showArchived ? archivedVaccinationExportColumns : vaccinationExportColumns}
+                filename={showArchived ? "archived_vaccination_registry" : "vaccination_registry"}
+                pdfTitle={showArchived ? "Archived Vaccination Registry" : "Vaccination Registry"}
+              />
               {!showArchived && (
                 <button
-                    className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
-                    type="button"
-                    onClick={() => { setEditVacRecord(null); setVacModal(true); }}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Vaccination Schedule
-                  </button>
+                  className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
+                  type="button"
+                  onClick={() => { setEditVacRecord(null); setVacModal(true); }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Vaccination Schedule
+                </button>
               )}
             </div>
           </div>
@@ -483,19 +617,25 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                 <label className="text-xs font-medium text-slate-500">Date range</label>
                 <input
                   type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
                   className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                 />
                 <span className="text-xs text-slate-400">to</span>
                 <input
                   type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
                   className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                 />
               </div>
-              {(statusFilter !== "all" || vetFilter !== "all" || query) && (
+              {(statusFilter !== "all" || vetFilter !== "all" || dateFrom || dateTo || query) && (
                 <button
                   onClick={() => {
                     setStatusFilter("all");
                     setVetFilter("all");
+                    setDateFrom("");
+                    setDateTo("");
                     setQuery("");
                   }}
                   className="ml-auto flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
@@ -536,14 +676,14 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                     </tr>
                   ))
                 ) : showArchived ? (
-                  archivedRegistry.length === 0 ? (
+                  filteredArchivedRegistry.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-5 py-12 text-center text-sm text-slate-400">
-                        No archived records yet.
+                        {archivedRegistry.length === 0 ? "No archived records yet." : "No archived records match your search."}
                       </td>
                     </tr>
                   ) : (
-                    archivedRegistry.map((row) => (
+                    filteredArchivedRegistry.map((row) => (
                       <tr key={row.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                         <td className="px-5 py-4">
                           <div className="text-slate-800">{row.pigHerdId}</div>
@@ -625,13 +765,12 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 p-5">
             <h2 className="text-base font-semibold text-slate-900">Health Events Log</h2>
-            <button
-              className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-              type="button"
-            >
-              <Download className="h-4 w-4" />
-              Export
-            </button>
+            <ExportDropdown
+              data={healthEventsLog}
+              columns={healthEventsExportColumns}
+              filename="health_events_log"
+              pdfTitle="Health Events Log"
+            />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
