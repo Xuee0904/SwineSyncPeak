@@ -15,17 +15,24 @@ const app = express();
 
 const allowedOrigins = [
   'http://localhost:5173',
-  'https://swinesync.netlify.app'
-];
+  'https://swinesync.netlify.app',
+  process.env.CLIENT_URL,
+  process.env.FRONTEND_URL,
+].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+    // Allow explicitly listed origins or any Vercel deployment (*.vercel.app)
+    if (
+      allowedOrigins.includes(origin) ||
+      /^https:\/\/.*\.vercel\.app$/.test(origin)
+    ) {
+      return callback(null, true);
     }
-    return callback(null, true);
+    const msg = `The CORS policy for this site does not allow access from origin: ${origin}`;
+    return callback(new Error(msg), false);
   },
   credentials: true
 }));
