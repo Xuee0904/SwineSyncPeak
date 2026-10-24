@@ -58,7 +58,7 @@ export default function Hero({ scrollToSection }) {
                 onClick={() => scrollToSection?.('catalog')}
                 className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-950/40 transition-all flex items-center gap-2 cursor-pointer hover:translate-y-[-1px]"
               >
-                Browse Available Swine <ArrowUpRight className="w-4 h-4" />
+                Browse Available Pigs <ArrowUpRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => scrollToSection?.('protocols')}

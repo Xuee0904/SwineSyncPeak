@@ -291,7 +291,7 @@ export default function App() {
                 {[
                   { label: 'Home', id: 'home' },
                   { label: 'Safety Protocols', id: 'protocols' },
-                  { label: 'Swine Catalog', id: 'catalog' },
+                  { label: 'Available Pigs', id: 'catalog' },
                   { label: 'FAQs', id: 'faqs' },
                   { label: 'Contact Us', id: 'contact' }
                 ].map((link) => (

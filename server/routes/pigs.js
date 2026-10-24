@@ -633,7 +633,7 @@ router.put('/api/pigs/:id', async (req, res) => {
     const { id } = req.params;
     const { 
       tagNumber, dateOfBirth, breed, weight, 
-      penId, status, parityCount, creator,
+      penId, status, parityCount, creator, gender,
       totalBornAlive, stillbornCount, mummyCount, category, isBatch,
       sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date
     } = req.body;
@@ -740,7 +740,7 @@ router.put('/api/pigs/:id', async (req, res) => {
     }
 
     // If the pen is changing, confirm the new pen actually has room and follows gender/section limits
-    const { data: currentPig, error: currentPigError } = await supabase
+    const { data: currentPig, error: currentPigError } = await supabaseAdmin
       .from('pigs')
       .select('pen_id, gender, status')
       .eq('pig_id', id)
@@ -749,7 +749,7 @@ router.put('/api/pigs/:id', async (req, res) => {
     if (currentPigError) throw currentPigError;
 
     if (currentPig && String(currentPig.pen_id) !== String(penId)) {
-      const { data: pen, error: penError } = await supabase
+      const { data: pen, error: penError } = await supabaseAdmin
         .from('pens')
         .select('pen_code, pen_type, max_capacity')
         .eq('pen_id', penId)
@@ -763,8 +763,9 @@ router.put('/api/pigs/:id', async (req, res) => {
       const occupied = typeof occ === 'number' ? occ : occ.total;
       const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
 
-      const isSow = gender === 'Female' || currentPig?.gender === 'Female' || currentPig?.status?.toLowerCase() === 'sow';
-      const isBoar = gender === 'Male' || currentPig?.gender === 'Male' || currentPig?.status?.toLowerCase() === 'boar';
+      const pigGender = gender || currentPig?.gender || (category === 'Sow' ? 'Female' : category === 'Boar' ? 'Male' : '');
+      const isSow = (pigGender || '').toLowerCase().startsWith('f') || currentPig?.status?.toLowerCase() === 'sow';
+      const isBoar = (pigGender || '').toLowerCase().startsWith('m') || currentPig?.status?.toLowerCase() === 'boar';
 
       if (isSow && (penSection === 'B' || penSection === 'BOAR')) {
         return res.status(400).json({ error: `Cannot assign a female sow to boar pen ${pen.pen_code}.` });
@@ -809,6 +810,7 @@ router.put('/api/pigs/:id', async (req, res) => {
       pen_id: penId,
       status: (status || '').toLowerCase(),
     };
+    if (gender) updatePayload.gender = gender;
     if (sourceOrigin || source_origin) updatePayload.source_origin = sourceOrigin || source_origin;
     if (supplierName || supplier_name) updatePayload.supplier_name = supplierName || supplier_name;
     if (arrivalDate || arrival_date) updatePayload.arrival_date = arrivalDate || arrival_date;

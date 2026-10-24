@@ -301,7 +301,7 @@ router.put('/api/pens/:id', async (req, res) => {
 
       if (newCat !== oldCat && (pigs.length > 0 || batches.length > 0)) {
         if (newCat === 'S') {
-          const boarsOrOthers = pigs.filter(p => p.gender === 'Male' || p.status?.toLowerCase() === 'boar');
+          const boarsOrOthers = pigs.filter(p => (p.gender || '').toLowerCase().startsWith('m') || p.status?.toLowerCase() === 'boar');
           if (boarsOrOthers.length > 0 || batches.length > 0) {
             const names = boarsOrOthers.map(p => `#${p.pig_tag || p.pig_id}`).join(', ');
             return res.status(400).json({
@@ -309,7 +309,7 @@ router.put('/api/pens/:id', async (req, res) => {
             });
           }
         } else if (newCat === 'B') {
-          const sowsOrOthers = pigs.filter(p => p.gender === 'Female' || p.status?.toLowerCase() === 'sow');
+          const sowsOrOthers = pigs.filter(p => (p.gender || '').toLowerCase().startsWith('f') || p.status?.toLowerCase() === 'sow');
           if (sowsOrOthers.length > 0 || batches.length > 0 || pigs.length > 1) {
             const names = sowsOrOthers.map(p => `#${p.pig_tag || p.pig_id}`).join(', ');
             return res.status(400).json({
@@ -550,8 +550,8 @@ router.post('/api/pens/transfer', async (req, res) => {
 
     // Validate Pigs
     for (const pig of selectedPigs) {
-      const isSow = pig.gender === 'Female' || pig.status?.toLowerCase() === 'sow';
-      const isBoar = pig.gender === 'Male' || pig.status?.toLowerCase() === 'boar';
+      const isSow = (pig.gender || '').toLowerCase().startsWith('f') || pig.status?.toLowerCase() === 'sow';
+      const isBoar = (pig.gender || '').toLowerCase().startsWith('m') || pig.status?.toLowerCase() === 'boar';
       const isSickOrQ = pig.status?.toLowerCase() === 'sick' || pig.status?.toLowerCase() === 'quarantine';
 
       if (isSow && (penSection === 'B' || penSection === 'BOAR')) {
@@ -572,8 +572,8 @@ router.post('/api/pens/transfer', async (req, res) => {
     }
 
     // Validate Sow & Boar Pen constraints (1 per pen)
-    const incomingSowsCount = selectedPigs.filter(p => p.gender === 'Female' || p.status?.toLowerCase() === 'sow').length;
-    const incomingBoarsCount = selectedPigs.filter(p => p.gender === 'Male' || p.status?.toLowerCase() === 'boar').length;
+    const incomingSowsCount = selectedPigs.filter(p => (p.gender || '').toLowerCase().startsWith('f') || p.status?.toLowerCase() === 'sow').length;
+    const incomingBoarsCount = selectedPigs.filter(p => (p.gender || '').toLowerCase().startsWith('m') || p.status?.toLowerCase() === 'boar').length;
 
     if ((penSection === 'S' || penSection === 'SOW') && (occ.sowCount + incomingSowsCount > 1 || occ.pigCount + selectedPigs.length > 1)) {
       return res.status(400).json({ error: `Sow pen ${destPen.pen_code} can only house 1 sow.` });

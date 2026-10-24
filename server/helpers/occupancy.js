@@ -16,8 +16,8 @@ export async function getPenOccupancy(penId) {
   let sowCount = 0;
   let boarCount = 0;
   for (const pig of pigs) {
-    const isFemale = pig.gender === 'Female' || pig.status?.toLowerCase() === 'sow';
-    const isMale = pig.gender === 'Male' || pig.status?.toLowerCase() === 'boar';
+    const isFemale = (pig.gender || '').toLowerCase().startsWith('f') || pig.status?.toLowerCase() === 'sow';
+    const isMale = (pig.gender || '').toLowerCase().startsWith('m') || pig.status?.toLowerCase() === 'boar';
     if (isFemale) sowCount++;
     if (isMale) boarCount++;
   }
@@ -58,8 +58,8 @@ export async function getAllPenOccupancy() {
     const occ = getOrCreate(pig.pen_id);
     occ.pigCount += 1;
     occ.total += 1;
-    const isFemale = pig.gender === 'Female' || pig.status?.toLowerCase() === 'sow';
-    const isMale = pig.gender === 'Male' || pig.status?.toLowerCase() === 'boar';
+    const isFemale = (pig.gender || '').toLowerCase().startsWith('f') || pig.status?.toLowerCase() === 'sow';
+    const isMale = (pig.gender || '').toLowerCase().startsWith('m') || pig.status?.toLowerCase() === 'boar';
     if (isFemale) occ.sowCount += 1;
     if (isMale) occ.boarCount += 1;
   }

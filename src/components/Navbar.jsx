@@ -15,7 +15,7 @@ export default function Navbar({ activeSection, scrollToSection, onOpenLogin, lo
   const publicNavItems = [
     { id: 'home', label: 'Home' },
     { id: 'protocols', label: 'Safety Protocols' },
-    { id: 'catalog', label: 'Swine Catalog' },
+    { id: 'catalog', label: 'Available Pigs' },
     { id: 'faqs', label: 'FAQs' },
     { id: 'contact', label: 'Contact Us' }
   ];

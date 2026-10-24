@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { MapPin, Phone, ExternalLink, Clock, Copy, Check } from 'lucide-react';
 import farmLogo from '../assets/Logo.jpg';
+import { FARM_PRIMARY_PHONE, FARM_SECONDARY_PHONE } from './contactInfo';
 
 export default function Contact() {
   const [copied, setCopied] = useState(false);
 
   const farmAddress = 'Purok 4, Barangay San Isidro, Lipa City, Batangas, Philippines';
-  const primaryPhone = '+63 917 123 4567';
-  const secondaryPhone = '+63 998 765 4321';
+  const primaryPhone = FARM_PRIMARY_PHONE;
+  const secondaryPhone = FARM_SECONDARY_PHONE;
 
   const handleCopyAddress = () => {
     navigator.clipboard.writeText(farmAddress);

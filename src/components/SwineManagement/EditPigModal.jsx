@@ -194,6 +194,12 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
     return Object.keys(next).length === 0;
   };
 
+  const currentGender = (pigData?.gender && pigData.gender.toLowerCase().startsWith('f')) || pigData?.type?.toLowerCase() === 'sow' || pigData?.category?.toLowerCase() === 'sow'
+    ? 'Female'
+    : (pigData?.gender && pigData.gender.toLowerCase().startsWith('m')) || pigData?.type?.toLowerCase() === 'boar' || pigData?.category?.toLowerCase() === 'boar'
+    ? 'Male'
+    : (pigData?.gender || '');
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isArchived || !validate()) return;
@@ -203,6 +209,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
     try {
       const savedRecord = await onSave?.(pigData.id, {
         ...form,
+        gender: currentGender,
         weight: form.weight ? Number(form.weight) : null,
         averageWeight: form.weight ? Number(form.weight) : null,
         parityCount: pigData.category === 'Sow' ? Number(form.parityCount) : undefined,
@@ -228,7 +235,6 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
     }
   };
 
-  const currentGender = pigData?.gender || (pigData?.type?.toLowerCase() === 'sow' ? 'Female' : pigData?.type?.toLowerCase() === 'boar' ? 'Male' : '');
   const currentStatus = form.status?.toLowerCase() || pigData?.status?.toLowerCase() || '';
   const isSickOrQuarantine = currentStatus === 'sick' || currentStatus === 'quarantine';
   const availablePensForPig = pens.filter(p => {
