@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, AlertTriangle, Loader2, CheckCircle2, Archive, Lock } from "lucide-react";
+import { X, AlertTriangle, Loader2, CheckCircle2, Wrench, Lock } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
 import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
 
@@ -8,7 +8,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
-  const [selectedReason, setSelectedReason] = useState("Facility Decommissioned / No Longer Needed");
+  const [selectedReason, setSelectedReason] = useState("Under Maintenance / Repair");
   const [customReason, setCustomReason] = useState("");
   const [reasonError, setReasonError] = useState("");
   const [successInfo, setSuccessInfo] = useState(null);
@@ -16,9 +16,9 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
   const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(Boolean(successInfo));
 
   const reasonOptions = [
-    "Facility Decommissioned / No Longer Needed",
-    "Under Long-term Maintenance or Renovation",
-    "Consolidated with Another Pen Section",
+    "Under Maintenance / Repair",
+    "Cleaning & Disinfection / Fallow Period",
+    "Temporarily Unused / Standby",
     "Other (Specify below)",
   ];
 
@@ -44,7 +44,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
     if (hasSwine) return;
 
     if (selectedReason.startsWith("Other") && !customReason.trim()) {
-      setReasonError("Please specify the reason for archiving this pen.");
+      setReasonError("Please specify the reason for taking this pen out of service.");
       return;
     }
 
@@ -75,12 +75,12 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
         {!successInfo && (
           <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl ${hasSwine ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-600"} flex items-center justify-center font-bold`}>
-                {hasSwine ? <Lock size={18} /> : <Archive size={18} />}
+              <div className={`w-10 h-10 rounded-xl ${hasSwine ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-700"} flex items-center justify-center font-bold`}>
+                {hasSwine ? <Lock size={18} /> : <Wrench size={18} />}
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  {hasSwine ? `Cannot Archive ${pen.code}` : `Archive Pen ${pen.code}`}
+                  {hasSwine ? `Cannot Take ${pen.code} Out of Service` : `Set ${pen.code} Out of Service`}
                 </h3>
               </div>
             </div>
@@ -102,10 +102,10 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
             </div>
             <div>
               <h4 className="text-xl font-black text-slate-900">
-                Pen Archived!
+                Pen Set Out of Service
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
-                {successInfo.code} has been successfully archived.
+                {successInfo.code} is now marked out of service on the farm map.
               </p>
             </div>
 
@@ -113,7 +113,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
               <button
                 type="button"
                 onClick={handleClose}
-                className="w-full py-3 bg-rose-600 hover:bg-rose-700 shadow-rose-600/20 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95"
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95"
               >
                 Done
               </button>
@@ -125,7 +125,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div className="space-y-1.5 text-xs">
                 <p className="text-amber-800 leading-relaxed">
-                  This pen currently houses <span className="font-bold underline">{pen.occupancy} active swine</span>. You must transfer or archive them first.
+                  This pen currently houses <span className="font-bold underline">{pen.occupancy} active swine</span>. You must transfer them to another pen before marking it out of service.
                 </p>
               </div>
             </div>
@@ -143,20 +143,20 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4 animate-in fade-in duration-300">
             <p className="text-xs text-slate-600 leading-relaxed">
-              Archiving <span className="font-bold text-slate-900">{pen.code}</span> will remove it from active housing selections.
+              Marking <span className="font-bold text-slate-900">{pen.code}</span> out of service will keep it visible on the map as striped/grey and prevent swine transfers into this unit.
             </p>
 
             <div>
               <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
-                Reason for Archiving *
+                Reason *
               </label>
               <div className="space-y-2">
                 {reasonOptions.map((option) => (
                   <label
                     key={option}
                     className={`flex items-center gap-2.5 p-3 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${selectedReason === option
-                      ? "border-rose-500 bg-rose-50/40 text-rose-900 shadow-xs"
-                      : "border-slate-200 bg-slate-50/50 text-slate-700 hover:bg-slate-100/60"
+                      ? "border-slate-900 bg-slate-50 text-slate-900 shadow-xs"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                       }`}
                   >
                     <input
@@ -168,7 +168,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
                         setSelectedReason(e.target.value);
                         setReasonError("");
                       }}
-                      className="text-rose-600 focus:ring-rose-500 cursor-pointer"
+                      className="text-slate-900 focus:ring-slate-900 cursor-pointer"
                     />
                     <span>{option}</span>
                   </label>
@@ -184,7 +184,7 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
                     setCustomReason(e.target.value);
                     if (e.target.value.trim()) setReasonError("");
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 transition-all"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 transition-all"
                 />
               </div>
               {reasonError && (
@@ -204,10 +204,10 @@ export default function ArchivePenModal({ isOpen, onClose, onArchive, pen, submi
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md shadow-rose-600/20 transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                {submitting ? "Archiving..." : "Archive Pen"}
+                {submitting ? "Saving..." : "Set Out of Service"}
               </button>
             </div>
           </form>

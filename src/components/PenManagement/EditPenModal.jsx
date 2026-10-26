@@ -166,17 +166,17 @@ export default function EditPenModal({ isOpen, onClose, onUpdate, pen, sections,
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4 animate-in fade-in duration-300">
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
-                Pen Code *
+              <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider flex justify-between items-center">
+                <span>Pen Code *</span>
+                <span className="text-[10px] font-semibold text-slate-400 normal-case">Fixed to physical slot</span>
               </label>
               <input
                 type="text"
                 required
-                disabled={submitting}
-                placeholder="e.g. PEN-S1"
+                readOnly
+                disabled
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all disabled:opacity-50"
+                className="w-full rounded-xl border border-slate-200 bg-slate-100/90 px-3.5 py-2.5 text-xs font-semibold text-slate-600 cursor-not-allowed focus:outline-none"
               />
             </div>
 

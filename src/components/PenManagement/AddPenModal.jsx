@@ -4,26 +4,42 @@ import { X, Plus, Loader2, CheckCircle2, PlusCircle } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
 import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
 
-export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitting }) {
+export default function AddPenModal({
+  isOpen,
+  onClose,
+  onAdd,
+  sections,
+  submitting,
+  presetCode,
+  presetSection,
+  presetCapacity,
+}) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
   const [code, setCode] = useState("");
-  const [section, setSection] = useState("B");
-  const [capacity, setCapacity] = useState("1");
+  const [section, setSection] = useState("S");
+  const [capacity, setCapacity] = useState("12");
   const [successInfo, setSuccessInfo] = useState(null);
 
   const { containerRef, style: stepTransitionStyle } = useSmoothStepTransition(Boolean(successInfo));
 
   useEffect(() => {
     if (isOpen) {
-      setCode("");
+      const initialCode = presetCode || "";
+      setCode(initialCode);
       setSuccessInfo(null);
-      const firstSec = sections && Object.keys(sections)[0] ? Object.keys(sections)[0] : "B";
-      setSection(firstSec);
-      setCapacity(firstSec === "B" ? "1" : String(sections?.[firstSec]?.defaultCapacity || "10"));
+      const initialSec = presetSection || (sections && Object.keys(sections)[0] ? Object.keys(sections)[0] : "S");
+      setSection(initialSec);
+      if (initialSec === "B") {
+        setCapacity("1");
+      } else if (presetCapacity) {
+        setCapacity(String(presetCapacity));
+      } else {
+        setCapacity(String(sections?.[initialSec]?.defaultCapacity || "12"));
+      }
     }
-  }, [isOpen, sections]);
+  }, [isOpen, sections, presetCode, presetSection, presetCapacity]);
 
   if (!shouldRender) return null;
 
@@ -117,17 +133,25 @@ export default function AddPenModal({ isOpen, onClose, onAdd, sections, submitti
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-4 animate-in fade-in duration-300">
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
-                Pen Code *
+              <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider flex justify-between items-center">
+                <span>Pen Code *</span>
+                {presetCode && (
+                  <span className="text-[10px] font-semibold text-slate-400 normal-case">Fixed to farm slot</span>
+                )}
               </label>
               <input
                 type="text"
                 required
-                disabled={submitting}
-                placeholder="e.g. PEN-S1"
+                disabled={submitting || Boolean(presetCode)}
+                readOnly={Boolean(presetCode)}
+                placeholder="e.g. M-01"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all disabled:opacity-50"
+                className={`w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none transition-all ${
+                  presetCode
+                    ? "bg-slate-100/90 text-slate-600 cursor-not-allowed"
+                    : "bg-slate-50 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
+                } disabled:opacity-75`}
               />
             </div>
 

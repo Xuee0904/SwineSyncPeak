@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   X, Eye, Pencil, Archive, PiggyBank, Loader2,
-  CheckCircle2, ChevronLeft, AlertCircle
+  CheckCircle2, ChevronLeft, AlertCircle, Wrench, RefreshCw
 } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
 
@@ -13,7 +13,17 @@ const STEP_VIEW = "view";
 const STEP_EDIT = "edit";
 const STEP_SUCCESS = "success";
 
-export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, onArchive, loggedInUser }) {
+export default function ViewPenModal({
+  isOpen,
+  onClose,
+  pen,
+  sections,
+  onEdit,
+  onArchive,
+  onReturnToService,
+  loggedInUser,
+  isAdmin,
+}) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
@@ -409,20 +419,42 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
 
               {/* Footer buttons */}
               <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-50">
-                <button
-                  type="button"
-                  onClick={() => transitionToStep(STEP_EDIT)}
-                  className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <Pencil size={14} /> Edit Pen
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { handleClose(); onArchive(pen); }}
-                  className="flex-1 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <Archive size={14} /> Archive Pen
-                </button>
+                {pen.is_archived ? (
+                  isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => onReturnToService?.(pen)}
+                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                    >
+                      <RefreshCw size={14} /> Return to Service
+                    </button>
+                  )
+                ) : isAdmin ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => transitionToStep(STEP_EDIT)}
+                      className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Pencil size={14} /> Edit Pen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { handleClose(); onArchive(pen); }}
+                      className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Wrench size={14} /> Set Out of Service
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    className="w-full py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  >
+                    Close
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -460,15 +492,17 @@ export default function ViewPenModal({ isOpen, onClose, pen, sections, onEdit, o
             {/* Edit form */}
             <form onSubmit={handleEditSubmit} className="p-6 space-y-4 animate-in fade-in duration-200">
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Pen Code *</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider flex justify-between items-center">
+                  <span>Pen Code *</span>
+                  <span className="text-[10px] font-semibold text-slate-400 normal-case">Fixed to physical slot</span>
+                </label>
                 <input
                   type="text"
                   required
-                  disabled={submitting}
-                  placeholder="e.g. PEN-S1"
+                  readOnly
+                  disabled
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all disabled:opacity-50"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-100/90 px-3.5 py-2.5 text-xs font-semibold text-slate-600 cursor-not-allowed focus:outline-none"
                 />
               </div>
 

@@ -230,6 +230,70 @@ router.get('/api/pens/:id/swine', async (req, res) => {
   }
 });
 
+// POST /api/pens/initialize – initialize layout slots in bulk
+router.post('/api/pens/initialize', async (req, res) => {
+  try {
+    const { pens: incomingPens = [], creator } = req.body;
+    if (!Array.isArray(incomingPens) || incomingPens.length === 0) {
+      return res.status(400).json({ error: 'List of pens to initialize is required.' });
+    }
+
+    const { data: existingPens, error: fetchErr } = await db
+      .from('pens')
+      .select('pen_code');
+
+    if (fetchErr) throw fetchErr;
+
+    const existingSet = new Set((existingPens || []).map(p => String(p.pen_code || '').trim().toUpperCase()));
+    const missing = incomingPens.filter(p => p.code && !existingSet.has(String(p.code).trim().toUpperCase()));
+
+    if (missing.length === 0) {
+      return res.json({ message: 'All pens already exist in database.', created: 0 });
+    }
+
+    const payloads = missing.map(p => ({
+      pen_code: String(p.code).trim().toUpperCase(),
+      pen_type: p.section || 'S',
+      max_capacity: Number(p.capacity) || 12,
+      is_archived: false,
+    }));
+
+    let { data, error } = await db
+      .from('pens')
+      .insert(payloads)
+      .select();
+
+    if (error && (error.message.includes('column "pen_type"') || error.message.includes('schema cache'))) {
+      const fallbackPayloads = payloads.map(p => {
+        const copy = { ...p, section: p.pen_type };
+        delete copy.pen_type;
+        return copy;
+      });
+      const fallback = await db.from('pens').insert(fallbackPayloads).select();
+      data = fallback.data;
+      error = fallback.error;
+    }
+
+    if (error) throw error;
+
+    const creatorInfo = getCreatorDetails(creator);
+    await db.from('activity_logs').insert({
+      user_name: creatorInfo.name,
+      user_email: creatorInfo.email,
+      user_initials: creatorInfo.initials,
+      user_bg_color: 'bg-emerald-100 text-emerald-700',
+      event_title: 'Farm Layout Initialized',
+      event_desc: `Initialized ${payloads.length} farm housing units with default capacities.`,
+      status: 'SUCCESS'
+    });
+
+    res.status(201).json({ success: true, created: payloads.length, data });
+  } catch (error) {
+    console.error('Error initializing pens:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST /api/pens – create a new pen
 router.post('/api/pens', async (req, res) => {
   try {
@@ -237,9 +301,21 @@ router.post('/api/pens', async (req, res) => {
     if (!code) {
       return res.status(400).json({ error: 'Pen code is required.' });
     }
+
+    const normalizedCode = code.trim().toUpperCase();
+    const { data: existing } = await db
+      .from('pens')
+      .select('pen_id, pen_code')
+      .ilike('pen_code', normalizedCode)
+      .maybeSingle();
+
+    if (existing) {
+      return res.status(400).json({ error: `Pen with code ${normalizedCode} already exists.` });
+    }
+
     const payload = {
-      pen_code: code,
-      max_capacity: Number(capacity) || 20,
+      pen_code: normalizedCode,
+      max_capacity: Number(capacity) || 12,
       is_archived: false,
     };
     if (section) payload.pen_type = section;
@@ -267,7 +343,7 @@ router.post('/api/pens', async (req, res) => {
       user_initials: creatorInfo.initials,
       user_bg_color: 'bg-emerald-100 text-emerald-700',
       event_title: 'Pen Added',
-      event_desc: `Added new housing unit ${code} (Capacity: ${payload.max_capacity}).`,
+      event_desc: `Added new housing unit ${normalizedCode} (Capacity: ${payload.max_capacity}).`,
       status: 'SUCCESS'
     });
 
@@ -545,8 +621,8 @@ router.post('/api/pens/transfer', async (req, res) => {
       });
     }
 
-    const penSection = destPen.pen_type || (destPen.pen_code && destPen.pen_code.toUpperCase().startsWith('S') ? 'S' : destPen.pen_code && destPen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
-    const isQPen = penSection === 'Q' || penSection === 'QUARANTINE';
+    const penSection = getSectionCategory(destPen.pen_type || destPen.section);
+    const isQPen = penSection === 'Q';
 
     // Validate Pigs
     for (const pig of selectedPigs) {

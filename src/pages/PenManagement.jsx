@@ -1,23 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  Plus,
-  MoreVertical,
-  Search,
-  Copy,
-  Check,
-  Pencil,
-  Trash2,
-  Eye,
-  X,
   PiggyBank,
   Gauge,
   Grid3X3,
-  Loader2,
-  Archive,
-  RefreshCw,
-  LayoutGrid,
-  List,
   ArrowRightLeft,
 } from "lucide-react";
 import toast from "../utils/toast";
@@ -26,31 +11,16 @@ import SwineTransferModal from "../components/PenManagement/SwineTransferModal";
 import EditPenModal from "../components/PenManagement/EditPenModal";
 import ArchivePenModal from "../components/PenManagement/ArchivePenModal";
 import ViewPenModal from "../components/PenManagement/ViewPenModal";
-import Pagination from "../components/common/Pagination";
+import FarmMap from "../components/PenManagement/FarmMap";
+import { ALL_SLOTS } from "../config/farmLayout";
+import {
+  SECTIONS,
+  getPenStatus,
+  STATUS_LEGEND,
+  isAdminUser,
+} from "../components/PenManagement/penStatus";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
-
-// ---- Sections mapping & styling (Client-approved types) ------------
-const SECTIONS = {
-  B: { label: "Boar Pen", desc: "Max capacity: 1 (Solitary)", color: "text-blue-800", bg: "bg-blue-50 border-blue-200/60", defaultCapacity: 1 },
-  S: { label: "Sow Pen", desc: "Gestation & Farrowing", color: "text-emerald-800", bg: "bg-emerald-50 border-emerald-200/60", defaultCapacity: 1 },
-  W: { label: "Weaned / Fattening", desc: "Growing & Finishing", color: "text-amber-800", bg: "bg-amber-50 border-amber-200/60", defaultCapacity: 20 },
-  Q: { label: "Quarantine / Isolation", desc: "Sick & Observation", color: "text-rose-800", bg: "bg-rose-50 border-rose-200/60", defaultCapacity: 5 },
-};
-
-function getStatus(occupancy, capacity) {
-  if (occupancy <= 0) return { label: "Empty", tone: "empty", badgeClass: "bg-slate-100 text-slate-600 border-slate-200/60" };
-  const pct = capacity > 0 ? occupancy / capacity : 0;
-  if (pct >= 1) return { label: "At capacity", tone: "full", badgeClass: "bg-rose-50 text-rose-700 border-rose-200/60" };
-  if (pct >= 0.85) return { label: "Near capacity", tone: "warn", badgeClass: "bg-amber-50 text-amber-700 border-amber-200/60" };
-  return { label: "Available", tone: "ok", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200/60" };
-}
-
-function truncateId(id) {
-  if (!id) return "N/A";
-  if (id.length <= 12) return id;
-  return `${id.slice(0, 8)}…${id.slice(-4)}`;
-}
 
 function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
   return (
@@ -80,24 +50,17 @@ function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, load
 export default function PenManagement({ loggedInUser }) {
   const [pens, setPens] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeSection, setActiveSection] = useState("ALL");
-  const [query, setQuery] = useState("");
-  const [openMenu, setOpenMenu] = useState(null);
-  const [copiedId, setCopiedId] = useState(null);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [activeSection, setActiveSection] = useState("ALL"); // pen type filter
+  const [statusFilter, setStatusFilter] = useState("ALL");   // availability filter
+  const [addSlot, setAddSlot] = useState(null);              // layout slot being set up
   const [editingPen, setEditingPen] = useState(null);
   const [archivingPen, setArchivingPen] = useState(null);
   const [viewingPen, setViewingPen] = useState(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [viewMode, setViewMode] = useState("card"); // "card" or "table"
-  const [tablePage, setTablePage] = useState(1);
-  const TABLE_PER_PAGE = 10;
-  const menuRef = useRef(null);
+  const [initializing, setInitializing] = useState(false);
 
-  const showArchived = activeSection === "ARCHIVED";
-
-
+  const isAdmin = isAdminUser(loggedInUser);
 
   const fetchPens = useCallback(async () => {
     setLoading(true);
@@ -118,53 +81,21 @@ export default function PenManagement({ loggedInUser }) {
     fetchPens();
   }, [fetchPens]);
 
-  useEffect(() => {
-    function onClickOutside(e) {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setOpenMenu(null);
-      }
-    }
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
+  const inServicePens = pens.filter((p) => !p.is_archived);
+  const outOfServiceCount = pens.length - inServicePens.length;
 
-  const activePens = pens.filter((p) => !p.is_archived);
-  const archivedPensCount = pens.filter((p) => p.is_archived).length;
-
-  const filteredPens = pens.filter((p) => {
-    const matchesSection =
-      activeSection === "ARCHIVED"
-        ? p.is_archived
-        : !p.is_archived && (activeSection === "ALL" || p.section === activeSection);
-    const q = query.trim().toLowerCase();
-    const matchesQuery =
-      q === "" ||
-      (p.code && p.code.toLowerCase().includes(q)) ||
-      (p.id && p.id.toLowerCase().includes(q));
-    return matchesSection && matchesQuery;
-  });
-
-  // Reset table pagination when filters/search change
-  useEffect(() => { setTablePage(1); }, [filteredPens.length, activeSection, query, viewMode]);
-
-  const totalTablePages = Math.ceil(filteredPens.length / TABLE_PER_PAGE);
-  const paginatedTablePens = filteredPens.slice((tablePage - 1) * TABLE_PER_PAGE, tablePage * TABLE_PER_PAGE);
-
-  const totalCapacity = activePens.reduce((sum, p) => sum + Number(p.capacity || 0), 0);
-  const totalOccupancy = activePens.reduce((sum, p) => sum + Number(p.occupancy || 0), 0);
+  // Out-of-service pens are excluded from capacity & utilization
+  const totalCapacity = inServicePens.reduce((sum, p) => sum + Number(p.capacity || 0), 0);
+  const totalOccupancy = inServicePens.reduce((sum, p) => sum + Number(p.occupancy || 0), 0);
   const utilization = totalCapacity ? Math.round((totalOccupancy / totalCapacity) * 100) : 0;
 
-  function copyId(id) {
-    if (!id) return;
-    try {
-      navigator.clipboard.writeText(id);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1500);
-    } catch (e) {
-      /* ignore */
-    }
-  }
+  const statusCounts = pens.reduce((acc, p) => {
+    const k = getPenStatus(p).key;
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
 
+  /* ─── Handlers ─────────────────────────────────────────────── */
   const handleAddPen = async ({ code, section, capacity, onSuccess }) => {
     if (!code.trim()) {
       toast.error("Please enter a valid pen code");
@@ -189,13 +120,42 @@ export default function PenManagement({ loggedInUser }) {
       if (typeof onSuccess === "function") {
         onSuccess({ code: code.trim().toUpperCase(), section, capacity: finalCapacity });
       } else {
-        setShowAddModal(false);
+        setAddSlot(null);
       }
       fetchPens();
     } catch (err) {
       toast.error(err.message || "Error creating pen.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleInitializeLayout = async () => {
+    const existing = new Set(pens.map((p) => String(p.code || "").toUpperCase()));
+    const missing = ALL_SLOTS.filter((s) => !existing.has(s.code)).map((s) => ({
+      code: s.code,
+      section: s.defaultSection,
+      capacity: s.defaultCapacity,
+    }));
+    if (missing.length === 0) {
+      toast.success("All farm pens are already set up.");
+      return;
+    }
+    setInitializing(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/pens/initialize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pens: missing, creator: loggedInUser }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to initialize farm layout.");
+      toast.success(`Farm layout initialized: ${data.created ?? missing.length} pen(s) created.`);
+      fetchPens();
+    } catch (err) {
+      toast.error(err.message || "Error initializing farm layout.");
+    } finally {
+      setInitializing(false);
     }
   };
 
@@ -241,7 +201,7 @@ export default function PenManagement({ loggedInUser }) {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to archive pen.");
+      if (!res.ok) throw new Error(data.error || "Failed to set pen out of service.");
 
       if (typeof onSuccess === "function") {
         onSuccess({ code });
@@ -250,25 +210,9 @@ export default function PenManagement({ loggedInUser }) {
       }
       fetchPens();
     } catch (err) {
-      toast.error(err.message || "Error archiving pen.");
+      toast.error(err.message || "Error setting pen out of service.");
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleDeletePen = async (id, code) => {
-    try {
-      const queryCreator = loggedInUser ? `?creator=${encodeURIComponent(JSON.stringify(loggedInUser))}&code=${encodeURIComponent(code || '')}` : `?code=${encodeURIComponent(code || '')}`;
-      const res = await fetch(`${API_BASE}/api/pens/${id}${queryCreator}`, {
-        method: "DELETE",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Failed to delete pen.");
-      setOpenMenu(null);
-      toast.success(`${code || "Pen"} has been deleted.`);
-      fetchPens();
-    } catch (err) {
-      toast.error(err.message || "Error deleting pen.");
     }
   };
 
@@ -284,16 +228,22 @@ export default function PenManagement({ loggedInUser }) {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to restore pen.");
+      if (!res.ok) throw new Error(data.error || "Failed to return pen to service.");
 
-      toast.success(`Restored pen #${code || id}`);
+      toast.success(`${code || "Pen"} is back in service.`);
       fetchPens();
     } catch (err) {
-      toast.error(err.message || "Error restoring pen.");
+      toast.error(err.message || "Error returning pen to service.");
     } finally {
       setSubmitting(false);
     }
   };
+
+  const chipClass = (active) =>
+    `px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${active
+      ? "bg-slate-900 text-white shadow-sm"
+      : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+    }`;
 
   return (
     <div className="p-5 lg:p-6 space-y-5 animate-fade-in font-sans text-slate-800">
@@ -301,10 +251,10 @@ export default function PenManagement({ loggedInUser }) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           icon={<Grid3X3 className="w-6 h-6 text-emerald-600" />}
-          label="Total Pens"
-          value={pens.length}
-          badge="PENS"
-          badgeColor="bg-emerald-100 text-emerald-700"
+          label="Pens In Service"
+          value={`${inServicePens.length} / ${pens.length}`}
+          badge={outOfServiceCount > 0 ? `${outOfServiceCount} OUT` : "PENS"}
+          badgeColor={outOfServiceCount > 0 ? "bg-slate-200 text-slate-700" : "bg-emerald-100 text-emerald-700"}
           accentColor="bg-emerald-50"
           loading={loading}
         />
@@ -329,460 +279,70 @@ export default function PenManagement({ loggedInUser }) {
         />
       </div>
 
-      {/* Search Bar, Action Buttons & Filter Chips */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col gap-4">
-        
-        {/* Top Row: Search & Actions */}
-        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap justify-between w-full">
-          <div className="flex items-center gap-3">
-            <div className="relative min-w-[220px] flex-1 sm:flex-initial">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search pen code or ID…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all"
-              />
-            </div>
-            {/* Active / Archived toggle */}
-            <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setActiveSection("ALL")}
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
-                  !showArchived ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Active
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveSection("ARCHIVED")}
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${
-                  showArchived ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Archived
-              </button>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2.5 justify-end">
-            <div className="flex bg-slate-200/50 p-1 rounded-xl shrink-0 border border-slate-200/60 shadow-inner">
-              <button
-                onClick={() => setViewMode("card")}
-                className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${viewMode === "card" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5" : "text-slate-400 hover:text-slate-600"}`}
-                title="Card View"
-              >
-                <LayoutGrid size={16} strokeWidth={2.5} />
-              </button>
-              <button
-                onClick={() => setViewMode("table")}
-                className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${viewMode === "table" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-900/5" : "text-slate-400 hover:text-slate-600"}`}
-                title="Table View"
-              >
-                <List size={16} strokeWidth={2.5} />
-              </button>
-            </div>
-
-
-
-            {!showArchived && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setShowTransferModal(true)}
-                  className="flex items-center justify-center gap-1.5 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shrink-0"
-                >
-                  <ArrowRightLeft className="w-4 h-4" strokeWidth={2.5} /> Transfer Swine
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(true)}
-                  className="flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20 transition-all active:scale-95 cursor-pointer shrink-0"
-                >
-                  <Plus className="w-4 h-4" strokeWidth={2.5} /> Add Pen
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Bottom Row: Filter Chips — only shown in Active view */}
-        {!showArchived && (
+      {/* Streamlined Filter Chips & Actions */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        {/* Filter Rows */}
+        <div className="flex flex-col gap-2.5">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <button
-              type="button"
-              onClick={() => setActiveSection("ALL")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeSection === "ALL"
-                ? "bg-slate-900 text-white shadow-sm"
-                : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-                }`}
-            >
-              All Sections
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 w-20 shrink-0">Pen type</span>
+            <button type="button" onClick={() => setActiveSection("ALL")} className={chipClass(activeSection === "ALL")}>
+              All Types
             </button>
             {Object.entries(SECTIONS).map(([key, s]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setActiveSection(key)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${activeSection === key
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
-                  }`}
-              >
-                <span className={`w-2 h-2 rounded-full ${activeSection === key ? "bg-emerald-400" : "bg-slate-400"}`} />
-                {s.label} ({key})
+              <button key={key} type="button" onClick={() => setActiveSection(key)} className={chipClass(activeSection === key)}>
+                {s.short}
               </button>
             ))}
           </div>
-        )}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 w-20 shrink-0">Availability</span>
+            <button type="button" onClick={() => setStatusFilter("ALL")} className={chipClass(statusFilter === "ALL")}>
+              All
+            </button>
+            {STATUS_LEGEND.map((s) => (
+              <button key={s.key} type="button" onClick={() => setStatusFilter(s.key)} className={chipClass(statusFilter === s.key)}>
+                {s.label} ({statusCounts[s.key] || 0})
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Action Button */}
+        <button
+          id="transfer-swine"
+          type="button"
+          onClick={() => setShowTransferModal(true)}
+          className="self-start md:self-center flex items-center justify-center gap-1.5 px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shrink-0 shadow-sm"
+        >
+          <ArrowRightLeft className="w-4 h-4" strokeWidth={2.5} /> Transfer Swine
+        </button>
       </div>
 
-      {/* Pen Cards/Table */}
-      {viewMode === "table" ? (
-        /* --- TABLE VIEW --- */
-        <div key="table-view" className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-visible tab-enter">
-          <div className="overflow-visible rounded-2xl">
-            <table className="w-full text-left" style={{ borderCollapse: "collapse" }}>
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Pen Details</th>
-                  <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Occupancy</th>
-                  <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Utilization</th>
-                  <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-[11px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {loading ? (
-                  <tr>
-                    <td colSpan="5" className="text-center py-10">
-                      <div className="flex justify-center mb-3"><div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div></div>
-                      <span className="text-sm font-semibold text-slate-500">Loading pens...</span>
-                    </td>
-                  </tr>
-                ) : filteredPens.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="text-center py-12">
-                      <span className="text-sm font-semibold text-slate-500">No pens found</span>
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedTablePens.map((pen, idx) => {
-                    const section = SECTIONS[pen.section] || Object.values(SECTIONS)[0] || { label: pen.section || "Pen", color: "text-emerald-800", bg: "bg-emerald-50 border-emerald-200/60" };
-                    const status = getStatus(pen.occupancy, pen.capacity);
-                    const pct = pen.capacity > 0 ? Math.min(100, Math.round((pen.occupancy / pen.capacity) * 100)) : 0;
-                    const isNearBottom = idx >= paginatedTablePens.length - 2;
-                    
-                    const barColor = status.tone === "full" ? "bg-rose-500" : status.tone === "warn" ? "bg-amber-500" : status.tone === "empty" ? "bg-slate-300" : "bg-emerald-500";
+      {/* ═══ FARM MAP ═══ */}
+      <FarmMap
+        pens={pens}
+        loading={loading}
+        isAdmin={isAdmin}
+        activeSection={activeSection}
+        statusFilter={statusFilter}
+        onPenClick={(p) => setViewingPen(p)}
+        onAddSlot={(slot) => setAddSlot(slot)}
+        onInitialize={handleInitializeLayout}
+        initializing={initializing}
+      />
 
-                    return (
-                      <tr key={pen.id} className={`hover:bg-slate-50/80 transition-colors ${pen.is_archived ? "opacity-80" : ""}`}>
-                        <td className="px-6 py-4 cursor-pointer" onClick={() => setViewingPen(pen)}>
-                          <div className="flex flex-col gap-1.5">
-                            <span className="text-sm font-black text-slate-900">{pen.code}</span>
-                            <span className={`self-start px-2 py-0.5 rounded border text-[10px] font-bold uppercase ${section.bg} ${section.color}`}>
-                              {section.label} ({pen.section})
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 cursor-pointer" onClick={() => setViewingPen(pen)}>
-                          <span className="text-sm font-bold text-slate-800">{pen.occupancy}</span>
-                          <span className="text-xs font-medium text-slate-400"> / {pen.capacity} pigs</span>
-                        </td>
-                        <td className="px-6 py-4 cursor-pointer" onClick={() => setViewingPen(pen)}>
-                          {pen.is_archived ? (
-                             <span className="text-xs font-bold text-rose-500">Archived</span>
-                          ) : (
-                            <div className="flex items-center gap-3 max-w-[140px]">
-                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
-                              </div>
-                              <span className="text-xs font-bold text-slate-600">{pct}%</span>
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 cursor-pointer" onClick={() => setViewingPen(pen)}>
-                          {pen.is_archived ? (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200">Archived</span>
-                          ) : (
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${status.badgeClass}`}>
-                              {status.label}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-right relative">
-                           {pen.is_archived ? (
-                              <div className="flex items-center justify-end gap-2">
-                                <button type="button" onClick={(e) => { e.stopPropagation(); handleUnarchivePen(pen.id, pen.code); }} className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-lg transition-colors" title="Restore Pen">
-                                  <RefreshCw className="w-4 h-4" />
-                                </button>
-                                <button type="button" onClick={(e) => { e.stopPropagation(); handleDeletePen(pen.id, pen.code); }} className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors" title="Delete Pen">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                           ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); setOpenMenu(openMenu === pen.id ? null : pen.id); }}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-                                >
-                                  <MoreVertical className="w-4 h-4" />
-                                </button>
-                                {openMenu === pen.id && (
-                                  <div ref={menuRef} className={`absolute right-6 ${isNearBottom ? 'bottom-10 slide-in-from-bottom-2 origin-bottom-right' : 'top-10 slide-in-from-top-2 origin-top-right'} bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden min-w-[155px] py-1 text-left animate-in fade-in zoom-in-95 duration-150`}>
-                                    <button type="button" onClick={() => { setOpenMenu(null); setViewingPen(pen); }} className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors">
-                                      <Eye className="w-3.5 h-3.5 text-slate-400" /> View details
-                                    </button>
-                                    <button type="button" onClick={() => { setOpenMenu(null); setEditingPen(pen); }} className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors">
-                                      <Pencil className="w-3.5 h-3.5 text-slate-400" /> Edit pen
-                                    </button>
-                                    <button type="button" onClick={() => { setOpenMenu(null); setArchivingPen(pen); }} className="w-full text-left px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition-colors">
-                                      <Archive className="w-3.5 h-3.5 text-amber-600" /> Archive pen
-                                    </button>
-                                  </div>
-                                )}
-                              </>
-                           )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-          {/* Table Pagination */}
-          {filteredPens.length > TABLE_PER_PAGE && (
-            <Pagination
-              currentPage={tablePage}
-              totalPages={totalTablePages}
-              onPageChange={setTablePage}
-              totalItems={filteredPens.length}
-              itemsPerPage={TABLE_PER_PAGE}
-              itemName="pens"
-            />
-          )}
-        </div>
-      ) : (
-        /* --- CARD VIEW --- */
-        <div key="card-view" className="tab-enter">
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4 animate-pulse">
-                  <div className="flex justify-between items-center">
-                    <div className="h-5 w-20 bg-slate-100 rounded-lg" />
-                    <div className="h-4 w-4 bg-slate-100 rounded" />
-                  </div>
-                  <div className="h-6 w-28 bg-slate-100 rounded-md" />
-                  <div className="h-3 w-40 bg-slate-100 rounded" />
-                  <div className="h-2 bg-slate-100 rounded-full w-full" />
-                  <div className="flex justify-between items-center pt-2">
-                    <div className="h-4 w-20 bg-slate-100 rounded" />
-                    <div className="h-5 w-16 bg-slate-100 rounded-full" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : filteredPens.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center space-y-3">
-              <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">
-                <Grid3X3 className="w-6 h-6 text-slate-300" />
-              </div>
-              <h3 className="font-bold text-slate-800 text-sm">{showArchived ? "No Archived Pens" : "No Pens Found"}</h3>
-              <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                {showArchived 
-                  ? (query ? "No archived pens match your search terms." : "You do not have any archived pens.")
-                  : query || activeSection !== "ALL"
-                  ? "Try adjusting your section filter or search terms."
-                  : "No pen records exist in the database yet. Click 'Add Pen' to create your first facility pen."}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredPens.map((pen) => {
-                const section = SECTIONS[pen.section] || Object.values(SECTIONS)[0] || { label: pen.section || "Pen", color: "text-emerald-800", bg: "bg-emerald-50 border-emerald-200/60" };
-                const status = getStatus(pen.occupancy, pen.capacity);
-                const pct = pen.capacity > 0 ? Math.min(100, Math.round((pen.occupancy / pen.capacity) * 100)) : 0;
-
-                const barColor =
-                  status.tone === "full"
-                    ? "bg-rose-500"
-                    : status.tone === "warn"
-                      ? "bg-amber-500"
-                      : status.tone === "empty"
-                        ? "bg-slate-300"
-                        : "bg-emerald-500";
-
-                return (
-                  <div
-                    key={pen.id}
-                    onClick={() => setViewingPen(pen)}
-                    className={`bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all duration-200 p-5 relative flex flex-col justify-between group cursor-pointer ${pen.is_archived ? "border-rose-100 bg-rose-50/10 opacity-95" : "border-slate-100 hover:border-slate-200/80"}`}
-                  >
-                    <div>
-                      {/* Top Row: Section Badge & Dropdown */}
-                      <div className="flex items-center justify-between gap-2 mb-3">
-                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold tracking-wide uppercase border ${section.bg} ${section.color}`}>
-                          {section.label} ({pen.section})
-                        </span>
-                        {pen.is_archived ? (
-                          <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-200 tracking-wider">
-                            ARCHIVED
-                          </span>
-                        ) : (
-                          <div className="relative">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenMenu(openMenu === pen.id ? null : pen.id);
-                              }}
-                              className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
-                            {openMenu === pen.id && (
-                              <div
-                                ref={menuRef}
-                                onClick={(e) => e.stopPropagation()}
-                                className="absolute right-0 top-8 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden min-w-[155px] py-1 animate-in fade-in zoom-in-95 duration-150"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenu(null);
-                                    setViewingPen(pen);
-                                  }}
-                                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors cursor-pointer"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-slate-400" /> View details
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenu(null);
-                                    setEditingPen(pen);
-                                  }}
-                                  className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition-colors cursor-pointer"
-                                >
-                                  <Pencil className="w-3.5 h-3.5 text-slate-400" /> Edit pen
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenu(null);
-                                    setArchivingPen(pen);
-                                  }}
-                                  className="w-full text-left px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition-colors cursor-pointer"
-                                >
-                                  <Archive className="w-3.5 h-3.5 text-amber-600" /> Archive pen
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Code */}
-                      <h3 className="text-xl font-black text-slate-900 tracking-tight">{pen.code}</h3>
-
-                      {pen.is_archived ? (
-                        <div className="my-3 space-y-1">
-                          <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-100 text-rose-900 text-xs">
-                            <span className="font-bold block text-[10px] uppercase text-rose-500 tracking-wider mb-0.5">
-                              Archive Reason
-                            </span>
-                            <p className="font-medium leading-relaxed">
-                              {pen.archive_reason || "Archived by user"}
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        /* Progress Bar Track */
-                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden my-4">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {pen.is_archived ? (
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 mt-2">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUnarchivePen(pen.id, pen.code);
-                          }}
-                          disabled={submitting}
-                          className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" /> Restore Pen
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeletePen(pen.id, pen.code);
-                          }}
-                          disabled={submitting}
-                          className="py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-95"
-                          title="Permanently Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      /* Bottom Occupancy & Status Badge */
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-50/80 mt-1">
-                        <div className="text-xs font-bold text-slate-800">
-                          {pen.occupancy} <span className="font-normal text-slate-400">/ {pen.capacity} pigs</span>
-                        </div>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${status.badgeClass}`}>
-                          {status.label}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Ghost Card to Add New Pen (Hidden when viewing Archived tab) */}
-              {activeSection !== "ARCHIVED" && (
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(true)}
-                  className="border-2 border-dashed border-slate-200 hover:border-emerald-500/50 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50/20 cursor-pointer transition-all duration-200 min-h-[190px] group active:scale-[0.99]"
-                >
-                  <div className="w-11 h-11 rounded-2xl bg-slate-50 group-hover:bg-emerald-100/60 flex items-center justify-center transition-colors">
-                    <Plus className="w-5 h-5 text-slate-400 group-hover:text-emerald-600" />
-                  </div>
-                  <span className="font-bold text-xs tracking-wide">Add New Pen</span>
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Modular Add Pen Modal */}
+      {/* Add Pen Modal – only opened from an empty map slot (code locked) */}
       <AddPenModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        isOpen={Boolean(addSlot)}
+        onClose={() => setAddSlot(null)}
         onAdd={handleAddPen}
         sections={SECTIONS}
         submitting={submitting}
+        presetCode={addSlot?.code}
+        presetSection={addSlot?.defaultSection}
+        presetCapacity={addSlot?.defaultCapacity}
       />
 
-      {/* Modular Edit Pen Modal */}
       <EditPenModal
         isOpen={Boolean(editingPen)}
         onClose={() => setEditingPen(null)}
@@ -792,7 +352,6 @@ export default function PenManagement({ loggedInUser }) {
         submitting={submitting}
       />
 
-      {/* Modular Archive Pen Modal */}
       <ArchivePenModal
         isOpen={Boolean(archivingPen)}
         onClose={() => setArchivingPen(null)}
@@ -801,21 +360,25 @@ export default function PenManagement({ loggedInUser }) {
         submitting={submitting}
       />
 
-      {/* Modular View Pen Modal */}
       <ViewPenModal
         isOpen={Boolean(viewingPen)}
         onClose={() => setViewingPen(null)}
         pen={viewingPen}
         sections={SECTIONS}
         loggedInUser={loggedInUser}
+        isAdmin={isAdmin}
         onEdit={(updatedPen, wasSaved) => {
           if (wasSaved) {
             fetchPens();
           }
         }}
         onArchive={(p) => setArchivingPen(p)}
+        onReturnToService={(p) => {
+          setViewingPen(null);
+          handleUnarchivePen(p.id, p.code);
+        }}
       />
-      {/* Swine Transfer Modal */}
+
       {showTransferModal && (
         <SwineTransferModal
           isOpen={showTransferModal}
