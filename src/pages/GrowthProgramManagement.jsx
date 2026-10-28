@@ -584,6 +584,8 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
   const guidelines = program.guidelines || [];
   const sorted = [...guidelines].sort((a, b) => a.days_after_birth - b.days_after_birth);
   const batchCount = program.enrolled_batch_count ?? 0;
+  const headCount = program.enrolled_head_count ?? 0;
+  const hasEnrolled = headCount > 0 || batchCount > 0;
 
   return (
     <article className="flex flex-col h-full bg-white border border-neutral-200 rounded-2xl px-6 pt-[22px] pb-4 shadow-sm hover:shadow-md transition-shadow tab-enter relative overflow-hidden group">
@@ -654,14 +656,14 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
           )}
           <button
             onClick={() => onViewBatches(program)}
-            className={`inline-flex items-center gap-1.5 transition-colors ${batchCount > 0
+            className={`inline-flex items-center gap-1.5 transition-colors ${hasEnrolled
               ? 'text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer'
               : 'text-neutral-400 cursor-default'
               }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <strong className={batchCount > 0 ? 'text-indigo-700' : 'text-neutral-400'}>{batchCount}</strong>
-            {batchCount === 1 ? 'Batch' : 'Batches'}
+            <strong className={hasEnrolled ? 'text-indigo-700' : 'text-neutral-400'}>{headCount}</strong>
+            Headcount
           </button>
         </span>
 
@@ -806,7 +808,7 @@ function EnrolledBatchesModal({ program, onClose }) {
         {!loading && batches.length > 0 && (
           <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/60">
             <p className="text-[11px] text-slate-400 text-center">
-              {batches.length} {batches.length === 1 ? 'batch is' : 'batches are'} currently using this program.
+              {batches.reduce((sum, b) => sum + (Number(b.current_count) || 0), 0)} total headcount across {batches.length} {batches.length === 1 ? 'batch' : 'batches'} currently using this program.
             </p>
           </div>
         )}

@@ -16,17 +16,18 @@ router.get('/api/growth/programs', async (req, res) => {
       .select(`
         *,
         guidelines:growth_program_guidelines(*),
-        enrolled_batches:piglet_batches(batch_id)
+        enrolled_batches:piglet_batches(batch_id, current_count)
       `)
       .eq('is_archived', isArchived)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    // Flatten enrolled_batches to just a count for the card display
+    // Flatten enrolled_batches to counts for the card display
     const programsWithCount = programs.map(p => ({
       ...p,
       enrolled_batch_count: p.enrolled_batches?.length ?? 0,
+      enrolled_head_count: (p.enrolled_batches || []).reduce((sum, b) => sum + (Number(b.current_count) || 0), 0),
       enrolled_batches: undefined, // strip the raw array, count is enough
     }));
 

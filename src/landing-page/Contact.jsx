@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { MapPin, Phone, ExternalLink, Clock, Copy, Check } from 'lucide-react';
+import { MapPin, Phone, ExternalLink, Clock, Copy, Check, MessageCircle } from 'lucide-react';
 import farmLogo from '../assets/Logo.jpg';
-import { FARM_PRIMARY_PHONE, FARM_SECONDARY_PHONE } from './contactInfo';
+import { FARM_PRIMARY_PHONE, FARM_SECONDARY_PHONE, FARM_MESSENGER_URL } from './contactInfo';
 
 export default function Contact() {
   const [copied, setCopied] = useState(false);
@@ -151,8 +151,17 @@ export default function Contact() {
 
           <div className="pt-2 flex flex-wrap gap-3">
             <a
-              href={`tel:${primaryPhone.replace(/\s+/g, '')}`}
+              href={FARM_MESSENGER_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-950/20 transition-all cursor-pointer"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>Message on Facebook</span>
+            </a>
+            <a
+              href={`tel:${primaryPhone.replace(/\s+/g, '')}`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
             >
               <Phone className="w-3.5 h-3.5" />
               <span>Call Primary Number</span>

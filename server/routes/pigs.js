@@ -158,6 +158,7 @@ router.get('/api/pigs', async (req, res) => {
       is_archived: pig.is_archived || false,
       archived_at: pig.archived_at || null,
       archive_reasoning: pig.archive_reasoning || null,
+      created_at: pig.created_at || null,
     }));
 
     const unifiedBatches = batchData.map(batch => ({
@@ -187,6 +188,7 @@ router.get('/api/pigs', async (req, res) => {
       is_archived: batch.is_archived || false,
       archived_at: batch.archived_at || null,
       archive_reasoning: batch.archive_reasoning || null,
+      created_at: batch.created_at || null,
     }));
 
     let merged = [...unifiedPigs, ...unifiedBatches];
@@ -197,6 +199,19 @@ router.get('/api/pigs', async (req, res) => {
     if (breed && breed !== 'all') {
       merged = merged.filter(i => (i.breed_id && i.breed_id === breed) || (i.breed && i.breed.toLowerCase() === breed.toLowerCase()));
     }
+
+    // Default Order: Most Recently Added First (created_at DESC, then date DESC, tie-break by tag)
+    merged.sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (timeB !== timeA) return timeB - timeA;
+
+      const dateA = a.arrival_date ? new Date(a.arrival_date).getTime() : (a.date_of_birth ? new Date(a.date_of_birth).getTime() : 0);
+      const dateB = b.arrival_date ? new Date(b.arrival_date).getTime() : (b.date_of_birth ? new Date(b.date_of_birth).getTime() : 0);
+      if (dateB !== dateA) return dateB - dateA;
+
+      return (b.pig_tag || '').localeCompare(a.pig_tag || '', undefined, { numeric: true, sensitivity: 'base' });
+    });
 
     res.json({ data: merged.slice(from, to + 1), count: merged.length });
   } catch (error) {
@@ -248,6 +263,7 @@ router.get('/api/pigs/archived', async (req, res) => {
       is_archived: true,
       archived_at: pig.archived_at || null,
       archive_reasoning: pig.archive_reasoning || null,
+      created_at: pig.created_at || null,
     }));
 
     const unifiedBatches = batchData.map(batch => ({
@@ -265,6 +281,7 @@ router.get('/api/pigs/archived', async (req, res) => {
       is_archived: true,
       archived_at: batch.archived_at || null,
       archive_reasoning: batch.archive_reasoning || null,
+      created_at: batch.created_at || null,
     }));
 
     let merged = [...unifiedPigs, ...unifiedBatches];
@@ -275,6 +292,19 @@ router.get('/api/pigs/archived', async (req, res) => {
     if (breed && breed !== 'all') {
       merged = merged.filter(i => (i.breed_id && i.breed_id === breed) || (i.breed && i.breed.toLowerCase() === breed.toLowerCase()));
     }
+
+    // Default Order for Archived: Most Recently Archived First (archived_at DESC, then created_at DESC)
+    merged.sort((a, b) => {
+      const archA = a.archived_at ? new Date(a.archived_at).getTime() : 0;
+      const archB = b.archived_at ? new Date(b.archived_at).getTime() : 0;
+      if (archB !== archA) return archB - archA;
+
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (timeB !== timeA) return timeB - timeA;
+
+      return (b.pig_tag || '').localeCompare(a.pig_tag || '', undefined, { numeric: true, sensitivity: 'base' });
+    });
 
     res.json({ data: merged.slice(from, to + 1), count: merged.length });
   } catch (error) {

@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
-import { RefreshCw, WifiOff, PiggyBank, Phone, Weight, MessageSquare } from 'lucide-react';
-import { FARM_PRIMARY_PHONE } from './contactInfo';
+import { RefreshCw, WifiOff, PiggyBank, Phone, Weight, Calendar, MessageCircle, MessageSquare } from 'lucide-react';
+import { FARM_PRIMARY_PHONE, FARM_MESSENGER_URL } from './contactInfo';
 
 // Only these categories are sold. Sows and boars are intentionally excluded.
 // Weights are only measured when a buyer inquires, so the range shown is an estimate.
 const CATEGORIES = [
-  { id: 'Weaner', title: 'Weaners', weightRange: '8–80 kg' },
-  { id: 'Fattener', title: 'Fatteners', weightRange: '80 kg and up' }
+  { id: 'Weaner', title: 'Weaners', ageRange: '1–3 mos old', weightRange: '8–80 kg' },
+  { id: 'Fattener', title: 'Fatteners', ageRange: '3+ mos old', weightRange: '80 kg and up' }
 ];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -16,10 +16,16 @@ function LoadingSkeleton() {
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6" aria-busy="true">
       {CATEGORIES.map(c => (
         <div key={c.id} className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm animate-pulse space-y-4">
-          <div className="h-6 w-24 bg-slate-100 rounded-lg" />
-          <div className="h-10 w-2/5 bg-slate-100 rounded-lg" />
-          <div className="h-12 bg-slate-50 rounded-2xl" />
-          <div className="h-10 bg-slate-100 rounded-xl" />
+          <div className="h-7 w-28 bg-slate-100 rounded-lg" />
+          <div className="h-12 w-36 bg-slate-100 rounded-xl" />
+          <div className="h-4 w-52 bg-slate-100 rounded-lg" />
+          <div className="pt-2 space-y-2">
+            <div className="h-10 bg-slate-100 rounded-xl" />
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="h-10 bg-slate-100 rounded-xl" />
+              <div className="h-10 bg-slate-100 rounded-xl" />
+            </div>
+          </div>
         </div>
       ))}
     </div>
@@ -57,36 +63,74 @@ function AvailabilityCard({ category, count, index }) {
       id={`availability-${category.id.toLowerCase()}`}
     >
       <div className="space-y-4">
-
         <h3 className="text-xl font-bold font-display text-slate-900">{category.title}</h3>
 
         <div className="flex items-end gap-2">
-          <span className="text-5xl font-extrabold font-display text-slate-900 leading-none">{count}</span>
-          <span className="text-sm font-semibold text-slate-500 pb-1">{count === 1 ? 'pig' : 'pigs'} available</span>
+          <span
+            className={`text-5xl font-extrabold font-display leading-none ${
+              isSoldOut ? 'text-slate-300' : 'text-slate-900'
+            }`}
+          >
+            {count}
+          </span>
+          <span className="text-sm font-semibold text-slate-500 pb-1">
+            {isSoldOut
+              ? 'None right now · Ask about next batch'
+              : `${count === 1 ? 'pig' : 'pigs'} available`}
+          </span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-          <Weight className="w-3.5 h-3.5 text-slate-400" />
-          <span>Est. weight: <span className="font-bold text-slate-700">{category.weightRange}</span></span>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 font-medium">
+          <span className="inline-flex items-center gap-1.5">
+            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+            <span className="font-bold text-slate-700">{category.ageRange}</span>
+          </span>
+          <span className="text-slate-300">•</span>
+          <span className="inline-flex items-center gap-1.5">
+            <Weight className="w-3.5 h-3.5 text-slate-400" />
+            <span>
+              Est. weight: <span className="font-bold text-slate-700">{category.weightRange}</span>
+            </span>
+          </span>
         </div>
       </div>
 
-      <div className="mt-6 space-y-2">
+      <div className="mt-6 space-y-2.5">
         <a
-          href={`tel:${FARM_PRIMARY_PHONE.replace(/\s+/g, '')}`}
-          className="w-full py-3 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100/70 text-emerald-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-sm"
-          id={`call-${category.id.toLowerCase()}`}
+          href={FARM_MESSENGER_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full py-3 px-4 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100/70 text-emerald-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-sm"
+          id={`messenger-${category.id.toLowerCase()}`}
         >
-          <Phone className="w-3.5 h-3.5" />
-          {isSoldOut ? 'Call to Ask About Next Batch' : `Call to Inquire · ${FARM_PRIMARY_PHONE}`}
+          <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            {isSoldOut ? 'Message Us About Next Batch' : 'Inquire on Messenger'}
+          </span>
         </a>
-        <a
-          href={`sms:${FARM_PRIMARY_PHONE.replace(/\s+/g, '')}?body=${encodeURIComponent(`Hi, I'd like to ask about your ${category.title.toLowerCase()}.`)}`}
-          className="w-full py-2 text-slate-500 hover:text-emerald-700 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors"
-          id={`sms-${category.id.toLowerCase()}`}
-        >
-          <MessageSquare className="w-3.5 h-3.5" />
-          Or send a text message
-        </a>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <a
+            href={`tel:${FARM_PRIMARY_PHONE.replace(/\s+/g, '')}`}
+            className="py-2.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-[0.98] shadow-sm whitespace-nowrap"
+            id={`call-${category.id.toLowerCase()}`}
+          >
+            <Phone className="w-3.5 h-3.5 shrink-0" />
+            <span>Call · {FARM_PRIMARY_PHONE}</span>
+          </a>
+          <a
+            href={`sms:${FARM_PRIMARY_PHONE.replace(/\s+/g, '')}?body=${encodeURIComponent(
+              isSoldOut
+                ? `Hi, I'd like to ask about the next batch of ${category.title.toLowerCase()}.`
+                : `Hi, I'd like to ask about your ${category.title.toLowerCase()}.`
+            )}`}
+            className="py-2.5 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-[0.98] shadow-sm whitespace-nowrap"
+            id={`sms-${category.id.toLowerCase()}`}
+          >
+            <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+            <span>Send SMS</span>
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -162,7 +206,7 @@ export default function Catalog() {
             ))}
           </section>
           <p className="text-xs text-slate-400 text-center">
-            Prices and exact weights are confirmed when you call.
+            Prices and exact weights are confirmed upon inquiry.
           </p>
         </div>
       ) : (
