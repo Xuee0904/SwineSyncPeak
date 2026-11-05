@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  PiggyBank, AlertTriangle, Activity, Download, Plus,
-  Search, MoreVertical, RefreshCw,
+  PiggyBank, AlertTriangle, Download, Plus,
+  Search, MoreVertical, RefreshCw, Layers, Heart,
   X, Grid3X3, AlertCircle, Edit2, Archive, ArchiveX, RotateCcw, Unlock,
 } from 'lucide-react';
 import Pagination from '../components/common/Pagination';
@@ -18,24 +18,19 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const PAGE_SIZE = 5;
 
 
-function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
+function StatCard({ icon, label, value, accentColor, bg, loading }) {
   return (
     <div className={`relative overflow-hidden rounded-2xl border border-slate-100 shadow-sm ${bg || 'bg-white'} p-5 flex items-center gap-4`}>
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${accentColor || 'bg-slate-50'}`}>
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${accentColor || 'bg-slate-50'}`}>
         {icon}
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
+        <div className="mt-0.5">
           {loading ? (
-            <div className="h-7 w-16 bg-slate-100 animate-pulse rounded-md" />
+            <div className="h-7 w-14 bg-slate-100 animate-pulse rounded-md" />
           ) : (
             <h3 className="text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
-          )}
-          {badge && (
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeColor || 'bg-slate-100 text-slate-600'}`}>
-              {badge}
-            </span>
           )}
         </div>
       </div>
@@ -65,7 +60,18 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
   const [listError, setListError] = useState(null);
   const [totalCount, setTotalCount] = useState(0);
 
-  const [stats, setStats] = useState({ total: 0, pregnant: 0, sick: 0 });
+  const [stats, setStats] = useState({
+    total: 0,
+    records: 0,
+    sows: 0,
+    boars: 0,
+    piglets: 0,
+    batches: 0,
+    pregnant: 0,
+    sick: 0,
+    quarantine: 0,
+    healthWatch: 0,
+  });
   const [statsLoading, setStatsLoading] = useState(true);
 
   const [pens, setPens] = useState([]);
@@ -104,10 +110,21 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     try {
       const res = await fetch(`${API_BASE}/api/pigs/stats`);
       const data = await res.json();
+      const sows = data.sows ?? data.pregnant ?? 0;
+      const boars = data.boars ?? 0;
+      const total = data.total ?? 0;
+      const piglets = data.piglets ?? Math.max(0, total - sows - boars);
       setStats({
-        total: data.total ?? 0,
+        total,
+        records: data.records ?? 0,
+        sows,
+        boars,
+        piglets,
+        batches: data.batches ?? 0,
         pregnant: data.pregnant ?? 0,
         sick: data.sick ?? 0,
+        quarantine: data.quarantine ?? 0,
+        healthWatch: data.healthWatch ?? ((data.sick ?? 0) + (data.quarantine ?? 0)),
       });
     } catch {
       // Fail silently and keep defaults
@@ -345,33 +362,33 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
 
   return (
     <div className="p-5 lg:p-6 space-y-5 animate-fade-in">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          icon={<PiggyBank className="w-6 h-6 text-emerald-600" />}
+          icon={<PiggyBank className="w-5 h-5 text-emerald-600" />}
           label="Total Swine"
           value={stats?.total ?? 0}
-          badge="SWINE"
-          badgeColor="bg-emerald-100 text-emerald-700"
           accentColor="bg-emerald-50"
           loading={statsLoading}
         />
         <StatCard
-          icon={<Activity className="w-6 h-6 text-amber-500" />}
-          label="Sows"
-          value={stats?.pregnant ?? 0}
-          badge="FEMALE"
-          badgeColor="bg-amber-100 text-amber-600"
-          accentColor="bg-amber-50"
+          icon={<Heart className="w-5 h-5 text-emerald-600" />}
+          label="Sows & Boars"
+          value={(stats?.sows ?? 0) + (stats?.boars ?? 0)}
+          accentColor="bg-emerald-50"
           loading={statsLoading}
         />
         <StatCard
-          icon={<AlertTriangle className="w-6 h-6 text-rose-600" />}
-          label="Sick Alert"
-          value={stats?.sick ?? 0}
-          badge="CRITICAL"
-          badgeColor="bg-rose-500 text-white"
-          accentColor="bg-rose-50"
-          bg="bg-rose-50/60"
+          icon={<Layers className="w-5 h-5 text-emerald-600" />}
+          label="Piglets"
+          value={stats?.piglets ?? 0}
+          accentColor="bg-emerald-50"
+          loading={statsLoading}
+        />
+        <StatCard
+          icon={<AlertTriangle className={`w-5 h-5 ${(stats?.healthWatch ?? 0) > 0 ? 'text-rose-600' : 'text-slate-400'}`} />}
+          label="Sick / Quarantine"
+          value={stats?.healthWatch ?? 0}
+          accentColor={(stats?.healthWatch ?? 0) > 0 ? 'bg-rose-50' : 'bg-slate-50'}
           loading={statsLoading}
         />
       </div>

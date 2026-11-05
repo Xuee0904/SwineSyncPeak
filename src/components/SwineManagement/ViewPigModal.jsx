@@ -197,11 +197,9 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
   else ageWeeks = `${ageWeeks} weeks`;
 
   const totalBornAlive = Number(data.total_born_alive || 0);
-  const stillbornCount = Number(data.stillborn_count || 0);
-  const mummyCount = Number(data.mummy_count || 0);
   const currentCount = Number(data.current_count ?? totalBornAlive);
-  const totalBorn = totalBornAlive + stillbornCount + mummyCount;
-  const survivability = totalBorn > 0 ? ((totalBornAlive / totalBorn) * 100).toFixed(1) : null;
+  const mortalityLoss = Math.max(0, totalBornAlive - currentCount);
+  const survivability = totalBornAlive > 0 ? ((currentCount / totalBornAlive) * 100).toFixed(1) : null;
 
   const sourceOrigin = data.source_origin || data.sourceOrigin || 'born_in_farm';
   const supplierName = data.supplier_name || data.supplierName || null;
@@ -212,7 +210,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
     changeMode('edit');
   };
 
-  const maxWidthClass = mode === 'view' ? 'max-w-4xl' : mode === 'success' ? 'max-w-md' : (isBatch ? 'max-w-3xl' : 'max-w-2xl');
+  const maxWidthClass = mode === 'view' ? 'max-w-4xl' : mode === 'success' ? 'max-w-md' : 'max-w-2xl';
 
   return createPortal(
     <div
@@ -459,16 +457,39 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                               </div>
                               <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col">
                                 <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mb-1"><Scale className="w-3.5 h-3.5 text-amber-500" /> {isBatch ? 'Avg Weight' : 'Weight'}</span>
-                                <span className="text-base font-extrabold text-slate-800">{weight != null ? `${Number(weight).toFixed(1)} kg` : '—'}</span>
+                                <span className={weight != null ? 'text-base font-extrabold text-slate-800' : 'text-sm font-bold text-slate-400'}>
+                                  {weight != null ? `${Number(weight).toFixed(1)} kg` : 'Not weighed'}
+                                </span>
                               </div>
                               <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col">
                                 <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mb-1"><MapPin className="w-3.5 h-3.5 text-rose-500" /> Pen Location</span>
                                 <span className="text-base font-extrabold text-slate-800">{penCode ? penCode : 'Unassigned'}</span>
                               </div>
-                              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col">
-                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mb-1"><Calendar className="w-3.5 h-3.5 text-emerald-500" /> Age</span>
-                                <span className="text-base font-extrabold text-slate-800">{ageWeeks}</span>
-                              </div>
+                              {isBatch ? (
+                                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col">
+                                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mb-1"><Home className="w-3.5 h-3.5 text-emerald-500" /> Origin</span>
+                                  <span className="text-base font-extrabold text-slate-800 truncate" title={
+                                    sourceOrigin === 'born_in_farm' ? (data.sow_tag ? `Born in Farm · Sow #${data.sow_tag}` : 'Born in Farm')
+                                      : sourceOrigin === 'purchased' ? `Purchased${supplierName ? ` · ${supplierName}` : ''}`
+                                        : `Transferred${supplierName ? ` · ${supplierName}` : ''}`
+                                  }>
+                                    {sourceOrigin === 'born_in_farm' ? 'Born in Farm'
+                                      : sourceOrigin === 'purchased' ? `Purchased${supplierName ? ` · ${supplierName}` : ''}`
+                                        : `Transferred${supplierName ? ` · ${supplierName}` : ''}`}
+                                  </span>
+                                  {sourceOrigin === 'born_in_farm' && data.sow_tag && (
+                                    <span className="text-[10px] text-emerald-600 font-bold mt-0.5 truncate">Mother: #{data.sow_tag}</span>
+                                  )}
+                                  {sourceOrigin !== 'born_in_farm' && arrivalDate && (
+                                    <span className="text-[10px] text-slate-400 font-medium mt-0.5">Arrived {arrivalDate}</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col">
+                                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mb-1"><Calendar className="w-3.5 h-3.5 text-emerald-500" /> Age</span>
+                                  <span className="text-base font-extrabold text-slate-800">{ageWeeks}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -485,9 +506,9 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                     }`}>{survivability}% Survivability</span>
                                 )}
                               </div>
-                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                                 <div className="bg-white rounded-xl p-3.5 border border-amber-100/80 shadow-2xs text-center">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Born Alive</span>
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Initial Head Count</span>
                                   <span className="text-lg font-black text-emerald-600 mt-0.5 block">{totalBornAlive}</span>
                                 </div>
                                 <div className="bg-white rounded-xl p-3.5 border border-amber-100/80 shadow-2xs text-center">
@@ -495,12 +516,8 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                   <span className="text-lg font-black text-indigo-600 mt-0.5 block">{currentCount}</span>
                                 </div>
                                 <div className="bg-white rounded-xl p-3.5 border border-amber-100/80 shadow-2xs text-center">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Stillborn</span>
-                                  <span className="text-lg font-black text-slate-700 mt-0.5 block">{stillbornCount}</span>
-                                </div>
-                                <div className="bg-white rounded-xl p-3.5 border border-amber-100/80 shadow-2xs text-center">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Mummies</span>
-                                  <span className="text-lg font-black text-rose-600 mt-0.5 block">{mummyCount}</span>
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Mortality / Loss</span>
+                                  <span className={`text-lg font-black mt-0.5 block ${mortalityLoss > 0 ? 'text-rose-600' : 'text-slate-700'}`}>{mortalityLoss}</span>
                                 </div>
                               </div>
                             </div>

@@ -353,61 +353,15 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
         </div>
 
         <div className="pt-2 border-t border-slate-100 space-y-4">
-          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-            <span className="flex h-5 w-5 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
-              <Baby size={12} />
-            </span>
-            Batch Counts & Survivability
-          </h4>
-          <div className="grid grid-cols-3 gap-4">
-            <Field label="Total Born Alive" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet born alive' : undefined)} icon={<Baby />}>
-              <input
-                type="number"
-                min="1"
-                value={form.totalBornAlive ?? ''}
-                onChange={handleChange('totalBornAlive')}
-                className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`}
-              />
-            </Field>
-            <Field label="Stillborn Count" icon={<Hash />}>
-              <input
-                type="number"
-                min="0"
-                value={form.stillbornCount ?? ''}
-                onChange={handleChange('stillbornCount')}
-                className={`${inputBase} ${inputOk}`}
-              />
-            </Field>
-            <Field label="Mummy Count" icon={<Shuffle />}>
-              <input
-                type="number"
-                min="0"
-                value={form.mummyCount ?? ''}
-                onChange={handleChange('mummyCount')}
-                className={`${inputBase} ${inputOk}`}
-              />
-            </Field>
-          </div>
-
-          {(() => {
-            const bornAlive = Number(form.totalBornAlive) || 0;
-            const totalLoss = (Number(form.stillbornCount) || 0) + (Number(form.mummyCount) || 0);
-            const totalFarrowed = bornAlive + totalLoss;
-            const survivability = totalFarrowed > 0 ? Math.round((bornAlive / totalFarrowed) * 100) : 0;
-            return (
-              <div className="flex items-center justify-between p-3.5 bg-emerald-50/60 border border-emerald-100 rounded-2xl">
-                <div>
-                  <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Survivability Rate</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {bornAlive} born alive of {totalFarrowed} total farrowed
-                  </p>
-                </div>
-                <span className="text-lg font-black text-emerald-600 bg-white px-3.5 py-1 rounded-xl shadow-sm border border-emerald-100">
-                  {survivability}%
-                </span>
-              </div>
-            );
-          })()}
+          <Field label="Initial Head Count" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet' : undefined)} icon={<Baby />}>
+            <input
+              type="number"
+              min="1"
+              value={form.totalBornAlive ?? ''}
+              onChange={handleChange('totalBornAlive')}
+              className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`}
+            />
+          </Field>
 
           {/* Source Origin */}
           <div className="pt-2">
@@ -799,9 +753,7 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
     >
       <div
         style={{ willChange: 'transform, opacity, max-width' }}
-        className={`flex max-h-[86vh] flex-col w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative transition-[max-width] duration-300 ease-in-out ${
-          isBatch ? 'max-w-3xl' : 'max-w-2xl'
-        } ${panelClassName}`}
+        className={`flex max-h-[86vh] flex-col w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative transition-[max-width] duration-300 ease-in-out ${panelClassName}`}
       >
         <PigEditView
           pigData={pigData}

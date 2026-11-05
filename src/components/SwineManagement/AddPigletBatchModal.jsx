@@ -54,11 +54,18 @@ const EMPTY_FORM = {
   assignedProgramId: '',
 };
 
-function generateBatchTag() {
-  const now = new Date();
-  const month = now.toLocaleString('en-US', { month: 'short' }).toUpperCase();
-  const suffix = String(Math.floor(1000 + Math.random() * 9000));
-  return `BTC-${now.getFullYear()}-${month}-${suffix}`;
+function buildUniqueTag(prefix, dobStr, existingTagsSet) {
+  if (!dobStr) return '';
+  const yyyymmdd = dobStr.replace(/-/g, '');
+  const baseTag = `${prefix}-${yyyymmdd}`;
+  if (!existingTagsSet || !existingTagsSet.has(baseTag.toUpperCase())) {
+    return baseTag;
+  }
+  let suffix = 2;
+  while (existingTagsSet.has(`${baseTag}-${suffix}`.toUpperCase())) {
+    suffix++;
+  }
+  return `${baseTag}-${suffix}`;
 }
 
 export function AddPigletBatchForm({
@@ -84,7 +91,7 @@ export function AddPigletBatchForm({
     clearDraft,
     checkDraft,
     isOffline,
-  } = useFormDraft('swinesync_draft_add_piglet_batch', () => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }), { autoRestore, onRestored });
+  } = useFormDraft('swinesync_draft_add_piglet_batch', () => ({ ...EMPTY_FORM }), { autoRestore, onRestored });
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState(null);
@@ -95,6 +102,8 @@ export function AddPigletBatchForm({
   const [sows, setSows] = useState([]);
   const [breedsState, setBreeds] = useState([]);
   const [programsState, setPrograms] = useState([]);
+  const [existingTags, setExistingTags] = useState(new Set());
+  const [isTagManuallyEdited, setIsTagManuallyEdited] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
   const pens = pensState.length > 0 ? pensState : (propPens || []);
@@ -146,12 +155,13 @@ export function AddPigletBatchForm({
     if (!isOpen) return;
     setErrors({});
     setSubmitError(null);
+    setIsTagManuallyEdited(Boolean(initialData?.batchTag));
     if (!autoRestore) {
       Promise.resolve().then(() => {
         checkDraft();
         resetForm(() => ({
           ...EMPTY_FORM,
-          batchTag: generateBatchTag(),
+          batchTag: initialData?.dateOfBirth ? buildUniqueTag('BTC', initialData.dateOfBirth, new Set()) : '',
           ...initialData
         }));
       });
@@ -160,19 +170,40 @@ export function AddPigletBatchForm({
     const fetchData = async () => {
       setIsLoadingData(true);
       try {
-        const [pensRes, sowsRes, breedsRes, programsRes] = await Promise.all([
+        const [pensRes, sowsRes, breedsRes, programsRes, activePigsRes, archivedPigsRes] = await Promise.all([
           fetch(`${API_BASE}/api/pens`),
           fetch(`${API_BASE}/api/sows`),
           fetch(`${API_BASE}/api/breeds`),
           fetch(`${API_BASE}/api/growth/programs?archived=false`),
+          fetch(`${API_BASE}/api/pigs?limit=9999`),
+          fetch(`${API_BASE}/api/pigs/archived?limit=9999`),
         ]);
-        const [pensData, sowsData, breedsData, programsData] = await Promise.all([
-          pensRes.json(), sowsRes.json(), breedsRes.json(), programsRes.json(),
+        const [pensData, sowsData, breedsData, programsData, activePigsData, archivedPigsData] = await Promise.all([
+          pensRes.json(),
+          sowsRes.json(),
+          breedsRes.json(),
+          programsRes.json(),
+          activePigsRes.ok ? activePigsRes.json() : { data: [] },
+          archivedPigsRes.ok ? archivedPigsRes.json() : { data: [] },
         ]);
         setPens(pensData.data || []);
         setSows(sowsData.data || []);
         setBreeds(breedsData.data || []);
         setPrograms(programsData || []);
+
+        const tagSet = new Set();
+        [...(activePigsData.data || []), ...(archivedPigsData.data || [])].forEach((p) => {
+          const t = (p.tag || p.pig_tag || p.batch_code || '').trim().toUpperCase();
+          if (t) tagSet.add(t);
+        });
+        setExistingTags(tagSet);
+
+        if (initialData?.dateOfBirth && !initialData?.batchTag) {
+          setForm(prev => ({
+            ...prev,
+            batchTag: buildUniqueTag('BTC', initialData.dateOfBirth, tagSet),
+          }));
+        }
       } catch (err) {
         console.error('Error loading batch form data:', err);
       } finally {
@@ -186,18 +217,26 @@ export function AddPigletBatchForm({
 
   const handleChange = (field) => (e) => {
     const value = e.target.value;
+    if (field === 'batchTag') {
+      setIsTagManuallyEdited(value.trim().length > 0);
+    }
     setForm(prev => {
       const nextForm = { ...prev, [field]: value };
       let currentStatus = (nextForm.status || '').toLowerCase();
 
-      if (field === 'dateOfBirth' && value) {
-        const ageInDays = Math.floor((new Date() - new Date(value)) / (1000 * 60 * 60 * 24));
-        if (ageInDays <= 28) {
-          nextForm.status = 'suckling';
-          currentStatus = 'suckling';
-        } else if (ageInDays > 28) {
-          nextForm.status = 'weaned';
-          currentStatus = 'weaned';
+      if (field === 'dateOfBirth') {
+        if (!isTagManuallyEdited || !prev.batchTag.trim()) {
+          nextForm.batchTag = value ? buildUniqueTag('BTC', value, existingTags) : '';
+        }
+        if (value) {
+          const ageInDays = Math.floor((new Date() - new Date(value)) / (1000 * 60 * 60 * 24));
+          if (ageInDays <= 28) {
+            nextForm.status = 'suckling';
+            currentStatus = 'suckling';
+          } else if (ageInDays > 28) {
+            nextForm.status = 'weaned';
+            currentStatus = 'weaned';
+          }
         }
       } else if (field === 'status') {
         currentStatus = (value || '').toLowerCase();
@@ -216,6 +255,9 @@ export function AddPigletBatchForm({
     if (field === 'dateOfBirth') {
       if (errors.dateOfBirth) setErrors(prev => ({ ...prev, dateOfBirth: undefined }));
       if (errors.status) setErrors(prev => ({ ...prev, status: undefined }));
+      if ((!isTagManuallyEdited || !form.batchTag.trim()) && errors.batchTag) {
+        setErrors(prev => ({ ...prev, batchTag: undefined }));
+      }
     } else if (field === 'status') {
       if (errors.status) setErrors(prev => ({ ...prev, status: undefined }));
       if (errors.penId) setErrors(prev => ({ ...prev, penId: undefined }));
@@ -332,7 +374,8 @@ export function AddPigletBatchForm({
   };
 
   const resetAndClose = () => {
-    resetForm(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
+    resetForm(() => ({ ...EMPTY_FORM }));
+    setIsTagManuallyEdited(false);
     setErrors({});
     setIsSaving(false);
     setSubmitError(null);
@@ -346,7 +389,8 @@ export function AddPigletBatchForm({
 
   const handleDiscardDraft = () => {
     clearDraft();
-    resetForm(() => ({ ...EMPTY_FORM, batchTag: generateBatchTag() }));
+    resetForm(() => ({ ...EMPTY_FORM }));
+    setIsTagManuallyEdited(false);
   };
 
   const handleSubmit = async (e) => {
@@ -466,8 +510,21 @@ export function AddPigletBatchForm({
           {/* ── Section 1: Batch Identity ── */}
           <Section step="1" title="Batch Identity">
             <div className="grid grid-cols-2 gap-4">
+              <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
+                <input type="date" min={minDobStr} max={todayStr} value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} disabled={!!initialData?.dateOfBirth} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk} ${!!initialData?.dateOfBirth ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`} />
+              </Field>
+
               <Field label="Batch Tag" error={errors.batchTag} icon={<Tag />}>
-                <input type="text" value={form.batchTag} onChange={handleChange('batchTag')} placeholder="BTC-2026-MAY-####" className={`${inputBase} ${errors.batchTag ? inputErr : inputOk}`} />
+                <input type="text" value={form.batchTag} onChange={handleChange('batchTag')} placeholder="e.g. BTC-YYYYMMDD" className={`${inputBase} ${errors.batchTag ? inputErr : inputOk}`} />
+              </Field>
+
+              <Field label="Mother Sow (optional)" icon={<Heart />}>
+                <select value={form.sowId} onChange={handleSowChange} disabled={isLoadingData || !!initialData?.sowId} className={`${inputBase} ${inputOk} appearance-none ${!!initialData?.sowId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
+                  <option value="">{isLoadingData ? 'Loading…' : 'None / Unknown'}</option>
+                  {sows.map(s => (
+                    <option key={s.id} value={s.id}>#{s.tag} — {s.breed}</option>
+                  ))}
+                </select>
               </Field>
 
               <Field label="Pen Assignment" error={errors.penId} icon={<Home />}>
@@ -477,19 +534,6 @@ export function AddPigletBatchForm({
                     <option key={p.id} value={p.id}>
                       {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
                     </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
-                <input type="date" min={minDobStr} max={todayStr} value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} disabled={!!initialData?.dateOfBirth} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk} ${!!initialData?.dateOfBirth ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`} />
-              </Field>
-
-              <Field label="Mother Sow (optional)" icon={<Heart />}>
-                <select value={form.sowId} onChange={handleSowChange} disabled={isLoadingData || !!initialData?.sowId} className={`${inputBase} ${inputOk} appearance-none ${!!initialData?.sowId ? 'bg-slate-100 cursor-not-allowed text-slate-500' : ''}`}>
-                  <option value="">{isLoadingData ? 'Loading…' : 'None / Unknown'}</option>
-                  {sows.map(s => (
-                    <option key={s.id} value={s.id}>#{s.tag} — {s.breed}</option>
                   ))}
                 </select>
               </Field>
@@ -569,16 +613,8 @@ export function AddPigletBatchForm({
           {/* ── Section 2: Count & Vitals ── */}
           <Section step="2" title="Count & Vitals">
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Total Born Alive" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet born alive' : undefined)} icon={<Baby />}>
+              <Field label="Initial Head Count" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet' : undefined)} icon={<Baby />}>
                 <input type="number" min="0" value={form.totalBornAlive} onChange={handleBornAliveChange} placeholder="0" className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`} />
-              </Field>
-
-              <Field label="Stillborn Count" icon={<Hash />}>
-                <input type="number" min="0" value={form.stillbornCount} onChange={handleChange('stillbornCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
-              </Field>
-
-              <Field label="Mummy Count" icon={<Shuffle />}>
-                <input type="number" min="0" value={form.mummyCount} onChange={handleChange('mummyCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
               </Field>
 
               <Field label="Average Weight (kg)" error={errors.averageWeight || (isInvalidWeight ? (Number(form.averageWeight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
@@ -587,63 +623,6 @@ export function AddPigletBatchForm({
             </div>
           </Section>
         </div>
-
-        {/* Right: live snapshot sidebar */}
-        <aside className="w-64 shrink-0 border-l border-slate-100 bg-slate-50/60 flex flex-col gap-5 px-5 py-6 overflow-y-auto">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Batch Snapshot</p>
-
-          {/* Big count display */}
-          <div className="rounded-2xl bg-white border border-slate-100 shadow-sm p-4 text-center">
-            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Current Count</p>
-            <p className="text-4xl font-black text-slate-900 mt-1">{Number(form.totalBornAlive) || 0}</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">of {((Number(form.totalBornAlive) || 0) + totalLoss) || 0} total farrowed</p>
-          </div>
-
-          <div className="space-y-2">
-            <SnapshotRow label="Stillborn" value={Number(form.stillbornCount) || 0} tone="rose" icon={<Hash size={12} />} />
-            <SnapshotRow label="Mummies" value={Number(form.mummyCount) || 0} tone="amber" icon={<Shuffle size={12} />} />
-            <SnapshotRow label="Total Loss" value={totalLoss} tone="rose" icon={<BarChart2 size={12} />} />
-          </div>
-
-          {/* Survivability bar */}
-          <div className="rounded-xl bg-white border border-slate-100 p-3 space-y-1.5">
-            <div className="flex justify-between items-center">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Survivability</p>
-              <p className="text-xs font-black text-emerald-600">{survivability}%</p>
-            </div>
-            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-              <div
-                className="h-full rounded-full bg-emerald-500 transition-all duration-500"
-                style={{ width: `${survivability}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Source badge */}
-          <div className="rounded-xl bg-white border border-slate-100 p-3">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Source</p>
-            <p className="text-xs font-semibold text-slate-700">
-              {SOURCE_OPTIONS.find(o => o.value === form.sourceOrigin)?.label || '—'}
-            </p>
-            {(form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred') && form.supplierName && (
-              <p className="text-[10px] text-slate-500 mt-1 truncate">Supplier: {form.supplierName}</p>
-            )}
-          </div>
-
-          <div className="mt-auto pt-2 space-y-2">
-            <button
-              type="button"
-              onClick={() => {
-                setForm({ ...EMPTY_FORM, batchTag: generateBatchTag() });
-                setErrors({});
-                setSubmitError(null);
-              }}
-              className="w-full py-2.5 border border-slate-200 hover:bg-slate-100 text-slate-500 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-            >
-              Reset Form
-            </button>
-          </div>
-        </aside>
       </form>
 
       {/* ── Footer ── */}
@@ -747,7 +726,7 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
       <div
         ref={containerRef}
         style={stepTransitionStyle}
-        className={`flex max-h-[86vh] w-full ${step === 'success' ? 'max-w-md' : step === 'vaccinations' ? 'max-w-2xl' : 'max-w-4xl'
+        className={`flex max-h-[86vh] w-full ${step === 'success' ? 'max-w-md' : 'max-w-2xl'
           } flex-col rounded-3xl bg-white shadow-2xl border border-slate-100 overflow-hidden transition-[max-width] duration-300 ease-in-out ${panelClassName}`}
       >
         {step === 'success' ? (

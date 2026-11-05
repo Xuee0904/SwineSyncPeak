@@ -207,4 +207,42 @@ router.get('/api/admin/activity-logs', verifyAdmin, async (req, res) => {
   }
 });
 
+// 5. POST /api/admin/activity-logs (Record staff activity from client modules)
+router.post('/api/admin/activity-logs', async (req, res) => {
+  try {
+    if (!supabaseAdmin) {
+      return res.status(500).json({ error: 'Administrative client not configured.' });
+    }
+
+    const { user_name, user_email, event_title, event_desc, status = 'SUCCESS', user_bg_color = 'bg-emerald-100 text-emerald-700' } = req.body;
+    if (!event_title) {
+      return res.status(400).json({ error: 'event_title is required.' });
+    }
+
+    const cleanName = (user_name && String(user_name).trim()) || 'Staff';
+    const cleanEmail = (user_email && String(user_email).trim()) || 'staff@swinesync.ag';
+    const initials = cleanName
+      .split(' ')
+      .map(w => (w ? w[0] : ''))
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || 'ST';
+
+    const { error } = await supabaseAdmin.from('activity_logs').insert({
+      user_name: cleanName,
+      user_email: cleanEmail,
+      user_initials: initials,
+      user_bg_color,
+      event_title,
+      event_desc: event_desc || '',
+      status,
+    });
+
+    if (error) throw error;
+    res.status(201).json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

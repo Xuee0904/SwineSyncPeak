@@ -47,6 +47,20 @@ const EMPTY_FORM = {
   arrivalDate: '',
 };
 
+function buildUniqueTag(prefix, dobStr, existingTagsSet) {
+  if (!dobStr) return '';
+  const yyyymmdd = dobStr.replace(/-/g, '');
+  const baseTag = `${prefix}-${yyyymmdd}`;
+  if (!existingTagsSet || !existingTagsSet.has(baseTag.toUpperCase())) {
+    return baseTag;
+  }
+  let suffix = 2;
+  while (existingTagsSet.has(`${baseTag}-${suffix}`.toUpperCase())) {
+    suffix++;
+  }
+  return `${baseTag}-${suffix}`;
+}
+
 export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, loggedInUser }) {
   // useModalAnimation handles mounting/unmounting and exit timings
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
@@ -119,6 +133,8 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
 
   const [pens, setPens] = useState([]);
   const [breeds, setBreeds] = useState([]);
+  const [existingTags, setExistingTags] = useState(new Set());
+  const [isTagManuallyEdited, setIsTagManuallyEdited] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
   const [breedOpen, setBreedOpen] = useState(false);
@@ -141,15 +157,28 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
       const fetchData = async () => {
         setIsLoadingData(true);
         try {
-          const [pensRes, breedsRes] = await Promise.all([
+          const [pensRes, breedsRes, activePigsRes, archivedPigsRes] = await Promise.all([
             fetch(`${API_BASE}/api/pens/available`),
-            fetch(`${API_BASE}/api/breeds`)
+            fetch(`${API_BASE}/api/breeds`),
+            fetch(`${API_BASE}/api/pigs?limit=9999`),
+            fetch(`${API_BASE}/api/pigs/archived?limit=9999`),
           ]);
-          const pensData = await pensRes.json();
-          const breedsData = await breedsRes.json();
+          const [pensData, breedsData, activePigsData, archivedPigsData] = await Promise.all([
+            pensRes.json(),
+            breedsRes.json(),
+            activePigsRes.ok ? activePigsRes.json() : { data: [] },
+            archivedPigsRes.ok ? archivedPigsRes.json() : { data: [] },
+          ]);
 
           setPens(pensData.data || []);
           setBreeds(breedsData.data || []);
+
+          const tagSet = new Set();
+          [...(activePigsData.data || []), ...(archivedPigsData.data || [])].forEach((p) => {
+            const t = (p.tag || p.pig_tag || '').trim().toUpperCase();
+            if (t) tagSet.add(t);
+          });
+          setExistingTags(tagSet);
         } catch (err) {
           console.error("Error loading form data:", err);
         } finally {
@@ -176,6 +205,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
       setStep('select');
       setGender(null);
       resetForm(EMPTY_FORM);
+      setIsTagManuallyEdited(false);
       setErrors({});
       setIsSaving(false);
       setSubmitError(null);
@@ -194,6 +224,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
   const handleDiscardDraft = () => {
     clearDraft();
     resetForm(EMPTY_FORM);
+    setIsTagManuallyEdited(false);
   };
 
   const handleRestoreBatchDraft = () => {
@@ -225,14 +256,35 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
       setStep('batch');
       return;
     }
-    setGender(type === 'sow' ? 'Female' : 'Male');
+    const nextGender = type === 'sow' ? 'Female' : 'Male';
+    setGender(nextGender);
+    if (!isTagManuallyEdited && form.dateOfBirth) {
+      const prefix = nextGender === 'Female' ? 'SOW' : 'BOAR';
+      setForm((prev) => ({
+        ...prev,
+        tagNumber: buildUniqueTag(prefix, prev.dateOfBirth, existingTags),
+      }));
+    }
     setStep('form');
   };
 
   const handleChange = (field) => (e) => {
     const value = e.target.value;
-    setForm((prev) => ({ ...prev, [field]: value }));
+    if (field === 'tagNumber') {
+      setIsTagManuallyEdited(value.trim().length > 0);
+    }
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'dateOfBirth' && (!isTagManuallyEdited || !prev.tagNumber.trim())) {
+        const prefix = gender === 'Female' ? 'SOW' : 'BOAR';
+        next.tagNumber = value ? buildUniqueTag(prefix, value, existingTags) : '';
+      }
+      return next;
+    });
     if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
+    if (field === 'dateOfBirth' && (!isTagManuallyEdited || !form.tagNumber.trim()) && errors.tagNumber) {
+      setErrors((prev) => ({ ...prev, tagNumber: undefined }));
+    }
   };
 
   const validate = () => {
@@ -388,7 +440,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
           <div
             ref={containerRef}
             style={stepTransitionStyle}
-            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[86vh] transition-[max-width] duration-300 ease-in-out ${step === 'select' || step === 'success' ? 'max-w-md' : step === 'batch' ? 'max-w-4xl' : step === 'vaccinations' ? 'max-w-3xl' : 'max-w-2xl'
+            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[86vh] transition-[max-width] duration-300 ease-in-out ${step === 'select' || step === 'success' ? 'max-w-md' : step === 'vaccinations' ? 'max-w-3xl' : 'max-w-2xl'
               } ${panelClassName}`}
           >
             {/* Header */}
@@ -477,13 +529,13 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                       </div>
                     )}
 
-                    {/* Tag and DOB */}
+                    {/* DOB and Tag */}
                     <div className="grid grid-cols-2 gap-4">
-                      <Field label="Tag Number" error={errors.tagNumber} icon={<Tag />}>
-                        <input type="text" value={form.tagNumber} onChange={handleChange('tagNumber')} placeholder="e.g. SW-29401" className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
-                      </Field>
                       <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
                         <input type="date" value={form.dateOfBirth} onChange={handleChange('dateOfBirth')} min={minDobStr} max={todayStr} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
+                      </Field>
+                      <Field label="Tag Number" error={errors.tagNumber} icon={<Tag />}>
+                        <input type="text" value={form.tagNumber} onChange={handleChange('tagNumber')} placeholder={`e.g. ${gender === 'Female' ? 'SOW' : 'BOAR'}-YYYYMMDD`} className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
                       </Field>
                     </div>
 

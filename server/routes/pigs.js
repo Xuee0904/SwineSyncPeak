@@ -17,7 +17,7 @@ function getCreatorDetails(creator) {
   }
 
   const parts = name.split(' ');
-  const initials = parts.length > 1 
+  const initials = parts.length > 1
     ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
     : name.substring(0, 2).toUpperCase();
 
@@ -45,14 +45,14 @@ router.get('/api/pigs/breeding-logs', async (req, res) => {
       const today = new Date();
       const diffTime = Math.abs(today - matingDate);
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      
+
       let status = "pregnant";
       if (diffDays < 21) status = "monitoring";
       else if (diffDays > 114) status = "action";
-      
+
       const dueDate = new Date(matingDate);
       dueDate.setDate(dueDate.getDate() + 114);
-      
+
       const isOverdue = diffDays > 114;
       const dueStr = isOverdue ? "Overdue" : dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
@@ -84,22 +84,32 @@ router.get('/api/pigs/stats', async (req, res) => {
       supabase.from('piglet_batches').select('*').eq('is_archived', false),
     ]);
 
-    const pigsCount = pigsRes.data?.length || 0;
+    const pigsList = pigsRes.data || [];
+    const batchesList = batchesRes.data || [];
+    const pigsCount = pigsList.length;
+    const batchesCount = batchesList.length;
     const sickCount = sickRes.count ?? 0;
     const quarCount = quarRes.count ?? 0;
-    const pigletCount = (batchesRes.data || []).reduce((sum, b) => sum + (b.current_count || 0), 0);
-    
+    const pigletCount = batchesList.reduce((sum, b) => sum + (b.current_count ?? b.total_born_alive ?? 0), 0);
+
     const totalCount = pigsCount + pigletCount;
-    const femalePigs = (pigsRes.data || []).filter(p => {
+    const femalePigs = pigsList.filter(p => {
       const g = (p.gender || '').toLowerCase();
       return g.startsWith('f') || g === 'female' || g === 'sow';
     }).length;
+    const malePigs = pigsCount - femalePigs;
 
     res.json({
       total: totalCount,
+      records: pigsCount + batchesCount,
+      sows: femalePigs,
+      boars: malePigs,
+      piglets: pigletCount,
+      batches: batchesCount,
       healthy: Math.max(0, totalCount - sickCount - quarCount),
       sick: sickCount,
       quarantine: quarCount,
+      healthWatch: sickCount + quarCount,
       pregnant: femalePigs
     });
   } catch (error) {
@@ -140,8 +150,8 @@ router.get('/api/pigs', async (req, res) => {
     }
 
     const unifiedPigs = pigData.map(pig => ({
-      id: pig.pig_id, 
-      pig_tag: pig.pig_tag, 
+      id: pig.pig_id,
+      pig_tag: pig.pig_tag,
       breed: pig.breeds?.name || '',
       breed_id: pig.breed_id,
       date_of_birth: pig.date_of_birth || null,
@@ -360,6 +370,16 @@ router.get('/api/pigs/:id', async (req, res) => {
     if (batchError) throw batchError;
     if (!batchData) return res.status(404).json({ error: 'Record not found.' });
 
+    let sowTag = null;
+    if (batchData.sow_id) {
+      const { data: sowData } = await supabase
+        .from('pigs')
+        .select('pig_tag')
+        .eq('pig_id', batchData.sow_id)
+        .maybeSingle();
+      sowTag = sowData?.pig_tag || null;
+    }
+
     return res.json({
       data: {
         id: batchData.batch_id,
@@ -373,6 +393,7 @@ router.get('/api/pigs/:id', async (req, res) => {
         pen_id: batchData.pen_id,
         pen_code: batchData.pens?.pen_code || '',
         sow_id: batchData.sow_id || null,
+        sow_tag: sowTag,
         status: batchData.status || 'suckling',
         source_origin: batchData.source_origin || 'born_in_farm',
         supplier_name: batchData.supplier_name || null,
@@ -413,7 +434,7 @@ router.post('/api/pigs', async (req, res) => {
 
       if (breedError) {
         // If it already exists but we didn't have the UUID, fetch it
-        if (breedError.code === '23505') { 
+        if (breedError.code === '23505') {
           const { data: existingBreed } = await supabaseAdmin
             .from('breeds')
             .select('breed_id')
@@ -525,12 +546,12 @@ router.post('/api/pigs/batch', async (req, res) => {
       // legacy fallback fields from old form
       batchId, penLocation, totalHerdCount,
     } = req.body;
-    
+
     const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
 
-    const resolvedPenId    = penId || penLocation;
-    const resolvedTag      = batchTag || batchId;
-    const resolvedCount    = parseInt(currentCount ?? totalHerdCount) || 0;
+    const resolvedPenId = penId || penLocation;
+    const resolvedTag = batchTag || batchId;
+    const resolvedCount = parseInt(currentCount ?? totalHerdCount) || 0;
 
     // Confirm the pen has room for the whole batch before inserting.
     if (resolvedPenId) {
@@ -542,8 +563,8 @@ router.post('/api/pigs/batch', async (req, res) => {
 
       if (penError) throw penError;
 
-      const occupied  = await getPenOccupancy(resolvedPenId);
-      const incoming  = resolvedCount;
+      const occupied = await getPenOccupancy(resolvedPenId);
+      const incoming = resolvedCount;
       const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
 
       if (penSection === 'B' || penSection === 'BOAR') {
@@ -614,22 +635,22 @@ router.post('/api/pigs/batch', async (req, res) => {
     }
 
     const record = {
-      batch_tag:      resolvedTag,
-      pen_id:         resolvedPenId || null,
-      sow_id:         sowId || null,
-      date_of_birth:  dateOfBirth || null,
-      breed_id:       resolvedBreedId,
+      batch_tag: resolvedTag,
+      pen_id: resolvedPenId || null,
+      sow_id: sowId || null,
+      date_of_birth: dateOfBirth || null,
+      breed_id: resolvedBreedId,
       total_born_alive: parseInt(totalBornAlive) || null,
-      current_count:  resolvedCount,
+      current_count: resolvedCount,
       stillborn_count: parseInt(stillbornCount) || 0,
-      mummy_count:    parseInt(mummyCount) || 0,
+      mummy_count: parseInt(mummyCount) || 0,
       average_weight: averageWeight ? parseFloat(averageWeight) : null,
-      status:         status || 'suckling',
+      status: status || 'suckling',
       assigned_program_id: assignedProgramId || null,
-      source_origin:  sourceOrigin || source_origin || 'born_in_farm',
-      supplier_name:  supplierName || supplier_name || null,
-      arrival_date:   arrivalDate || arrival_date || null,
-      is_archived:    false,
+      source_origin: sourceOrigin || source_origin || 'born_in_farm',
+      supplier_name: supplierName || supplier_name || null,
+      arrival_date: arrivalDate || arrival_date || null,
+      is_archived: false,
     };
 
     const { data, error } = await supabaseAdmin
@@ -661,13 +682,13 @@ router.post('/api/pigs/batch', async (req, res) => {
 router.put('/api/pigs/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { 
-      tagNumber, dateOfBirth, breed, weight, 
+    const {
+      tagNumber, dateOfBirth, breed, weight,
       penId, status, parityCount, creator, gender,
       totalBornAlive, stillbornCount, mummyCount, category, isBatch,
       sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date
     } = req.body;
-    
+
     const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
 
     if (!tagNumber || !breed || !penId) {
@@ -676,15 +697,17 @@ router.put('/api/pigs/:id', async (req, res) => {
 
     const checkIsBatch = category === 'Piglet Batch' || isBatch === true;
 
+    let existingBatchRecord = null;
     if (checkIsBatch) {
       const { data: existingBatch } = await supabaseAdmin
         .from('piglet_batches')
-        .select('is_archived')
+        .select('is_archived, total_born_alive, current_count')
         .eq('batch_id', id)
         .maybeSingle();
       if (existingBatch && existingBatch.is_archived) {
         return res.status(400).json({ error: 'Cannot modify details of an archived piglet batch.' });
       }
+      existingBatchRecord = existingBatch;
     } else {
       const { data: existingPig } = await supabaseAdmin
         .from('pigs')
@@ -735,7 +758,12 @@ router.put('/api/pigs/:id', async (req, res) => {
         updatePayload.average_weight = parseFloat(weight);
       }
       if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
-        updatePayload.total_born_alive = parseInt(totalBornAlive) || 0;
+        const newBornAlive = parseInt(totalBornAlive) || 0;
+        updatePayload.total_born_alive = newBornAlive;
+        const prevBornAlive = Number(existingBatchRecord?.total_born_alive ?? newBornAlive);
+        const prevCurrent = Number(existingBatchRecord?.current_count ?? prevBornAlive);
+        const recordedLosses = Math.max(0, prevBornAlive - prevCurrent);
+        updatePayload.current_count = Math.max(0, newBornAlive - recordedLosses);
       }
       if (stillbornCount !== undefined && stillbornCount !== null && stillbornCount !== '') {
         updatePayload.stillborn_count = parseInt(stillbornCount) || 0;
@@ -966,7 +994,7 @@ router.patch('/api/pigs/:id/unarchive', async (req, res) => {
         if (pen) {
           const occ = await getPenOccupancy(pigCheck.pen_id);
           const occupied = occ.total || 0;
-          
+
           const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
 
           if ((penSection === 'S' || penSection === 'SOW') && (occ.hasSow || occ.sowCount >= 1 || occ.pigCount >= 1)) {
@@ -1057,13 +1085,13 @@ router.patch('/api/pigs/:id/unarchive', async (req, res) => {
 router.put('/api/pigs/batch/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { 
+    const {
       batchTag, tagNumber, dateOfBirth, breed, averageWeight, weight,
       penId, sowId, status, creator,
       totalBornAlive, stillbornCount, mummyCount,
       sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date
     } = req.body;
-    
+
     const resolvedTag = batchTag || tagNumber;
     const resolvedWeight = averageWeight ?? weight;
     const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
@@ -1097,7 +1125,7 @@ router.put('/api/pigs/batch/:id', async (req, res) => {
       const occupied = await getPenOccupancy(penId);
       const currentOccupied = typeof occupied === 'number' ? occupied : occupied.total;
       const maxCap = pen.max_capacity ?? 20;
-      
+
       const isSamePen = existingBatch && String(existingBatch.pen_id) === String(penId);
       const currentBatchCountInPen = isSamePen ? (existingBatch.current_count || 0) : 0;
       const effectiveOccupied = currentOccupied - currentBatchCountInPen;
