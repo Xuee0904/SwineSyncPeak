@@ -8,7 +8,7 @@ import { supabase } from "../../supabaseClient";
 import { getContainerMeta, fromSubUnitQty, toSubUnitQty, getShortUnit } from "../Inventory/inventoryUtils";
 import { isVaccineItem } from "../../pages/GrowthProgramManagement";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 // Quick interval shortcuts for boosters (calculated from administered date)
 const BOOSTER_INTERVALS = [

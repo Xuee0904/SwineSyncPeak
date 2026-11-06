@@ -4,7 +4,7 @@ import { X, ArrowRightLeft, Loader2, Search, CheckSquare, Square, AlertTriangle,
 import toast from "../../utils/toast";
 import useModalAnimation from "../../hooks/useModalAnimation";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 export default function SwineTransferModal({ isOpen, onClose, pens = [], onSuccess, user }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } = useModalAnimation(isOpen, onClose);

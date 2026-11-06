@@ -7,7 +7,7 @@ import {
 import useModalAnimation from '../../hooks/useModalAnimation';
 import useSmoothStepTransition from '../../hooks/useSmoothStepTransition';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const GESTATION_DAYS = 114;
 
 const METHODS = [

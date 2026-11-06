@@ -16,7 +16,7 @@ import AddHealthLogModal from '../HealthManagement/AddHealthLogModal';
 import VaccinationFormModal from '../HealthManagement/VaccinationFormModal';
 import { exportSwineProfile } from '../../utils/exportUtils';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
 const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Quarantine'];
 

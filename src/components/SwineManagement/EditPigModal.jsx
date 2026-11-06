@@ -4,7 +4,7 @@ import { X, Tag, Calendar, Weight, Home, Activity, Ruler, Loader2, AlertCircle, 
 import useModalAnimation from '../../hooks/useModalAnimation';
 import toast from '../../utils/toast';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
 const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Quarantine'];
 
@@ -197,8 +197,8 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
   const currentGender = (pigData?.gender && pigData.gender.toLowerCase().startsWith('f')) || pigData?.type?.toLowerCase() === 'sow' || pigData?.category?.toLowerCase() === 'sow'
     ? 'Female'
     : (pigData?.gender && pigData.gender.toLowerCase().startsWith('m')) || pigData?.type?.toLowerCase() === 'boar' || pigData?.category?.toLowerCase() === 'boar'
-    ? 'Male'
-    : (pigData?.gender || '');
+      ? 'Male'
+      : (pigData?.gender || '');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -285,83 +285,202 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
   return isBatch ? (
     <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
       <div className="flex-1 min-h-0 overflow-y-auto p-8 pt-6 space-y-5 text-left">
-      {isArchived && (
-        <div className="p-3.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 font-medium">
-          <AlertCircle size={16} className="text-amber-600 shrink-0" />
-          <span>This record is archived and cannot be modified unless restored from archive.</span>
-        </div>
-      )}
-
-      <fieldset disabled={isArchived} className="space-y-5">
-        {submitError && (
-          <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
-            <AlertCircle size={14} className="text-rose-500" />
-            <span>{submitError}</span>
+        {isArchived && (
+          <div className="p-3.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 font-medium">
+            <AlertCircle size={16} className="text-amber-600 shrink-0" />
+            <span>This record is archived and cannot be modified unless restored from archive.</span>
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Batch Tag ID" error={errors.tagNumber} icon={<Tag />}>
-            <input type="text" value={form.tagNumber ?? ''} onChange={handleChange('tagNumber')} className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
-          </Field>
-          <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
-            <input type="date" min={minDobStr} max={todayStr} value={form.dateOfBirth ?? ''} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
-          </Field>
-        </div>
+        <fieldset disabled={isArchived} className="space-y-5">
+          {submitError && (
+            <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+              <AlertCircle size={14} className="text-rose-500" />
+              <span>{submitError}</span>
+            </div>
+          )}
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="relative" ref={breedWrapRef}>
-            <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Batch Tag ID" error={errors.tagNumber} icon={<Tag />}>
+              <input type="text" value={form.tagNumber ?? ''} onChange={handleChange('tagNumber')} className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
+            </Field>
+            <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
+              <input type="date" min={minDobStr} max={todayStr} value={form.dateOfBirth ?? ''} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="relative" ref={breedWrapRef}>
+              <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
+                <input
+                  type="text"
+                  value={form.breed ?? ''}
+                  onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
+                  onFocus={() => setBreedOpen(true)}
+                  className={`${inputBase} ${errors.breed ? inputErr : inputOk}`}
+                  autoComplete="off"
+                />
+              </Field>
+              {breedOpen && !isLoadingData && (
+                <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                  {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
+                    <li key={b.breed_id} onClick={() => { setForm(p => ({ ...p, breed: b.name })); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <Field label="Average Weight (kg)" error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
+              <input type="number" step="0.1" min="0" max="500" value={form.weight ?? ''} onChange={handleChange('weight')} className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Pen Code" error={errors.penId} icon={<Home />}>
+              <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
+                <option value="">{availablePensForBatch.length === 0 ? 'No available pens' : 'Select Pen'}</option>
+                {availablePensForBatch.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Status" error={errors.status} icon={<Activity />}>
+              <select value={form.status ?? 'Suckling'} onChange={handleChange('status')} className={`${inputBase} ${errors.status ? inputErr : inputOk} appearance-none`}>
+                {BATCH_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </Field>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 space-y-4">
+            <Field label="Initial Head Count" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet' : undefined)} icon={<Baby />}>
               <input
-                type="text"
-                value={form.breed ?? ''}
-                onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
-                onFocus={() => setBreedOpen(true)}
-                className={`${inputBase} ${errors.breed ? inputErr : inputOk}`}
-                autoComplete="off"
+                type="number"
+                min="1"
+                value={form.totalBornAlive ?? ''}
+                onChange={handleChange('totalBornAlive')}
+                className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`}
               />
             </Field>
-            {breedOpen && !isLoadingData && (
-              <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
-                  <li key={b.breed_id} onClick={() => { setForm(p => ({...p, breed: b.name})); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
+
+            {/* Source Origin */}
+            <div className="pt-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
+              <div className="grid grid-cols-3 gap-2.5">
+                {SOURCE_OPTIONS.map(opt => (
+                  <label key={opt.value} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 text-slate-900 shadow-xs' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                    <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
+                    {opt.label}
+                  </label>
                 ))}
-              </ul>
-            )}
+              </div>
+            </div>
+
+            <div
+              className={`grid transition-all duration-300 ease-in-out ${form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
+                  ? 'grid-rows-[1fr] opacity-100 pt-3'
+                  : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
+                }`}
+            >
+              <div className="overflow-hidden">
+                <div className="grid grid-cols-2 gap-4 pb-1">
+                  <Field label="Supplier / Breeder Name" icon={<Users />}>
+                    <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
+                  </Field>
+                  <Field label="Arrival Date" icon={<Calendar />}>
+                    <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} className={`${inputBase} ${inputOk}`} />
+                  </Field>
+                </div>
+              </div>
+            </div>
           </div>
-          <Field label="Average Weight (kg)" error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
-            <input type="number" step="0.1" min="0" max="500" value={form.weight ?? ''} onChange={handleChange('weight')} className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`} />
-          </Field>
-        </div>
+        </fieldset>
+      </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Pen Code" error={errors.penId} icon={<Home />}>
-            <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
-              <option value="">{availablePensForBatch.length === 0 ? 'No available pens' : 'Select Pen'}</option>
-              {availablePensForBatch.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Status" error={errors.status} icon={<Activity />}>
-            <select value={form.status ?? 'Suckling'} onChange={handleChange('status')} className={`${inputBase} ${errors.status ? inputErr : inputOk} appearance-none`}>
-              {BATCH_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
-        </div>
+      <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-3 shrink-0">
+        <button type="button" onClick={() => onCancel?.()} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
+          Cancel
+        </button>
+        <button type="submit" disabled={isSaving || isArchived} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+          {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'Update Batch Record'}
+        </button>
+      </div>
+    </form>
+  ) : (
+    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto p-8 pt-6 space-y-4 text-left">
+        {isArchived && (
+          <div className="p-3.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 font-medium">
+            <AlertCircle size={16} className="text-amber-600 shrink-0" />
+            <span>This record is archived and cannot be modified unless restored from archive.</span>
+          </div>
+        )}
 
-        <div className="pt-2 border-t border-slate-100 space-y-4">
-          <Field label="Initial Head Count" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet' : undefined)} icon={<Baby />}>
-            <input
-              type="number"
-              min="1"
-              value={form.totalBornAlive ?? ''}
-              onChange={handleChange('totalBornAlive')}
-              className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`}
-            />
-          </Field>
+        <fieldset disabled={isArchived} className="space-y-4">
+          {submitError && (
+            <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+              <AlertCircle size={14} className="text-rose-500" />
+              <span>{submitError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Tag Number" error={errors.tagNumber} icon={<Tag />}>
+              <input type="text" value={form.tagNumber ?? ''} onChange={handleChange('tagNumber')} className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
+            </Field>
+            <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
+              <input type="date" value={form.dateOfBirth ?? ''} onChange={handleChange('dateOfBirth')} min={minDobStr} max={todayStr} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="relative" ref={breedWrapRef}>
+              <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
+                <input
+                  type="text"
+                  value={form.breed ?? ''}
+                  onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
+                  onFocus={() => setBreedOpen(true)}
+                  className={`${inputBase} ${errors.breed ? inputErr : inputOk}`}
+                  autoComplete="off"
+                />
+              </Field>
+              {breedOpen && !isLoadingData && (
+                <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                  {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
+                    <li key={b.breed_id} onClick={() => { setForm(p => ({ ...p, breed: b.name })); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <Field label="Weight (kg)" error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
+              <input type="number" step="0.1" min="0" max="500" value={form.weight ?? ''} onChange={handleChange('weight')} className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Pen Code" error={errors.penId} icon={<Home />}>
+              <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
+                <option value="">{availablePensForPig.length === 0 ? 'No available pens' : 'Select Pen'}</option>
+                {availablePensForPig.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Status" icon={<Activity />}>
+              <select value={form.status ?? 'Healthy'} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
+                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </Field>
+          </div>
+
+          {pigData?.category === 'Sow' && (
+            <Field label="Parity Count" icon={<Ruler />}>
+              <input type="number" value={form.parityCount ?? ''} onChange={handleChange('parityCount')} className={`${inputBase} ${inputOk}`} />
+            </Field>
+          )}
 
           {/* Source Origin */}
           <div className="pt-2">
@@ -377,11 +496,10 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
           </div>
 
           <div
-            className={`grid transition-all duration-300 ease-in-out ${
-              form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
+            className={`grid transition-all duration-300 ease-in-out ${form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
                 ? 'grid-rows-[1fr] opacity-100 pt-3'
                 : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
-            }`}
+              }`}
           >
             <div className="overflow-hidden">
               <div className="grid grid-cols-2 gap-4 pb-1">
@@ -394,128 +512,8 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
               </div>
             </div>
           </div>
-        </div>
-      </fieldset>
-    </div>
-
-      <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-3 shrink-0">
-        <button type="button" onClick={() => onCancel?.()} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
-          Cancel
-        </button>
-        <button type="submit" disabled={isSaving || isArchived} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-          {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'Update Batch Record'}
-        </button>
+        </fieldset>
       </div>
-    </form>
-  ) : (
-    <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-      <div className="flex-1 min-h-0 overflow-y-auto p-8 pt-6 space-y-4 text-left">
-      {isArchived && (
-        <div className="p-3.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 font-medium">
-          <AlertCircle size={16} className="text-amber-600 shrink-0" />
-          <span>This record is archived and cannot be modified unless restored from archive.</span>
-        </div>
-      )}
-
-      <fieldset disabled={isArchived} className="space-y-4">
-        {submitError && (
-          <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
-            <AlertCircle size={14} className="text-rose-500" />
-            <span>{submitError}</span>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Tag Number" error={errors.tagNumber} icon={<Tag />}>
-            <input type="text" value={form.tagNumber ?? ''} onChange={handleChange('tagNumber')} className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
-          </Field>
-          <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
-            <input type="date" value={form.dateOfBirth ?? ''} onChange={handleChange('dateOfBirth')} min={minDobStr} max={todayStr} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="relative" ref={breedWrapRef}>
-            <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
-              <input
-                type="text"
-                value={form.breed ?? ''}
-                onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
-                onFocus={() => setBreedOpen(true)}
-                className={`${inputBase} ${errors.breed ? inputErr : inputOk}`}
-                autoComplete="off"
-              />
-            </Field>
-            {breedOpen && !isLoadingData && (
-              <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
-                  <li key={b.breed_id} onClick={() => { setForm(p => ({...p, breed: b.name})); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <Field label="Weight (kg)" error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
-            <input type="number" step="0.1" min="0" max="500" value={form.weight ?? ''} onChange={handleChange('weight')} className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`} />
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Pen Code" error={errors.penId} icon={<Home />}>
-            <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
-              <option value="">{availablePensForPig.length === 0 ? 'No available pens' : 'Select Pen'}</option>
-              {availablePensForPig.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name}{typeof p.remaining === 'number' ? ` (${p.remaining} slots)` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Status" icon={<Activity />}>
-            <select value={form.status ?? 'Healthy'} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
-              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
-        </div>
-
-        {pigData?.category === 'Sow' && (
-          <Field label="Parity Count" icon={<Ruler />}>
-            <input type="number" value={form.parityCount ?? ''} onChange={handleChange('parityCount')} className={`${inputBase} ${inputOk}`} />
-          </Field>
-        )}
-
-        {/* Source Origin */}
-        <div className="pt-2">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
-          <div className="grid grid-cols-3 gap-2.5">
-            {SOURCE_OPTIONS.map(opt => (
-              <label key={opt.value} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 text-slate-900 shadow-xs' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
-                <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
-                {opt.label}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div
-          className={`grid transition-all duration-300 ease-in-out ${
-            form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
-              ? 'grid-rows-[1fr] opacity-100 pt-3'
-              : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
-          }`}
-        >
-          <div className="overflow-hidden">
-            <div className="grid grid-cols-2 gap-4 pb-1">
-              <Field label="Supplier / Breeder Name" icon={<Users />}>
-                <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
-              </Field>
-              <Field label="Arrival Date" icon={<Calendar />}>
-                <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} className={`${inputBase} ${inputOk}`} />
-              </Field>
-            </div>
-          </div>
-        </div>
-      </fieldset>
-    </div>
 
       <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-3 shrink-0">
         <button type="button" onClick={() => onCancel?.()} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">

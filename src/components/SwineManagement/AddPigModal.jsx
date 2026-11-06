@@ -11,7 +11,7 @@ import { formatTimestamp } from '../../utils/formatTimestamp';
 import AddPigletBatchModal, { AddPigletBatchForm } from './AddPigletBatchModal';
 import { supabase } from '../../supabaseClient';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
 

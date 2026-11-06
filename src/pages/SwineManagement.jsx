@@ -14,7 +14,7 @@ import toast from '../utils/toast';
 import StatusBadge from '../components/StatusBadge.jsx';
 import ExportDropdown from '../components/common/ExportDropdown.jsx';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const PAGE_SIZE = 5;
 
 

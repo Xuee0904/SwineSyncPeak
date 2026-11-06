@@ -4,7 +4,7 @@ import { X, AlertTriangle, Loader2, Lock, Unlock, Check, PiggyBank, Layers, Arch
 import StatusBadge from '../StatusBadge';
 import useModalAnimation from '../../hooks/useModalAnimation';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConfirmSuccess, loggedInUser }) {
   const [loading, setLoading] = useState(false);

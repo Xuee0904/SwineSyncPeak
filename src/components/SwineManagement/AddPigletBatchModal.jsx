@@ -13,7 +13,7 @@ import { useAutoAnimate } from '@formkit/auto-animate/react';
 import DraftBanner from '../DraftBanner';
 import toast from '../../utils/toast';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 const SOURCE_OPTIONS = [
   { value: 'born_in_farm', label: 'Born in Farm', hint: 'Internal breeding cycle' },

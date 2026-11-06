@@ -11,7 +11,7 @@ import {
   ChevronLeft, ChevronRight, ShieldAlert, ShieldCheck, UserCheck, Shield, Clock, CheckCircle2, Archive, Eye
 } from 'lucide-react';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 const LOGS_PER_PAGE = 5;
 const STAFF_PER_PAGE = 5;

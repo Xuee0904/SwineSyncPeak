@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Baby, Loader2, CheckCircle2 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const TRANSITION_MS = 320;
 
 export default function LogFarrowingModal({ isOpen, onClose, onSaved, onRegisterPiglets, loggedInUser, initialData }) {
