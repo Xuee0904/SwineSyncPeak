@@ -1,5 +1,6 @@
 import express from 'express';
 import { supabase, supabaseAdmin } from '../supabaseClient.js';
+import { deductInventoryStock } from '../helpers/inventoryDeduction.js';
 
 const router = express.Router();
 
@@ -45,7 +46,7 @@ router.get('/api/health-logs', async (req, res) => {
   try {
     const { pig_id, batch_id, archived } = req.query;
 
-    let dbQuery = supabase.from('health_logs').select('*, pigs(pig_tag), piglet_batches(batch_tag)');
+    let dbQuery = supabase.from('health_logs').select('*, pigs(pig_tag), piglet_batches(batch_tag), inventory_items(item_id, item_name, unit_of_measure, category)');
     if (pig_id) dbQuery = dbQuery.eq('pig_id', pig_id);
     if (batch_id) dbQuery = dbQuery.eq('batch_id', batch_id);
 
@@ -98,7 +99,22 @@ const syncSwineStatus = async (healthStatus, pig_id, batch_id) => {
 // POST /api/health-logs
 router.post('/api/health-logs', async (req, res) => {
   try {
-    const { pig_id, batch_id, recorded_by, examined_by, symptoms, diagnosis, treatment, medication_name, dosage, status, notes } = req.body;
+    const {
+      pig_id,
+      batch_id,
+      log_date,
+      recorded_by,
+      examined_by,
+      symptoms,
+      diagnosis,
+      treatment,
+      medication_name,
+      dosage,
+      status,
+      notes,
+      item_id,
+      quantity_deducted
+    } = req.body;
 
     if (!pig_id && !batch_id) {
       return res.status(400).json({ error: 'Must provide pig_id or batch_id.' });
@@ -107,12 +123,40 @@ router.post('/api/health-logs', async (req, res) => {
       return res.status(400).json({ error: 'recorded_by is required.' });
     }
 
+    const deductionQty = quantity_deducted ? parseFloat(quantity_deducted) : null;
+
     const { data, error } = await supabaseAdmin
       .from('health_logs')
-      .insert([{ pig_id, batch_id, recorded_by, examined_by: examined_by || null, symptoms, diagnosis, treatment, medication_name, dosage, status, notes }])
+      .insert([{
+        pig_id,
+        batch_id,
+        log_date: log_date || new Date().toISOString(),
+        recorded_by,
+        examined_by: examined_by || null,
+        symptoms,
+        diagnosis,
+        treatment,
+        medication_name,
+        dosage,
+        status,
+        notes,
+        item_id: item_id || null,
+        quantity_deducted: deductionQty && deductionQty > 0 ? deductionQty : null
+      }])
       .select();
 
     if (error) throw error;
+
+    // Deduct inventory stock if an item is linked and quantity > 0
+    if (item_id && deductionQty && deductionQty > 0) {
+      await deductInventoryStock({
+        db: supabaseAdmin,
+        itemId: item_id,
+        quantity: deductionQty,
+        notes: `Health treatment: ${treatment || medication_name || 'Medication'}${pig_id ? ' (Individual Pig)' : ' (Batch)'} • By: ${recorded_by}`,
+        performedBy: recorded_by
+      }).catch(err => console.warn('[Health Log] Stock deduction warning:', err.message));
+    }
 
     await logActivity({
       creator: recorded_by,
@@ -200,7 +244,7 @@ router.get('/api/vaccination-records', async (req, res) => {
   try {
     const { pig_id, batch_id, archived } = req.query;
 
-    let dbQuery = supabase.from('vaccination_records').select('*, pigs(pig_tag), piglet_batches(batch_tag)');
+    let dbQuery = supabase.from('vaccination_records').select('*, pigs(pig_tag), piglet_batches(batch_tag), inventory_items(item_id, item_name, unit_of_measure, category)');
     if (pig_id) dbQuery = dbQuery.eq('pig_id', pig_id);
     if (batch_id) dbQuery = dbQuery.eq('batch_id', batch_id);
 
@@ -222,7 +266,19 @@ router.get('/api/vaccination-records', async (req, res) => {
 // POST /api/vaccination-records
 router.post('/api/vaccination-records', async (req, res) => {
   try {
-    const { pig_id, batch_id, vaccine_name, administered_date, dosage, lot_number, booster_due_date, administered_by, recorded_by } = req.body;
+    const {
+      pig_id,
+      batch_id,
+      vaccine_name,
+      administered_date,
+      dosage,
+      lot_number,
+      booster_due_date,
+      administered_by,
+      recorded_by,
+      item_id,
+      quantity_deducted
+    } = req.body;
 
     if (!pig_id && !batch_id) {
       return res.status(400).json({ error: 'Must provide pig_id or batch_id.' });
@@ -250,12 +306,37 @@ router.post('/api/vaccination-records', async (req, res) => {
       return res.status(400).json({ error: "Vaccination date cannot precede the swine's birthdate." });
     }
 
+    const deductionQty = quantity_deducted ? parseFloat(quantity_deducted) : null;
+
     const { data, error } = await supabaseAdmin
       .from('vaccination_records')
-      .insert([{ pig_id, batch_id, vaccine_name, administered_date, dosage, lot_number, booster_due_date, administered_by, recorded_by }])
+      .insert([{
+        pig_id,
+        batch_id,
+        vaccine_name,
+        administered_date,
+        dosage,
+        lot_number,
+        booster_due_date,
+        administered_by,
+        recorded_by,
+        item_id: item_id || null,
+        quantity_deducted: deductionQty && deductionQty > 0 ? deductionQty : null
+      }])
       .select();
 
     if (error) throw error;
+
+    // Deduct inventory stock if an item is linked and quantity > 0
+    if (item_id && deductionQty && deductionQty > 0) {
+      await deductInventoryStock({
+        db: supabaseAdmin,
+        itemId: item_id,
+        quantity: deductionQty,
+        notes: `Vaccination: ${vaccine_name}${pig_id ? ' (Individual Pig)' : ' (Batch)'} • By: ${administered_by || recorded_by}`,
+        performedBy: recorded_by || administered_by
+      }).catch(err => console.warn('[Vaccination] Stock deduction warning:', err.message));
+    }
 
     await logActivity({
       creator: recorded_by || administered_by,
@@ -450,7 +531,9 @@ router.patch('/api/mortality-logs/:id/archive', async (req, res) => {
 router.get('/api/growth-tasks', async (req, res) => {
   try {
     const { batch_id, status } = req.query;
-    let dbQuery = supabaseAdmin.from('growth_tasks').select('*, piglet_batches(batch_tag), growth_programs(name)');
+    let dbQuery = supabaseAdmin
+      .from('growth_tasks')
+      .select('*, piglet_batches(batch_tag, current_count), growth_programs(name), inventory_items(item_id, item_name, unit_of_measure, category, current_stock_level)');
     
     if (batch_id) dbQuery = dbQuery.eq('batch_id', batch_id);
     if (status) dbQuery = dbQuery.eq('status', status);
@@ -470,7 +553,7 @@ router.get('/api/growth-tasks', async (req, res) => {
 router.patch('/api/growth-tasks/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, linked_health_id, linked_vaccination_id } = req.body;
+    const { status, linked_health_id, linked_vaccination_id, performed_by } = req.body;
 
     const { data, error } = await supabaseAdmin
       .from('growth_tasks')
@@ -486,7 +569,21 @@ router.patch('/api/growth-tasks/:id', async (req, res) => {
     if (error) throw error;
     if (!data || data.length === 0) return res.status(404).json({ error: 'Task not found.' });
 
-    res.json({ data: data[0] });
+    const task = data[0];
+
+    // When completing a task, also record it in batch_activity_logs so the
+    // Growth Program timeline stays in sync (marks the milestone as "done").
+    if (status === 'completed' && task.batch_id) {
+      await supabaseAdmin.from('batch_activity_logs').insert({
+        batch_id: task.batch_id,
+        guideline_id: task.guideline_id || null,
+        activity_type: task.activity_type,
+        amount_given: 0,
+        performed_by: performed_by || 'Health Management',
+      }).then(() => {}).catch(err => console.warn('[Growth Task] batch_activity_logs sync warning:', err.message));
+    }
+
+    res.json({ data: task });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

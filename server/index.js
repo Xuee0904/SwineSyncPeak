@@ -39,6 +39,15 @@ app.use(cors({
 
 app.use(express.json());
 
+// Health check endpoints
+app.get('/', (req, res) => {
+  res.status(200).send('SwineSync API is operational');
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // Mount routers
 app.use(adminRouter);
 app.use(pensRouter);

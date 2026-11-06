@@ -10,26 +10,21 @@ import GrowthAnalytics from './GrowthAnalytics';
 import HealthManagement from './HealthManagement';
 import MedicationTreatmentLogs from './MedicationTreatmentLogs';
 import MortalityRecord from './MortalityRecord';
+import InventoryManagement from './InventoryManagement';
+import { supabase } from '../supabaseClient';
+import {
+  computeInventoryMetrics,
+  getStockStatus,
+  getStockPercent,
+  hasSubUnit,
+  getShortUnit,
+  formatSubUnitEquivalent,
+} from '../components/Inventory/inventoryUtils';
 import {
   Sparkles, Database, ArrowUpRight, ChevronRight,
   AlertTriangle, CheckSquare, Square,
   Bell, ChevronLeft, Settings, Menu,
 } from 'lucide-react';
-
-const LOW_THRESHOLD = 15;
-const INVENTORY = [
-  { name: 'Supplements',      percent: 8,  dailyUsage: 0.8, color: '#ef4444' },
-  { name: 'High Protein Mix', percent: 42, dailyUsage: 3.5, color: '#f59e0b' },
-  { name: 'Grower Feed',      percent: 85, dailyUsage: 4.2, color: '#16a34a' },
-  { name: 'Amoxicillin',      percent: 30, dailyUsage: 2.8, color: '#f59e0b' },
-  { name: 'Iron Injection',   percent: 60, dailyUsage: 1.5, color: '#16a34a' },
-];
-
-function daysUntilLow(percent, dailyUsage) {
-  if (percent <= LOW_THRESHOLD) return null;
-  const days = Math.floor((percent - LOW_THRESHOLD) / dailyUsage);
-  return days <= 7 ? days : null;
-}
 
 const HEALTH_ALERTS = [
   { tag: 'Sow #402',   pen: 'Pen A2', status: 'High Fever',        severity: 'high'   },
@@ -103,6 +98,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   const [calMonth,    setCalMonth]   = useState({ year: 2026, month: 9 });
   const [mobileNav,   setMobileNav]  = useState(false);
   const [pigStats,    setPigStats]   = useState({ total: 0, healthy: 0, sick: 0, quarantine: 0 });
+  const [dashboardInventory, setDashboardInventory] = useState([]);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
 
   useEffect(() => {
     fetch('/api/pigs/stats')
@@ -118,6 +115,80 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
       })
       .catch(() => {});
   }, []);
+
+  // Load live inventory items & 14-day burn-rate forecasts whenever Dashboard tab is viewed
+  useEffect(() => {
+    if (activeTab !== 'dashboard') return;
+    let cancelled = false;
+
+    const loadDashboardInventory = async () => {
+      setInventoryLoading(true);
+      try {
+        const [itemsRes, txRes] = await Promise.all([
+          supabase
+            .from('inventory_items')
+            .select('*')
+            .eq('is_archived', false)
+            .order('last_updated_at', { ascending: false }),
+          supabase
+            .from('inventory_transactions')
+            .select('*')
+            .order('created_at', { ascending: false }),
+        ]);
+
+        if (cancelled) return;
+        const activeItems = itemsRes.data || [];
+        const txs = txRes.data || [];
+        const metricsMap = computeInventoryMetrics(activeItems, txs);
+
+        const priorityOrder = {
+          out_of_stock: 0,
+          critical: 1,
+          low_stock: 2,
+          at_risk: 3,
+          healthy: 4,
+        };
+
+        const enriched = activeItems
+          .map(item => {
+            const m = metricsMap[item.item_id] || {};
+            const percent = getStockPercent(item.current_stock_level, item.ideal_stock_level);
+            const status = getStockStatus(item.current_stock_level, item.low_stock_threshold, m.daysUntilLow);
+            return {
+              id: item.item_id,
+              name: item.item_name,
+              category: item.category || 'General',
+              current: item.current_stock_level,
+              ideal: item.ideal_stock_level,
+              threshold: item.low_stock_threshold,
+              unit: item.unit_of_measure,
+              percent,
+              status,
+              dailyBurnRate: m.dailyBurnRate || 0,
+              daysUntilLow: m.daysUntilLow,
+              daysUntilEmpty: m.daysUntilEmpty,
+              color: status.barColor,
+            };
+          })
+          .sort((a, b) => {
+            if (priorityOrder[a.status.key] !== priorityOrder[b.status.key]) {
+              return priorityOrder[a.status.key] - priorityOrder[b.status.key];
+            }
+            return a.percent - b.percent;
+          })
+          .slice(0, 5);
+
+        setDashboardInventory(enriched);
+      } catch {
+        // Keep previous state on network hiccup
+      } finally {
+        if (!cancelled) setInventoryLoading(false);
+      }
+    };
+
+    loadDashboardInventory();
+    return () => { cancelled = true; };
+  }, [activeTab]);
 
   const firstDay    = new Date(calMonth.year, calMonth.month, 1).getDay();
   const daysInMonth = new Date(calMonth.year, calMonth.month + 1, 0).getDate();
@@ -266,35 +337,93 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                 </SectionCard>
 
                 <SectionCard title="Inventory" actionLabel="Manage Inventory" action={() => setActiveTab('inventory')} id="inventory-card">
-                  <div className="space-y-4">
-                    {INVENTORY.map((item, i) => {
-                      const isLow = item.percent <= LOW_THRESHOLD;
-                      const days  = daysUntilLow(item.percent, item.dailyUsage);
-                      return (
-                        <div key={i} className="space-y-1.5">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <span className="text-xs font-semibold text-slate-700">{item.name}</span>
-                            <div className="flex items-center gap-2">
-                              {isLow && <Pill color="red">Low Stock</Pill>}
-                              <span className="text-xs font-bold text-slate-500">{item.percent}%</span>
-                            </div>
+                  {inventoryLoading ? (
+                    <div className="space-y-4">
+                      {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="space-y-2 animate-pulse">
+                          <div className="flex justify-between">
+                            <div className="h-3.5 w-32 bg-slate-100 rounded" />
+                            <div className="h-3.5 w-12 bg-slate-100 rounded" />
                           </div>
-                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all" style={{ width: `${item.percent}%`, backgroundColor: item.color }} />
-                          </div>
-                          {!isLow && days !== null && (
-                            <p className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-600">
-                              <AlertTriangle className="w-3 h-3 shrink-0" />
-                              <span>
-                                <strong>{item.name}</strong> will hit low stock in{' '}
-                                <strong>{days} {days === 1 ? 'day' : 'days'}</strong> — consider restocking soon.
-                              </span>
-                            </p>
-                          )}
+                          <div className="h-2 w-full bg-slate-100 rounded-full" />
                         </div>
-                      );
-                    })}
-                  </div>
+                      ))}
+                    </div>
+                  ) : dashboardInventory.length === 0 ? (
+                    <div className="text-center py-6 space-y-2">
+                      <p className="text-xs text-slate-400">No active inventory supplies registered yet.</p>
+                      <button
+                        onClick={() => setActiveTab('inventory')}
+                        className="text-xs font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                      >
+                        + Add First Supply
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {dashboardInventory.map((item) => {
+                        const isLowOrCritical =
+                          item.status.key === 'out_of_stock' ||
+                          item.status.key === 'critical' ||
+                          item.status.key === 'low_stock';
+                        const isAtRisk =
+                          item.status.key === 'at_risk' &&
+                          item.daysUntilLow !== null &&
+                          item.daysUntilLow <= 7;
+
+                        return (
+                          <div key={item.id} className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-xs font-semibold text-slate-700 truncate">{item.name}</span>
+                                <span className="text-[10px] font-medium text-slate-400">
+                                  ({item.current}/{item.ideal} {getShortUnit(item.unit)}
+                                  {hasSubUnit(item.unit) && ` • ${formatSubUnitEquivalent(item.current, item.unit)}`})
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {isLowOrCritical && (
+                                  <Pill color="red">{item.status.label}</Pill>
+                                )}
+                                {isAtRisk && (
+                                  <Pill color="yellow">At Risk</Pill>
+                                )}
+                                <span className="text-xs font-bold text-slate-500">{item.percent}%</span>
+                              </div>
+                            </div>
+                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{ width: `${item.percent}%`, backgroundColor: item.color }}
+                              />
+                            </div>
+                            {isAtRisk && (
+                              <p className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-600">
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                                <span>
+                                  <strong>{item.name}</strong> will hit low stock in{' '}
+                                  <strong>{item.daysUntilLow} {item.daysUntilLow === 1 ? 'day' : 'days'}</strong>
+                                  {item.dailyBurnRate > 0 &&
+                                    ` (~${item.dailyBurnRate} ${getShortUnit(item.unit)}/day${
+                                      hasSubUnit(item.unit) ? ` • ${formatSubUnitEquivalent(item.dailyBurnRate, item.unit)}/day` : ""
+                                    })`} — consider restocking soon.
+                                </span>
+                              </p>
+                            )}
+                            {isLowOrCritical && item.dailyBurnRate > 0 && item.daysUntilEmpty != null && (
+                              <p className="flex items-center gap-1.5 text-[10px] font-semibold text-rose-600">
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                                <span>
+                                  Burning <strong>~{item.dailyBurnRate} {getShortUnit(item.unit)}/day{hasSubUnit(item.unit) ? ` (${formatSubUnitEquivalent(item.dailyBurnRate, item.unit)}/day)` : ""}</strong> — estimated{' '}
+                                  <strong>{item.daysUntilEmpty} {item.daysUntilEmpty === 1 ? 'day' : 'days'}</strong> until empty.
+                                </span>
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </SectionCard>
               </div>
 
@@ -422,7 +551,13 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && activeTab !== 'breeding_logs' && activeTab !== 'growth' && activeTab !== 'growth_analytics' && activeTab !== 'health_management' && activeTab !== 'medication_treatment' && activeTab !== 'mortality_record' && (
+          {activeTab === 'inventory' && (
+            <main>
+              <InventoryManagement loggedInUser={loggedInUser} />
+            </main>
+          )}
+
+          {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && activeTab !== 'breeding_logs' && activeTab !== 'growth' && activeTab !== 'growth_analytics' && activeTab !== 'health_management' && activeTab !== 'medication_treatment' && activeTab !== 'mortality_record' && activeTab !== 'inventory' && (
             <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
               <div className="text-center space-y-4 max-w-xs mx-auto animate-fade-in">
                 <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">

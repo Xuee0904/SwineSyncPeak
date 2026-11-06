@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Archive, ChevronDown, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, Archive, ChevronDown, Loader2, CheckCircle2, AlertCircle, Package } from "lucide-react";
 import { toast } from "../../utils/toast";
 import useModalAnimation from "../../hooks/useModalAnimation";
 import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
+import { supabase } from "../../supabaseClient";
+import { getContainerMeta, fromSubUnitQty, toSubUnitQty, getShortUnit } from "../Inventory/inventoryUtils";
+import { isVaccineItem } from "../../pages/GrowthProgramManagement";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
 
@@ -12,17 +15,6 @@ const STATUS_OPTIONS = [
   { value: "monitoring", label: "Monitoring" },
   { value: "resolved", label: "Resolved" },
   { value: "healthy", label: "Healthy / Routine" },
-];
-
-const MEDICATION_OPTIONS = [
-  "Tylosin",
-  "Meloxicam",
-  "Enrofloxacin",
-  "Penicillin",
-  "Flunixin",
-  "Amoxicillin",
-  "Oxytetracycline",
-  "Lincomycin",
 ];
 
 // Helper to format Date object into YYYY-MM-DDTHH:MM format for datetime-local input
@@ -47,6 +39,9 @@ const EMPTY_FORM = {
   treatment: "",
   medication_name: "",
   medication_name_custom: "",
+  item_id: "",
+  deduct_stock: true,
+  dose_per_head: "",
   dosage: "",
   status: "sick",
   notes: "",
@@ -70,21 +65,40 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
   // Dropdown data
   const [pigs, setPigs] = useState([]);
   const [batches, setBatches] = useState([]);
+  const [inventorySupplies, setInventorySupplies] = useState([]);
   const [loadingDropdowns, setLoadingDropdowns] = useState(false);
+  const [cachedInventoryItem, setCachedInventoryItem] = useState(null);
 
-  // Load pigs & batches when modal opens
+  const selectedInventoryItem = inventorySupplies.find(i => i.item_id === form.item_id);
+
+  useEffect(() => {
+    if (selectedInventoryItem) {
+      setCachedInventoryItem(selectedInventoryItem);
+    }
+  }, [selectedInventoryItem]);
+
+  // Load pigs, batches & inventory supplies when modal opens
   useEffect(() => {
     if (!open) return;
     const fetchOptions = async () => {
       setLoadingDropdowns(true);
       try {
-        const res = await fetch(`${API_BASE}/api/pigs?archived=false&limit=1000`);
-        const json = await res.json();
-        const all = json.data || [];
+        const [pigsRes, invRes] = await Promise.all([
+          fetch(`${API_BASE}/api/pigs?archived=false&limit=1000`).then(r => r.json()),
+          supabase
+            .from("inventory_items")
+            .select("item_id, item_name, unit_of_measure, category, current_stock_level")
+            .eq("is_archived", false)
+            .in("category", ["Medical", "Medication", "Supplements"])
+            .order("item_name")
+        ]);
+
+        const all = pigsRes.data || [];
         setPigs(all.filter((x) => x.category !== "Piglet Batch"));
         setBatches(all.filter((x) => x.category === "Piglet Batch"));
+        if (invRes.data) setInventorySupplies(invRes.data.filter(i => !isVaccineItem(i)));
       } catch {
-        setApiError("Failed to load pigs/batches.");
+        setApiError("Failed to load pigs/batches or inventory supplies.");
       } finally {
         setLoadingDropdowns(false);
       }
@@ -92,11 +106,14 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
     fetchOptions();
   }, [open]);
 
-  // Populate form when editing
+  // Populate form when editing or prefilling
   useEffect(() => {
     const userName = currentUser?.name || currentUser?.email?.split('@')[0] || "";
     if (editRecord) {
-      const isCustomMed = editRecord._raw.medication_name && !MEDICATION_OPTIONS.includes(editRecord._raw.medication_name);
+      const matchInv = inventorySupplies.find(
+        (i) => i.item_id === editRecord._raw.item_id || i.item_name.toLowerCase() === (editRecord._raw.medication_name || "").toLowerCase()
+      );
+      const isCustomMed = !matchInv && !!editRecord._raw.medication_name;
       
       setForm({
         targetType: editRecord._raw.pig_id ? "pig" : "batch",
@@ -108,13 +125,24 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         symptoms: editRecord._raw.symptoms || "",
         diagnosis: editRecord._raw.diagnosis || "",
         treatment: editRecord._raw.treatment || "",
-        medication_name: isCustomMed ? "Other" : (editRecord._raw.medication_name || ""),
+        medication_name: matchInv ? matchInv.item_name : (isCustomMed ? "Other" : ""),
         medication_name_custom: isCustomMed ? editRecord._raw.medication_name : "",
+        item_id: matchInv ? matchInv.item_id : (editRecord._raw.item_id || ""),
+        deduct_stock: false,
+        dose_per_head: "",
         dosage: editRecord._raw.dosage || "",
         status: editRecord._raw.status || "sick",
         notes: editRecord._raw.notes || "",
       });
     } else if (prefillData) {
+      const matchInv = inventorySupplies.find(
+        (i) => (prefillData.item_id && i.item_id === prefillData.item_id) ||
+               (prefillData.medication_name && i.item_name.toLowerCase() === prefillData.medication_name.toLowerCase())
+      );
+      const itemId = prefillData.item_id || prefillData.inventoryItem?.item_id || matchInv?.item_id || "";
+      const medName = matchInv ? matchInv.item_name : (prefillData.medication_name || "");
+      const isCustomMed = !matchInv && !!medName;
+
       setForm({
         ...EMPTY_FORM,
         targetType: prefillData.targetType || "batch",
@@ -122,8 +150,12 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         batch_id: prefillData.targetType === "batch" ? (prefillData.batch_id || prefillData.id || "") : "",
         log_date: prefillData.log_date || formatDateTime(new Date()),
         treatment: prefillData.treatment || "",
-        medication_name: prefillData.medication_name || "",
-        status: prefillData.status || "sick",
+        medication_name: isCustomMed ? "Other" : medName,
+        medication_name_custom: isCustomMed ? medName : "",
+        item_id: itemId,
+        deduct_stock: !!itemId,
+        dose_per_head: "",
+        status: prefillData.status || "healthy",
         recorded_by: userName,
       });
     } else {
@@ -136,13 +168,64 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
 
   if (!shouldRender) return null;
 
+  // Routine Growth Program tasks (Procedure, Supplement, or Medication from a program)
+  // hide clinical fields like Status, Diagnosis, Symptoms and lock status to "healthy".
   const isProcedure = prefillData?.isProcedure;
+  const isRoutineTask = !!(prefillData && (
+    prefillData.isProcedure ||
+    prefillData.activity_type === 'SUPPLEMENT' ||
+    (prefillData.activity_type === 'MEDICATION' && prefillData.isGrowthTask)
+  ));
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((f) => ({ ...f, [name]: value }));
     // Clear the error for this field as user types
     setFieldErrors((prev) => ({ ...prev, [name]: undefined }));
+  };
+
+  const activeInventoryItem = selectedInventoryItem || cachedInventoryItem;
+  const selectedBatch = batches.find(b => String(b.id) === String(form.batch_id));
+  const batchCount = form.targetType === "batch" ? (selectedBatch?.current_count || prefillData?.headCount || 1) : 1;
+  const containerMeta = activeInventoryItem ? getContainerMeta(activeInventoryItem.unit_of_measure) : null;
+  const subUnitLabel = containerMeta?.subUnit || activeInventoryItem?.unit_of_measure || "units";
+  const containerLabel = activeInventoryItem ? getShortUnit(activeInventoryItem.unit_of_measure) : "";
+  const doseNum = parseFloat(form.dose_per_head) || 0;
+  const totalSubQty = Number((doseNum * batchCount).toFixed(2));
+  const containerDeductionQty = containerMeta ? fromSubUnitQty(totalSubQty, containerMeta.size) : totalSubQty;
+  const currentStockNum = Number(activeInventoryItem?.current_stock_level || 0);
+  const stockAfterDeduction = Number((currentStockNum - containerDeductionQty).toFixed(2));
+  const hasSub = !!containerMeta;
+
+  const handleMedicationChange = (e) => {
+    const val = e.target.value;
+    if (val.startsWith("inv:")) {
+      const itemId = val.replace("inv:", "");
+      const inv = inventorySupplies.find(i => i.item_id === itemId);
+      setForm(f => ({
+        ...f,
+        item_id: itemId,
+        medication_name: inv ? inv.item_name : "",
+        medication_name_custom: "",
+        deduct_stock: true
+      }));
+    } else if (val === "Other") {
+      setForm(f => ({
+        ...f,
+        item_id: "",
+        medication_name: "Other",
+        deduct_stock: false
+      }));
+    } else {
+      const matchingInv = inventorySupplies.find(i => i.item_name.toLowerCase() === val.toLowerCase());
+      setForm(f => ({
+        ...f,
+        item_id: matchingInv ? matchingInv.item_id : "",
+        medication_name: val,
+        medication_name_custom: "",
+        deduct_stock: !!matchingInv
+      }));
+    }
   };
 
   const effectiveMedicationName =
@@ -168,6 +251,16 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
     setApiError(null);
     setSaving(true);
     try {
+      // Determine final dosage text
+      let finalDosage = form.dosage;
+      if (!finalDosage && doseNum > 0) {
+        finalDosage = form.targetType === "batch"
+          ? `${doseNum} ${subUnitLabel}/head (${totalSubQty} ${subUnitLabel} total)`
+          : `${doseNum} ${subUnitLabel}`;
+      }
+
+      const willDeduct = form.deduct_stock && selectedInventoryItem && containerDeductionQty > 0;
+
       const payload = {
         pig_id: form.targetType === "pig" ? form.pig_id : null,
         batch_id: form.targetType === "batch" ? form.batch_id : null,
@@ -178,10 +271,12 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         diagnosis: form.diagnosis || null,
         treatment: form.treatment || null,
         medication_name: effectiveMedicationName || null,
-        dosage: form.dosage || null,
+        dosage: finalDosage || null,
         status: form.status,
         notes: form.notes || null,
         performed_by: form.recorded_by,
+        item_id: willDeduct ? selectedInventoryItem.item_id : (form.item_id || null),
+        quantity_deducted: willDeduct ? containerDeductionQty : null,
       };
       
       const url = editRecord
@@ -197,7 +292,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to save");
       
-      onSuccess();
+      onSuccess(json.data);
       setSuccessInfo({
         message: editRecord
           ? "Your changes have been saved. The health log is now up to date."
@@ -398,8 +493,8 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
               )}
             </div>
 
-            {/* Status */}
-            {!isProcedure && (
+            {/* Status — hidden for routine Growth Program tasks */}
+            {!isProcedure && !isRoutineTask && (
               <div className="col-span-2 sm:col-span-1">
                 <label className={labelCls}>Status *</label>
                 <div className="relative">
@@ -425,7 +520,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
             )}
 
             {/* Date Administered */}
-            <div className="col-span-2 sm:col-span-1">
+            <div className={!isProcedure && !isRoutineTask ? "col-span-2 sm:col-span-1" : "col-span-2"}>
               <label className={labelCls}>Log Date & Time *</label>
               <input
                 type="datetime-local"
@@ -441,9 +536,9 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
               )}
             </div>
 
-            {!isProcedure && (
+            {/* Symptoms & Diagnosis — clinical logs only */}
+            {!isProcedure && !isRoutineTask && (
               <>
-                {/* Symptoms & Diagnosis */}
                 <div className="col-span-2">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2 sm:col-span-1">
@@ -477,7 +572,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
             {/* Treatment & Medication */}
             <div className="col-span-2">
               <div className="grid grid-cols-2 gap-4">
-                <div className={`col-span-2 ${isProcedure ? "" : "sm:col-span-1"}`}>
+                <div className={`col-span-2 ${isProcedure || isRoutineTask ? "" : "sm:col-span-1"}`}>
                   <label className={labelCls}>{isProcedure ? "Procedure / Action" : "Treatment / Action"}</label>
                   <textarea
                     rows={2}
@@ -491,19 +586,21 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                 
                 {!isProcedure && (
                   <div className="col-span-2 sm:col-span-1">
-                    <label className={labelCls}>Medication Name</label>
+                    <label className={labelCls}>Medication / Supply</label>
                   <div className="relative">
                     <select
                       name="medication_name"
-                      value={form.medication_name}
-                      onChange={handleChange}
+                      value={form.item_id ? `inv:${form.item_id}` : form.medication_name}
+                      onChange={handleMedicationChange}
                       className={selectCls}
                     >
                       <option value="">— No Medication —</option>
-                      {MEDICATION_OPTIONS.map((m) => (
-                        <option key={m} value={m}>{m}</option>
+                      {inventorySupplies.map((inv) => (
+                        <option key={inv.item_id} value={`inv:${inv.item_id}`}>
+                          {inv.item_name} ({inv.current_stock_level} {inv.unit_of_measure})
+                        </option>
                       ))}
-                      <option value="Other">Other (specify below)</option>
+                      <option value="Other">Other (not in inventory)</option>
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                   </div>
@@ -533,23 +630,121 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                 </div>
                 )}
               </div>
+              {/* Inventory Stock Deduction Panel — smoothly pops up and collapses */}
+              <div
+                className={`grid transition-all duration-300 ease-out ${
+                  selectedInventoryItem && !isProcedure
+                    ? "grid-rows-[1fr] opacity-100 mt-3.5"
+                    : "grid-rows-[0fr] opacity-0 mt-0 pointer-events-none"
+                }`}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  {activeInventoryItem && (
+                    <div
+                      className={`rounded-xl bg-emerald-50/70 border border-emerald-200 p-3.5 space-y-3 shadow-sm transform transition-all duration-300 ease-out origin-top ${
+                        selectedInventoryItem && !isProcedure
+                          ? "scale-100 translate-y-0 opacity-100"
+                          : "scale-[0.98] -translate-y-2 opacity-0"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Package className="w-4 h-4 text-emerald-700" />
+                          <span className="text-xs font-bold text-emerald-950">
+                            Inventory Deduction &middot; {activeInventoryItem.item_name}
+                          </span>
+                        </div>
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={form.deduct_stock}
+                            onChange={(e) => setForm((f) => ({ ...f, deduct_stock: e.target.checked }))}
+                            className="rounded text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5"
+                          />
+                          Deduct from stock
+                        </label>
+                      </div>
+
+                      {/* Smooth expand/collapse for inner inputs when deduct_stock is toggled */}
+                      <div
+                        className={`grid transition-all duration-300 ease-in-out ${
+                          form.deduct_stock
+                            ? "grid-rows-[1fr] opacity-100"
+                            : "grid-rows-[0fr] opacity-0 pointer-events-none"
+                        }`}
+                      >
+                        <div className="min-h-0 overflow-hidden">
+                          <div className={`grid grid-cols-1 ${form.targetType === "batch" ? "sm:grid-cols-3" : "sm:grid-cols-2"} gap-3 pt-1`}>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 mb-1 min-h-[1.75rem] flex items-end">
+                                {form.targetType === "batch" ? `Dose per Head (${subUnitLabel})` : `Dose Administered (${subUnitLabel})`}
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder={subUnitLabel === 'ml' ? 'e.g. 5' : 'e.g. 1'}
+                                value={form.dose_per_head}
+                                onChange={(e) => setForm((f) => ({ ...f, dose_per_head: e.target.value }))}
+                                className="w-full h-9 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                              />
+                            </div>
+
+                            {form.targetType === "batch" && (
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1 min-h-[1.75rem] flex items-end">
+                                  Head Count (multiplier)
+                                </label>
+                                <div className="h-9 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-800 flex items-center">
+                                  {batchCount} head
+                                </div>
+                              </div>
+                            )}
+
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 mb-1 min-h-[1.75rem] flex items-end">
+                                Stock Deduction
+                              </label>
+                              <div className="h-9 px-2.5 py-1.5 bg-emerald-100/60 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-900 flex items-center">
+                                {containerDeductionQty > 0
+                                  ? `${containerDeductionQty} ${containerLabel}${hasSub ? ` (${totalSubQty} ${subUnitLabel})` : ''}`
+                                  : '0 ' + containerLabel}
+                              </div>
+                            </div>
+
+                            <div className={`col-span-1 ${form.targetType === "batch" ? "sm:col-span-3" : "sm:col-span-2"} text-[11px] text-slate-600 flex items-center justify-between pt-1`}>
+                              <span>Current Stock: <strong>{activeInventoryItem.current_stock_level} {activeInventoryItem.unit_of_measure}</strong></span>
+                              {containerDeductionQty > 0 && (
+                                <span className={stockAfterDeduction < 0 ? "text-rose-600 font-bold" : "text-emerald-700 font-semibold"}>
+                                  Stock Remaining: {stockAfterDeduction >= 0 ? stockAfterDeduction : 0} {containerLabel}
+                                  {stockAfterDeduction < 0 && " (Warning: Stock will be depleted)"}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* Dosage & Recorded By */}
-            {!isProcedure && (
+            {/* Dosage — only show when NOT deducting from inventory stock */}
+            {!isProcedure && !(selectedInventoryItem && form.deduct_stock) && (
               <div className="col-span-2 sm:col-span-1">
                 <label className={labelCls}>Dosage (if applicable)</label>
-              <input
-                name="dosage"
-                value={form.dosage}
-                onChange={handleChange}
-                placeholder="e.g. 10 ml"
-                className={inputCls}
-              />
-            </div>
+                <input
+                  name="dosage"
+                  value={form.dosage}
+                  onChange={handleChange}
+                  placeholder="e.g. 10 ml"
+                  className={inputCls}
+                />
+              </div>
             )}
             
-            <div className={`col-span-2 ${isProcedure ? "" : "sm:col-span-1"}`}>
+            <div className={`col-span-2 ${!isProcedure && !(selectedInventoryItem && form.deduct_stock) ? "sm:col-span-1" : ""}`}>
               <label className={labelCls}>Examined By *</label>
               <input
                 name="examined_by"
@@ -565,18 +760,20 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
               )}
             </div>
             
-            {/* Notes */}
-            <div className="col-span-2">
-              <label className={labelCls}>Additional Notes</label>
-              <textarea
-                rows={2}
-                name="notes"
-                value={form.notes}
-                onChange={handleChange}
-                placeholder="Any extra information..."
-                className={`${inputCls} resize-none`}
-              />
-            </div>
+            {/* Notes — merged into Treatment for routine tasks; shown for clinical logs */}
+            {!isRoutineTask && (
+              <div className="col-span-2">
+                <label className={labelCls}>Additional Notes</label>
+                <textarea
+                  rows={2}
+                  name="notes"
+                  value={form.notes}
+                  onChange={handleChange}
+                  placeholder="Any extra information..."
+                  className={`${inputCls} resize-none`}
+                />
+              </div>
+            )}
 
           </div>
         )}

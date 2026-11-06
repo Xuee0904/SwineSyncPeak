@@ -4,12 +4,76 @@ import useModalAnimation from "../hooks/useModalAnimation";
 import {
   Plus, ClipboardList, Wheat, Syringe, FlaskConical, Scissors,
   ArrowRight, Activity, AlertTriangle, AlertCircle, X, Trash2,
-  ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink, Target, Pill
+  ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink, Target, Pill, Package
 } from "lucide-react";
 import { toast } from "../utils/toast";
+import { supabase } from "../supabaseClient";
 
 const FONT_DISPLAY = "font-['Space_Grotesk',_sans-serif]";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+export function isVaccineItem(item) {
+  if (!item) return false;
+  const cat = (item.category || '').toLowerCase();
+  if (cat === 'vaccines' || cat === 'vaccine') return true;
+  if (cat === 'medication' || cat === 'medicine') return false;
+  const name = (item.item_name || '').toLowerCase();
+  const unit = (item.unit_of_measure || '').toLowerCase();
+  return name.includes('vaccine') || name.includes('pcv') || name.includes('prrs') ||
+         name.includes('fmd') || name.includes('parvo') || name.includes('erysipelas') ||
+         name.includes('mycoplasma') || unit.includes('dose');
+}
+
+export function isMedicationItem(item) {
+  if (!item) return false;
+  const cat = (item.category || '').toLowerCase();
+  if (cat === 'medication' || cat === 'medicine') return true;
+  if (cat === 'vaccines' || cat === 'vaccine') return false;
+  if (isVaccineItem(item)) return false;
+  if (cat === 'medical') return true;
+  const name = (item.item_name || '').toLowerCase();
+  const unit = (item.unit_of_measure || '').toLowerCase();
+  return name.includes('amoxicillin') || name.includes('injection') || name.includes('antibiotic') ||
+         name.includes('tylosin') || name.includes('penicillin') || name.includes('flunixin') ||
+         name.includes('meloxicam') || name.includes('lincomycin') || name.includes('enrofloxacin') ||
+         unit.includes('vial') || unit.includes('tablet') || unit.includes('capsule');
+}
+
+export function isFeedItem(item) {
+  if (!item) return false;
+  if (isVaccineItem(item) || isMedicationItem(item)) return false;
+  const name = (item.item_name || '').toLowerCase();
+  if (name.includes('disinfectant') || name.includes('virkon') || name.includes('cleaner') || name.includes('sanitizer')) return false;
+  const cat = (item.category || '').toLowerCase();
+  return cat === 'feed';
+}
+
+export function isSupplementItem(item) {
+  if (!item) return false;
+  if (isVaccineItem(item) || isMedicationItem(item)) return false;
+  const cat = (item.category || '').toLowerCase();
+  if (cat === 'supplements' || cat === 'supplement') return true;
+  const name = (item.item_name || '').toLowerCase();
+  return name.includes('electrolyte') || name.includes('vitamin') || name.includes('mineral') || name.includes('supplement') || name.includes('powder');
+}
+
+function getMatchingInventoryItems(activityType, items) {
+  if (!items || items.length === 0) return [];
+  const type = (activityType || '').toUpperCase();
+  if (type === 'FEED') {
+    return items.filter(isFeedItem);
+  }
+  if (type === 'MEDICATION') {
+    return items.filter(isMedicationItem);
+  }
+  if (type === 'VACCINATION') {
+    return items.filter(isVaccineItem);
+  }
+  if (type === 'SUPPLEMENT') {
+    return items.filter(isSupplementItem);
+  }
+  return [];
+}
 
 const ACTIVITY_TYPES = [
   { value: 'FEED', label: 'Feed', icon: Wheat, bg: 'bg-[#fbf0dd]', text: 'text-[#b8791f]', border: 'border-[#f2ddba]', dot: 'bg-[#b8791f]' },
@@ -113,6 +177,11 @@ function TimelinePreview({ guidelines }) {
                   <span className="text-[13px] font-semibold text-slate-800 truncate">
                     {g.task_name || <span className="italic text-slate-400">Unnamed task</span>}
                   </span>
+                  {g.item_id && (
+                    <span className="inline-flex items-center gap-1 text-[9.5px] font-bold text-emerald-700 bg-white/80 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                      <Package className="w-2.5 h-2.5" /> Inventory Linked
+                    </span>
+                  )}
                 </div>
                 {g.activity_type === 'FEED' && g.daily_consumption_per_head > 0 && (
                   <p className="text-[11px] text-slate-500 mt-0.5">
@@ -134,9 +203,68 @@ function TimelinePreview({ guidelines }) {
 /* ---------------------------------------------------------------------- */
 /* Activity Row in the form builder                                       */
 /* ---------------------------------------------------------------------- */
-function ActivityRow({ activity, index, onChange, onDelete, onRequestSort }) {
+function ActivityRow({ activity, index, onChange, onDelete, onRequestSort, inventoryItems = [] }) {
   const style = getActivityStyle(activity.activity_type);
   const isFeed = activity.activity_type === 'FEED';
+  const isProcedure = activity.activity_type === 'PROCEDURE';
+
+  const matchingItems = getMatchingInventoryItems(activity.activity_type, inventoryItems);
+  const selectedInventoryItem = inventoryItems.find(i => i.item_id === activity.item_id);
+
+  // If user explicitly chose custom or has a task_name that doesn't match an inventory item
+  const [showCustomInput, setShowCustomInput] = useState(() => {
+    return isProcedure || activity.is_custom || (!!activity.task_name && !activity.item_id && !matchingItems.some(i => i.item_id === activity.item_id));
+  });
+
+  // Keep custom input state in sync if activity_type changes
+  useEffect(() => {
+    if (isProcedure) {
+      setShowCustomInput(true);
+    } else if (activity.item_id) {
+      setShowCustomInput(false);
+    }
+  }, [activity.activity_type, activity.item_id, isProcedure]);
+
+  const handleTypeChange = (newType) => {
+    onChange({
+      ...activity,
+      activity_type: newType,
+      item_id: null,
+      task_name: '',
+      is_custom: false
+    });
+  };
+
+  const handleSelectInventory = (e) => {
+    const val = e.target.value;
+    if (val === '__CUSTOM__') {
+      setShowCustomInput(true);
+      onChange({
+        ...activity,
+        item_id: null,
+        is_custom: true,
+        task_name: ''
+      });
+    } else {
+      const item = matchingItems.find(i => i.item_id === val);
+      if (item) {
+        setShowCustomInput(false);
+        onChange({
+          ...activity,
+          item_id: item.item_id,
+          task_name: item.item_name,
+          is_custom: false
+        });
+      } else {
+        onChange({
+          ...activity,
+          item_id: null,
+          task_name: '',
+          is_custom: false
+        });
+      }
+    }
+  };
 
   return (
     <div className={`rounded-xl border overflow-hidden ${style.border} ${activity._isRemoving ? 'activity-leave' : 'activity-enter'}`}>
@@ -183,7 +311,7 @@ function ActivityRow({ activity, index, onChange, onDelete, onRequestSort }) {
             <div className="relative">
               <select
                 value={activity.activity_type}
-                onChange={e => onChange({ ...activity, activity_type: e.target.value })}
+                onChange={e => handleTypeChange(e.target.value)}
                 className="w-full text-xs font-bold text-slate-700 border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 appearance-none cursor-pointer pr-6"
               >
                 {ACTIVITY_TYPES.map(t => (
@@ -194,47 +322,66 @@ function ActivityRow({ activity, index, onChange, onDelete, onRequestSort }) {
             </div>
           </div>
 
-          {/* Task Name */}
-          <div className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Task / Product Name</label>
-            {activity.activity_type === 'VACCINATION' ? (
-              <div className="relative">
-                <select
-                  value={activity.task_name}
-                  onChange={e => onChange({ ...activity, task_name: e.target.value })}
-                  className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg pl-2 pr-8 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 appearance-none"
+          {/* Task / Product Name */}
+          <div className="flex flex-col gap-0.5 flex-1 min-w-[200px]">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                {isProcedure ? 'Procedure Name' : 'Inventory Item / Task'}
+              </label>
+              {!isProcedure && matchingItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const willShowCustom = !showCustomInput;
+                    setShowCustomInput(willShowCustom);
+                    if (willShowCustom) {
+                      onChange({ ...activity, item_id: null, is_custom: true });
+                    }
+                  }}
+                  className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800"
                 >
-                  <option value="" disabled>Select vaccine...</option>
-                  {VACCINE_OPTIONS.map(v => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                  <option value="Other">Other (Custom)</option>
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-              </div>
-            ) : activity.activity_type === 'MEDICATION' ? (
-              <div className="relative">
-                <select
-                  value={activity.task_name}
-                  onChange={e => onChange({ ...activity, task_name: e.target.value })}
-                  className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg pl-2 pr-8 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 appearance-none"
-                >
-                  <option value="" disabled>Select medication...</option>
-                  {MEDICATION_OPTIONS.map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                  <option value="Other">Other (Custom)</option>
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-              </div>
-            ) : (
+                  {showCustomInput ? '← Pick from Inventory' : '+ Enter Custom'}
+                </button>
+              )}
+            </div>
+
+            {isProcedure || showCustomInput ? (
               <input
                 type="text"
-                placeholder={isFeed ? 'e.g. Pre-Starter Feed' : 'e.g. Iron Injection'}
+                placeholder={isFeed ? 'e.g. Starter Feed Mix' : isProcedure ? 'e.g. Ear Tagging & Castration' : 'e.g. Iron Injection'}
                 value={activity.task_name}
-                onChange={e => onChange({ ...activity, task_name: e.target.value })}
+                onChange={e => onChange({ ...activity, task_name: e.target.value, item_id: null, is_custom: true })}
                 className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 placeholder:text-slate-300"
               />
+            ) : (
+              <div className="relative">
+                <select
+                  value={activity.item_id || ''}
+                  onChange={handleSelectInventory}
+                  className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg pl-2 pr-8 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 appearance-none"
+                >
+                  <option value="" disabled>-- Select {style.label} from Inventory --</option>
+                  {matchingItems.map(item => (
+                    <option key={item.item_id} value={item.item_id}>
+                      {item.item_name} ({item.current_stock_level} {item.unit_of_measure})
+                    </option>
+                  ))}
+                  <option value="__CUSTOM__">+ Custom / Not yet in inventory</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+              </div>
+            )}
+
+            {/* In-Stock Indicator */}
+            {selectedInventoryItem && !showCustomInput && (
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className={`w-2 h-2 rounded-full ${Number(selectedInventoryItem.current_stock_level) > 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                <span className="text-[11px] font-medium text-slate-500">
+                  {Number(selectedInventoryItem.current_stock_level) > 0
+                    ? `In Stock: ${selectedInventoryItem.current_stock_level} ${selectedInventoryItem.unit_of_measure}`
+                    : `Out of Stock (0 ${selectedInventoryItem.unit_of_measure})`}
+                </span>
+              </div>
             )}
           </div>
         </div>
@@ -261,7 +408,7 @@ function ActivityRow({ activity, index, onChange, onDelete, onRequestSort }) {
             </label>
             <input
               type="text"
-              placeholder="Optional notes..."
+              placeholder={isFeed ? 'e.g. Morning & afternoon feeding' : 'e.g. 2 ml per piglet IM'}
               value={activity.dosage_instructions || ''}
               onChange={e => onChange({ ...activity, dosage_instructions: e.target.value })}
               className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 placeholder:text-slate-300"
@@ -281,9 +428,23 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
   const [description, setDescription] = useState('');
   const [targetWeight, setTargetWeight] = useState('');
   const [guidelines, setGuidelines] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const isEdit = !!editProgram;
+
+  // Load inventory items when modal is open
+  useEffect(() => {
+    if (!isOpen) return;
+    supabase
+      .from('inventory_items')
+      .select('item_id, item_name, unit_of_measure, category, current_stock_level')
+      .eq('is_archived', false)
+      .order('item_name')
+      .then(({ data, error }) => {
+        if (!error && data) setInventoryItems(data);
+      });
+  }, [isOpen]);
 
   // Populate form when editing
   useEffect(() => {
@@ -317,6 +478,8 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
         days_after_birth: lastDay + 1,
         activity_type: 'FEED',
         task_name: '',
+        item_id: null,
+        is_custom: false,
         daily_consumption_per_head: 0,
         dosage_instructions: '',
       }
@@ -355,7 +518,10 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
         guidelines: guidelines
           .filter(g => !g._isRemoving)
           // eslint-disable-next-line no-unused-vars
-          .map(({ _tempId, _isRemoving, ...g }) => g),
+          .map(({ _tempId, _isRemoving, is_custom, inventory_items, ...g }) => ({
+            ...g,
+            item_id: g.item_id || null,
+          })),
       };
       const url = isEdit
         ? `${API_BASE}/api/growth/programs/${editProgram.program_id}`
@@ -535,6 +701,7 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
                           onChange={(updated) => updateActivity(activity._tempId, updated)}
                           onDelete={() => deleteActivity(activity._tempId)}
                           onRequestSort={sortActivities}
+                          inventoryItems={inventoryItems}
                         />
                       ))}
                       <button
@@ -631,6 +798,11 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
                         {g.activity_type}
                       </span>
                       <span className="block text-[11px] font-semibold text-neutral-700 leading-tight">{g.task_name}</span>
+                      {g.inventory_items && (
+                        <span className="inline-block mt-0.5 text-[9px] font-medium text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-100">
+                          {g.inventory_items.current_stock_level} {g.inventory_items.unit_of_measure}
+                        </span>
+                      )}
                       {g.daily_consumption_per_head > 0 && (
                         <span className="block text-[10px] text-neutral-500 mt-0.5">{g.daily_consumption_per_head} kg/head</span>
                       )}

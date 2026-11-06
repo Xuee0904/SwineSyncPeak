@@ -8,13 +8,10 @@ import {
   Stethoscope,
   ChevronDown,
   SlidersHorizontal,
-  Skull,
   ClipboardList,
-  ArrowUpRight,
   Pencil,
   Archive,
   X,
-  CheckCircle2,
 } from "lucide-react";
 import { toast } from "../utils/toast";
 import VaccinationFormModal from "../components/HealthManagement/VaccinationFormModal";
@@ -68,19 +65,10 @@ const statusStyles = {
 
 function DueBadge({ label }) {
   const isOverdue = label === "Overdue";
-  const isTomorrow = label === "Tomorrow";
   if (isOverdue) {
     return (
       <span className="inline-flex items-center gap-1 text-rose-600 font-medium">
         <AlertTriangle className="h-3.5 w-3.5" />
-        {label}
-      </span>
-    );
-  }
-  if (isTomorrow) {
-    return (
-      <span className="inline-flex items-center gap-1 text-amber-600 font-medium">
-        <CalendarClock className="h-3.5 w-3.5" />
         {label}
       </span>
     );
@@ -214,7 +202,9 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
       const tasksData = await tasksRes.json();
 
       const mapVacRow = (v) => {
-        const isOverdue = v.booster_due_date && new Date(v.booster_due_date) < new Date();
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const isOverdue = v.booster_due_date && new Date(v.booster_due_date) < today;
         return {
           id: v.vaccination_id.substring(0, 8),
           pigHerdId: v.pigs?.pig_tag || v.piglet_batches?.batch_tag || (v.pig_id ? `Pig ${v.pig_id.substring(0, 8)}` : `Batch ${v.batch_id?.substring(0, 8)}`),
@@ -238,7 +228,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         swineId: h.pigs?.pig_tag || h.piglet_batches?.batch_tag || (h.pig_id ? `Pig ${h.pig_id.substring(0, 8)}` : `Batch ${h.batch_id?.substring(0, 8)}`),
         eventType: h.treatment ? "Treatment" : h.diagnosis ? "Check-up" : "Log",
         medication: h.medication_name || "None",
-        vet: h.recorded_by || "System",
+        vet: h.examined_by || h.recorded_by || "System",
         status: h.status
       })));
 
@@ -297,36 +287,45 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
 
   const overdueVacCount = vaccinationRegistry.filter((r) => {
     if (!r.nextDueDate) return false;
-    return new Date(r.nextDueDate) < new Date();
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return new Date(r.nextDueDate) < today;
   }).length;
 
   const dueSoonVacCount = vaccinationRegistry.filter((r) => {
     if (!r.nextDueDate) return false;
     const due = new Date(r.nextDueDate);
-    const now = new Date();
-    const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
     return diffDays >= 0 && diffDays <= 7;
   }).length;
 
   const overdueTasksCount = growthTasks.filter(task => {
     if (!task.due_date) return false;
-    return new Date(task.due_date) < new Date();
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return new Date(task.due_date) < today;
   }).length;
 
   const dueSoonTasksCount = growthTasks.filter(task => {
     if (!task.due_date) return false;
     const due = new Date(task.due_date);
-    const now = new Date();
-    const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
     return diffDays >= 0 && diffDays <= 7;
   }).length;
 
   const totalOverdueCount = overdueVacCount + overdueTasksCount;
   const totalDueSoonCount = dueSoonVacCount + dueSoonTasksCount;
 
-  const activeTreatmentsCount = healthEventsLog.filter(h =>
-    ["sick", "monitoring"].includes(h.status)
-  ).length;
+  // Count unique pigs/batches whose most recent health log status is sick or monitoring
+  const activeTreatmentsCount = useMemo(() => {
+    const latestByEntity = new Map();
+    // healthEventsLog is already sorted descending by log_date from API
+    healthEventsLog.forEach(h => {
+      const key = h.swineId;
+      if (!latestByEntity.has(key)) latestByEntity.set(key, h.status);
+    });
+    return Array.from(latestByEntity.values()).filter(s => ["sick", "monitoring"].includes(s)).length;
+  }, [healthEventsLog]);
 
   const filteredGrowthTasks = useMemo(() => {
     return growthTasks.filter(task => {
@@ -458,9 +457,21 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                       <div className="flex items-start gap-3">
                         <div className={`mt-0.5 w-2 h-2 rounded-full ${isOverdue ? 'bg-rose-500' : 'bg-emerald-500'}`} />
                         <div>
-                          <p className="text-sm font-semibold text-slate-900">{task.task_name}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-semibold text-slate-900">{task.task_name}</p>
+                            {task.inventory_items && (
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                Number(task.inventory_items.current_stock_level) > 0
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+                              }`}>
+                                📦 Stock: {task.inventory_items.current_stock_level} {task.inventory_items.unit_of_measure}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            {task.activity_type} &middot; Batch: <span className="font-medium text-slate-700">{task.piglet_batches?.batch_tag}</span> &middot; Program: {task.growth_programs?.name}
+                            {task.activity_type} &middot; Batch: <span className="font-medium text-slate-700">{task.piglet_batches?.batch_tag}</span>
+                            {task.piglet_batches?.current_count ? ` (${task.piglet_batches.current_count} head)` : ''} &middot; Program: {task.growth_programs?.name}
                           </p>
                         </div>
                       </div>
@@ -476,6 +487,9 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                                 targetType: 'batch',
                                 batch_id: task.batch_id,
                                 vaccine_name: task.task_name,
+                                item_id: task.item_id,
+                                inventoryItem: task.inventory_items,
+                                headCount: task.piglet_batches?.current_count || 1,
                                 administered_date: new Date().toISOString().split('T')[0]
                               });
                               setVacModal(true);
@@ -485,8 +499,13 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                                 batch_id: task.batch_id,
                                 treatment: task.task_name,
                                 isProcedure: task.activity_type === 'PROCEDURE',
+                                isGrowthTask: true,
+                                activity_type: task.activity_type,
                                 medication_name: task.activity_type === 'MEDICATION' ? task.task_name : '',
-                                status: task.activity_type === 'MEDICATION' ? 'sick' : 'healthy',
+                                item_id: task.item_id,
+                                inventoryItem: task.inventory_items,
+                                headCount: task.piglet_batches?.current_count || 1,
+                                status: 'healthy',
                                 log_date: new Date().toISOString().split('T')[0] + 'T09:00'
                               });
                               setHealthModal(true);
@@ -771,13 +790,30 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         {/* Health Events Log */}
         <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 p-5">
-            <h2 className="text-base font-semibold text-slate-900">Health Events Log</h2>
-            <ExportDropdown
-              data={healthEventsLog}
-              columns={healthEventsExportColumns}
-              filename="health_events_log"
-              pdfTitle="Health Events Log"
-            />
+            <div className="flex items-center gap-3">
+              <h2 className="text-base font-semibold text-slate-900">Health Events Log</h2>
+              {activeTreatmentsCount > 0 && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">
+                  {activeTreatmentsCount} ACTIVE
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <ExportDropdown
+                data={healthEventsLog}
+                columns={healthEventsExportColumns}
+                filename="health_events_log"
+                pdfTitle="Health Events Log"
+              />
+              <button
+                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
+                type="button"
+                onClick={() => { setPrefillHealth(null); setHealthModal(true); }}
+              >
+                <Plus className="h-4 w-4" />
+                Log Health Event
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
@@ -786,8 +822,8 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   <th className="px-5 py-3 font-medium">Date</th>
                   <th className="px-5 py-3 font-medium">Swine/Herd ID</th>
                   <th className="px-5 py-3 font-medium">Event type</th>
-                  <th className="px-5 py-3 font-medium">Medication</th>
-                  <th className="px-5 py-3 font-medium">Veterinarian</th>
+                  <th className="px-5 py-3 font-medium">Medication / Treatment</th>
+                  <th className="px-5 py-3 font-medium">Examined By</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
@@ -843,7 +879,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
             await fetch(`${API_BASE}/api/growth-tasks/${activeGrowthTask.task_id}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: 'completed', linked_vaccination_id: createdLog?.vaccination_id })
+              body: JSON.stringify({ status: 'completed', linked_vaccination_id: createdLog?.vaccination_id, performed_by: loggedInUser?.name || loggedInUser?.email || 'Health Management' })
             });
           }
           fetchData();
@@ -861,10 +897,10 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         currentUser={loggedInUser}
         onSuccess={async (createdLog) => {
           if (activeGrowthTask) {
-            await fetch(`/api/growth-tasks/${activeGrowthTask.task_id}`, {
+            await fetch(`${API_BASE}/api/growth-tasks/${activeGrowthTask.task_id}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: 'completed', linked_health_id: createdLog?.health_id })
+              body: JSON.stringify({ status: 'completed', linked_health_id: createdLog?.health_id, performed_by: loggedInUser?.name || loggedInUser?.email || 'Health Management' })
             });
           }
           fetchData();

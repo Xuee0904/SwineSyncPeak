@@ -1,5 +1,6 @@
 import express from 'express';
 import { supabaseAdmin } from '../supabaseClient.js';
+import { deductInventoryStock } from '../helpers/inventoryDeduction.js';
 
 const router = express.Router();
 const db = supabaseAdmin;
@@ -15,7 +16,10 @@ router.get('/api/growth/programs', async (req, res) => {
       .from('growth_programs')
       .select(`
         *,
-        guidelines:growth_program_guidelines(*),
+        guidelines:growth_program_guidelines(
+          *,
+          inventory_items (item_id, item_name, unit_of_measure, category, current_stock_level)
+        ),
         enrolled_batches:piglet_batches(batch_id, current_count)
       `)
       .eq('is_archived', isArchived)
@@ -200,6 +204,7 @@ router.post('/api/growth/programs', async (req, res) => {
         days_after_birth: g.days_after_birth,
         activity_type: g.activity_type,
         task_name: g.task_name,
+        item_id: g.item_id || null,
         daily_consumption_per_head: g.daily_consumption_per_head || 0,
         dosage_instructions: g.dosage_instructions || null,
       }));
@@ -264,6 +269,7 @@ router.put('/api/growth/programs/:id', async (req, res) => {
         days_after_birth: g.days_after_birth,
         activity_type: g.activity_type,
         task_name: g.task_name,
+        item_id: g.item_id || null,
         daily_consumption_per_head: g.daily_consumption_per_head || 0,
         dosage_instructions: g.dosage_instructions || null,
       }));
@@ -552,7 +558,7 @@ router.get('/api/growth/batches', async (req, res) => {
 // Record an activity/feed for a batch
 router.post('/api/growth/logs', async (req, res) => {
   try {
-    const { batch_id, activity_type, guideline_id, amount_given, performed_by } = req.body;
+    const { batch_id, activity_type, guideline_id, amount_given, item_id, quantity_deducted, performed_by } = req.body;
 
     const { data, error } = await db.from('batch_activity_logs').insert({
       batch_id,
@@ -564,11 +570,40 @@ router.post('/api/growth/logs', async (req, res) => {
 
     if (error) throw error;
 
-    // Fetch the task name from the guideline if available
+    // Fetch the task name and item_id from the guideline if available
     let taskName = activity_type;
+    let resolvedItemId = item_id || null;
+    let resolvedDosage = null;
+
     if (guideline_id) {
-      const { data: g } = await db.from('growth_program_guidelines').select('task_name, dosage_instructions').eq('guideline_id', guideline_id).single();
-      if (g) taskName = g.task_name || activity_type;
+      const { data: g } = await db
+        .from('growth_program_guidelines')
+        .select('task_name, item_id, dosage_instructions')
+        .eq('guideline_id', guideline_id)
+        .single();
+      if (g) {
+        taskName = g.task_name || activity_type;
+        if (!resolvedItemId && g.item_id) resolvedItemId = g.item_id;
+        resolvedDosage = g.dosage_instructions;
+      }
+    }
+
+    // Determine deduction quantity (container units)
+    let deductionAmount = quantity_deducted ? parseFloat(quantity_deducted) : null;
+    if (!deductionAmount && resolvedItemId && amount_given > 0) {
+      // If amount_given is provided (e.g. kg for feed)
+      deductionAmount = parseFloat(amount_given);
+    }
+
+    // Deduct from inventory if item is linked and quantity > 0
+    if (resolvedItemId && deductionAmount && deductionAmount > 0) {
+      await deductInventoryStock({
+        db,
+        itemId: resolvedItemId,
+        quantity: deductionAmount,
+        notes: `Growth log: ${taskName} for batch • By: ${performedBy || 'System'}`,
+        performedBy: performed_by || 'System'
+      }).catch(err => console.warn('[Growth Log] Stock deduction skipped/failed:', err.message));
     }
 
     // Integrate with Health & Vaccination modules
@@ -576,9 +611,11 @@ router.post('/api/growth/logs', async (req, res) => {
       await db.from('vaccination_records').insert({
         batch_id,
         vaccine_name: taskName,
-        dosage: amount_given > 0 ? `${amount_given}` : 'Standard',
+        item_id: resolvedItemId,
+        quantity_deducted: deductionAmount,
+        dosage: resolvedDosage || (amount_given > 0 ? `${amount_given}` : 'Standard'),
         administered_by: performed_by || 'System',
-        administered_date: new Date().toISOString()
+        administered_date: new Date().toISOString().split('T')[0]
       });
     } else if (activity_type === 'MEDICATION') {
       await db.from('health_logs').insert({
@@ -586,6 +623,9 @@ router.post('/api/growth/logs', async (req, res) => {
         status: 'healthy',
         diagnosis: 'Routine Program Medication',
         treatment: taskName,
+        item_id: resolvedItemId,
+        quantity_deducted: deductionAmount,
+        dosage: resolvedDosage || (amount_given > 0 ? `${amount_given}` : null),
         symptoms: 'None observed',
         recorded_by: performed_by || 'System',
         log_date: new Date().toISOString()
