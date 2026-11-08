@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, ArrowUpDown, Loader2, TrendingUp, TrendingDown, CheckCircle2 } from "lucide-react";
+import { X, ArrowUpDown, Loader2, TrendingUp, TrendingDown, CheckCircle2, Users } from "lucide-react";
 import { supabase } from "../../supabaseClient";
 import { toast } from "../../utils/toast";
 import useModalAnimation from "../../hooks/useModalAnimation";
@@ -42,11 +42,37 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
     quantity: "",
     inputUnit: "stock", // "stock" = item's own unit (sacks/vials), "kg" = the sub-unit (kg / ml / doses) for container items
     reason: getDefaultReason("in", item?.category),
-    notes: "",
+    feedTarget: "breeders", // "breeders" | "batch" | "general"
+    selectedBatchId: "",
   }));
+  const [activeBatches, setActiveBatches] = useState([]);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [successInfo, setSuccessInfo] = useState(null);
+
+  useEffect(() => {
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+    fetch(`${apiBase}/api/growth/active-feed-batches`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        const batchList = Array.isArray(data) ? data : (data?.batches || []);
+        if (batchList.length > 0) {
+          setActiveBatches(batchList);
+          // Default to matching batch if this feed item is linked to an active batch
+          const matchingBatch = batchList.find((b) => b.current_feed?.item_id === item?.item_id);
+          if (matchingBatch) {
+            setForm((f) => ({
+              ...f,
+              feedTarget: "batch",
+              selectedBatchId: matchingBatch.batch_id,
+            }));
+          } else {
+            setForm((f) => ({ ...f, selectedBatchId: batchList[0].batch_id }));
+          }
+        }
+      })
+      .catch(() => { });
+  }, [item?.item_id]);
 
   const { shouldRender, requestClose, overlayClassName, panelClassName } = useModalAnimation(
     true,
@@ -164,11 +190,32 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
 
       // 2. Log transaction in inventory_transactions ledger
       const staff = getStaffDetails(loggedInUser);
+
+      let feedTargetDesc = "";
+      let selectedBatch = null;
+      if (form.type === "out" && form.reason === "Used in feeding") {
+        if (form.feedTarget === "breeders") {
+          feedTargetDesc = "Breeder Herd (Sows & Boars)";
+        } else if (form.feedTarget === "batch") {
+          selectedBatch = activeBatches.find((b) => b.batch_id === form.selectedBatchId);
+          feedTargetDesc = selectedBatch
+            ? `Batch ${selectedBatch.batch_tag} (${selectedBatch.current_count} heads)`
+            : "Piglet Batch";
+        } else {
+          feedTargetDesc = "General Feeding";
+        }
+      }
+
+      const noteDetails = [
+        feedTargetDesc ? `Target: ${feedTargetDesc}` : "",
+        inKg ? `Entered as ${parseFloat(form.quantity)} ${subUnit}` : "",
+      ].filter(Boolean).join(" - ");
+
       const formattedNotes = formatTransactionNotes({
         txType,
         direction: form.type,
         reason: form.reason,
-        notes: [inKg ? `Entered as ${parseFloat(form.quantity)} ${subUnit}` : "", form.notes].filter(Boolean).join(" - "),
+        notes: noteDetails,
         loggedInUser,
       });
 
@@ -184,11 +231,26 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
 
       if (txError) console.warn("Failed to record transaction log:", txError);
 
+      // If feed was given to a specific piglet batch, record in batch_activity_logs as well
+      if (form.type === "out" && form.reason === "Used in feeding" && selectedBatch) {
+        const feedKg = inKg ? parseFloat(form.quantity) : toSubUnitQty(qty, sackKg || 25);
+        await supabase
+          .from("batch_activity_logs")
+          .insert({
+            batch_id: selectedBatch.batch_id,
+            activity_type: "FEED",
+            amount_given: feedKg,
+            performed_by: staff.name,
+          })
+          .then(() => { })
+          .catch((err) => console.warn("Failed to record batch feed log:", err));
+      }
+
       // 3. Log activity in Admin Audit Trail
       logInventoryActivity({
         loggedInUser,
         event_title: form.type === "in" ? "Inventory Restocked" : "Inventory Stock Used/Adjusted",
-        event_desc: `${item.item_name}: ${form.type === "in" ? "+" : "-"}${qtyLabel} (${form.reason}) → ${fmt(newRemaining)} remaining.`,
+        event_desc: `${item.item_name}: ${form.type === "in" ? "+" : "-"}${qtyLabel} (${form.reason}${feedTargetDesc ? ` - ${feedTargetDesc}` : ""}) → ${fmt(newRemaining)} remaining.`,
         user_bg_color: form.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700",
       });
 
@@ -311,10 +373,10 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">After Adjustment</p>
                     <p
                       className={`text-lg font-black ${maxCapacity > 0 && remaining > maxCapacity
-                          ? "text-amber-600"
-                          : remaining < currentLevel
-                            ? "text-rose-600"
-                            : "text-emerald-600"
+                        ? "text-amber-600"
+                        : remaining < currentLevel
+                          ? "text-rose-600"
+                          : "text-emerald-600"
                         }`}
                     >
                       {Number(remaining.toFixed(2))} <span className="text-xs font-semibold">{unitName}</span>
@@ -390,11 +452,10 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
                               key={opt.id}
                               type="button"
                               onClick={() => handleInputUnitSwitch(opt.id)}
-                              className={`px-2.5 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
-                                form.inputUnit === opt.id
+                              className={`px-2.5 py-0.5 text-[10px] font-bold rounded-md transition-all cursor-pointer ${form.inputUnit === opt.id
                                   ? "bg-white text-slate-900 shadow-sm"
                                   : "text-slate-500 hover:text-slate-800"
-                              }`}
+                                }`}
                             >
                               {opt.label}
                             </button>
@@ -492,7 +553,7 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
                   <option value="" >Select reason...</option>
                   {form.type === "in" ? (
                     <>
-                      <option value="Purchase/Delivery">Purchase / Delivery</option>
+                      <option value="Purchase/Delivery">Purchase</option>
                       <option value="Return/Refund">Return / Refund</option>
                       <option value="Correction">Stock Correction</option>
                       <option value="Transfer In">Transfer In</option>
@@ -523,17 +584,97 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
                 {errors.reason && <p className="mt-1 text-xs text-rose-600 field-error">{errors.reason}</p>}
               </div>
 
-              {/* Notes */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Notes <span className="text-slate-400 font-normal">(optional)</span></label>
-                <textarea
-                  value={form.notes}
-                  onChange={set("notes")}
-                  rows={2}
-                  placeholder="Additional details about this adjustment..."
-                  className="w-full rounded-xl border border-slate-200 py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 resize-none"
-                />
-              </div>
+              {/* Feeding Target Selection (shown when adjusting out for feeding) */}
+              {form.type === "out" && form.reason === "Used in feeding" && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-amber-900">
+                      Who was fed?
+                    </label>
+                    <span className="text-[10px] text-amber-700 font-semibold">Select Target Herd</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { id: "breeders", label: "Sows & Boars" },
+                      { id: "batch", label: "Piglet Batch" },
+                      { id: "general", label: "General" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, feedTarget: opt.id }))}
+                        className={`py-1.5 px-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${form.feedTarget === opt.id
+                            ? "bg-white border-amber-400 text-amber-900 shadow-2xs"
+                            : "bg-white/60 border-amber-200/70 text-amber-700 hover:bg-white"
+                          }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {form.feedTarget === "breeders" && (
+                    <p className="text-[11px] text-amber-800">
+                      Logs this feed deduction for the breeding herd (lactating/gestating sows and boars).
+                    </p>
+                  )}
+
+                  {form.feedTarget === "general" && (
+                    <p className="text-[11px] text-amber-800">
+                      Logs this feed deduction for general barn distribution without tagging a specific batch.
+                    </p>
+                  )}
+
+                  {form.feedTarget === "batch" && (
+                    <div className="space-y-2 pt-0.5">
+                      <select
+                        value={form.selectedBatchId}
+                        onChange={(e) => setForm((f) => ({ ...f, selectedBatchId: e.target.value }))}
+                        className="w-full rounded-xl border border-amber-300 bg-white py-2 px-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-300 cursor-pointer"
+                      >
+                        {activeBatches.length === 0 ? (
+                          <option value="">No active batches found</option>
+                        ) : (
+                          activeBatches.map((b) => (
+                            <option key={b.batch_id} value={b.batch_id}>
+                              {b.batch_tag} ({b.current_count} heads{b.current_feed ? ` • ~${b.current_feed.total_daily_feed_kg} kg/day` : ""})
+                            </option>
+                          ))
+                        )}
+                      </select>
+
+                      {/* Quick preset for batch daily estimated intake */}
+                      {(() => {
+                        const b = activeBatches.find((x) => x.batch_id === form.selectedBatchId);
+                        const estKg = b?.current_feed?.total_daily_feed_kg;
+                        if (!estKg || estKg <= 0) return null;
+                        return (
+                          <div className="flex items-center justify-between gap-2 pt-0.5 bg-white/70 rounded-lg p-2 border border-amber-200/70">
+                            <span className="text-[10.5px] text-amber-900 leading-tight">
+                              Estimated intake: <strong>{estKg} kg/day</strong> ({b.current_count} heads × {b.current_feed.daily_consumption_per_head} kg)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (inKg) {
+                                  setForm((f) => ({ ...f, quantity: String(estKg) }));
+                                } else {
+                                  const sacks = fromSubUnitQty(estKg, sackKg || 25);
+                                  setForm((f) => ({ ...f, quantity: String(Number(sacks.toFixed(2))) }));
+                                }
+                                setErrors((er) => ({ ...er, quantity: undefined }));
+                              }}
+                              className="text-[10px] font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-md transition-colors cursor-pointer shrink-0 shadow-2xs"
+                            >
+                              Use ~{estKg} kg
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Footer */}
               {errors.submit && (

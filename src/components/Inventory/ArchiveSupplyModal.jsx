@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, AlertTriangle, Loader2, Unlock, Check, Package, Archive, RotateCcw } from "lucide-react";
+import { X, AlertTriangle, Loader2, Unlock, Check, Package, Archive, RotateCcw, ArrowUpDown } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
 import { supabase } from "../../supabaseClient";
 import { toast } from "../../utils/toast";
@@ -20,6 +20,7 @@ export default function ArchiveSupplyModal({
   onClose,
   archiveData,
   onConfirmSuccess,
+  onOpenAdjust,
   loggedInUser,
 }) {
   const [loading, setLoading] = useState(false);
@@ -36,6 +37,7 @@ export default function ArchiveSupplyModal({
 
   const item = archiveData?.item;
   const isArchiving = archiveData?.isArchiving ?? true;
+  const hasActiveStock = isArchiving && Number(item?.current_stock_level || 0) > 0;
 
   useEffect(() => {
     if (isOpen) {
@@ -52,6 +54,10 @@ export default function ArchiveSupplyModal({
   const handleToggleArchive = async () => {
     try {
       setReasonError("");
+      if (hasActiveStock) {
+        setError(`Cannot archive "${item.item_name}" while it still has ${item.current_stock_level} ${item.unit_of_measure} recorded in stock. Adjust stock to 0 first.`);
+        return;
+      }
       let finalReason = null;
       if (isArchiving) {
         const isOther = selectedReason.startsWith("Other");
@@ -197,8 +203,19 @@ export default function ArchiveSupplyModal({
                   : "Restoring this item will make it available again in active inventory management, stock adjustments, and usage logs."}
               </p>
 
-              {/* Archive Reason Dropdown (only when archiving) */}
-              {isArchiving && (
+              {/* Active Stock Blocking Notice or Archive Reason */}
+              {hasActiveStock ? (
+                <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 space-y-2 text-left">
+                  <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Cannot Archive Item with Remaining Stock</span>
+                  </div>
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    This supply currently has <strong>{item.current_stock_level} {item.unit_of_measure}</strong> recorded in stock.
+                    To protect inventory integrity and prevent ghost warehouse stock, you must deplete or adjust the quantity to <strong>0</strong> before archiving.
+                  </p>
+                </div>
+              ) : isArchiving ? (
                 <div className="space-y-2 text-left">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                     Reason for Archiving <span className="text-rose-500">*</span>
@@ -240,7 +257,7 @@ export default function ArchiveSupplyModal({
                     </p>
                   )}
                 </div>
-              )}
+              ) : null}
 
               {/* Actions */}
               <div className="pt-2 flex gap-3">
@@ -250,32 +267,44 @@ export default function ArchiveSupplyModal({
                   disabled={loading}
                   className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer disabled:opacity-50"
                 >
-                  Cancel
+                  {hasActiveStock ? "Close" : "Cancel"}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleToggleArchive}
-                  disabled={loading}
-                  className={`flex-1 py-2.5 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                    isArchiving
-                      ? "bg-rose-600 hover:bg-rose-700 shadow-rose-600/20"
-                      : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
-                  }`}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Working…
-                    </>
-                  ) : isArchiving ? (
-                    <>
-                      <Archive className="w-3.5 h-3.5" /> Confirm Archive
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="w-3.5 h-3.5" /> Confirm Restore
-                    </>
-                  )}
-                </button>
+                {hasActiveStock ? (
+                  onOpenAdjust && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenAdjust(item)}
+                      className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-md shadow-amber-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" /> Adjust Stock to 0
+                    </button>
+                  )
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleToggleArchive}
+                    disabled={loading}
+                    className={`flex-1 py-2.5 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                      isArchiving
+                        ? "bg-rose-600 hover:bg-rose-700 shadow-rose-600/20"
+                        : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
+                    }`}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Working…
+                      </>
+                    ) : isArchiving ? (
+                      <>
+                        <Archive className="w-3.5 h-3.5" /> Confirm Archive
+                      </>
+                    ) : (
+                      <>
+                        <RotateCcw className="w-3.5 h-3.5" /> Confirm Restore
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           </div>

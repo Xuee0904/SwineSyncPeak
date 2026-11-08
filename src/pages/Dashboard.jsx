@@ -6,11 +6,10 @@ import SwineManagement from './SwineManagement';
 import PenManagement from './PenManagement';
 import BreedingLogs from './BreedingLogs';
 import GrowthProgramManagement from './GrowthProgramManagement';
-import GrowthAnalytics from './GrowthAnalytics';
 import HealthManagement from './HealthManagement';
-import MedicationTreatmentLogs from './MedicationTreatmentLogs';
-import MortalityRecord from './MortalityRecord';
 import InventoryManagement from './InventoryManagement';
+import TransactionRecords from './TransactionRecords';
+import DailyFeedingPanel from '../components/Feeding/DailyFeedingPanel';
 import { supabase } from '../supabaseClient';
 import {
   computeInventoryMetrics,
@@ -27,23 +26,23 @@ import {
 } from 'lucide-react';
 
 const HEALTH_ALERTS = [
-  { tag: 'Sow #402',   pen: 'Pen A2', status: 'High Fever',        severity: 'high'   },
-  { tag: 'Batch #12',  pen: 'Pen 4',  status: 'Atypical Coughing', severity: 'medium' },
+  { tag: 'Sow #402', pen: 'Pen A2', status: 'High Fever', severity: 'high' },
+  { tag: 'Batch #12', pen: 'Pen 4', status: 'Atypical Coughing', severity: 'medium' },
 ];
 
 const TODO_ITEMS = [
-  { id: 't1', text: 'Vaccinate Batch #12',          sub: 'Scheduled for Pen 4 & 5 • High Priority',          urgency: 'TODAY',  done: false },
-  { id: 't2', text: 'Check Sow ID 402 Gestation',   sub: 'Day 110 monitoring • Biosecurity Alert pending',    urgency: 'URGENT', done: false },
-  { id: 't3', text: 'Bio-Security Perimeter Check',  sub: 'Routine weekly inspection of fence lines',          urgency: 'WED',    done: false },
+  { id: 't1', text: 'Vaccinate Batch #12', sub: 'Scheduled for Pen 4 & 5 • High Priority', urgency: 'TODAY', done: false },
+  { id: 't2', text: 'Check Sow ID 402 Gestation', sub: 'Day 110 monitoring • Biosecurity Alert pending', urgency: 'URGENT', done: false },
+  { id: 't3', text: 'Bio-Security Perimeter Check', sub: 'Routine weekly inspection of fence lines', urgency: 'WED', done: false },
 ];
 
 const EVENTS = [
-  { date: 5,  title: 'Fan Timer Adjustments',   type: 'ops'    },
-  { date: 10, title: 'Nursery B Vaccinations',  type: 'health' },
-  { date: 12, title: 'Database Schema Sync',    type: 'tech'   },
-  { date: 15, title: 'Nursery Feed Transition', type: 'feed'   },
-  { date: 18, title: 'Q3 Biosecurity Audit',    type: 'safety' },
-  { date: 27, title: 'Active Day',              type: 'active' },
+  { date: 5, title: 'Fan Timer Adjustments', type: 'ops' },
+  { date: 10, title: 'Nursery B Vaccinations', type: 'health' },
+  { date: 12, title: 'Database Schema Sync', type: 'tech' },
+  { date: 15, title: 'Nursery Feed Transition', type: 'feed' },
+  { date: 18, title: 'Q3 Biosecurity Audit', type: 'safety' },
+  { date: 27, title: 'Active Day', type: 'active' },
 ];
 
 const EVENT_COLORS = {
@@ -56,15 +55,15 @@ const EVENT_LABELS = {
 };
 
 const MONTH_NAMES = [
-  'January','February','March','April','May','June',
-  'July','August','September','October','November','December',
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
 ];
-const DAY_LABELS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+const DAY_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 function Pill({ children, color = 'slate' }) {
   const map = {
-    red:   'bg-red-100    text-red-700    border-red-200',
-    yellow:'bg-amber-100  text-amber-700  border-amber-200',
+    red: 'bg-red-100    text-red-700    border-red-200',
+    yellow: 'bg-amber-100  text-amber-700  border-amber-200',
     green: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     slate: 'bg-slate-100  text-slate-600  border-slate-200',
   };
@@ -93,11 +92,11 @@ function SectionCard({ title, action, actionLabel, children, id }) {
 }
 
 export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
-  const [activeTab,   setActiveTab]  = useState('dashboard');
-  const [todos,       setTodos]      = useState(TODO_ITEMS);
-  const [calMonth,    setCalMonth]   = useState({ year: 2026, month: 9 });
-  const [mobileNav,   setMobileNav]  = useState(false);
-  const [pigStats,    setPigStats]   = useState({ total: 0, healthy: 0, sick: 0, quarantine: 0 });
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [todos, setTodos] = useState(TODO_ITEMS);
+  const [calMonth, setCalMonth] = useState({ year: 2026, month: 9 });
+  const [mobileNav, setMobileNav] = useState(false);
+  const [pigStats, setPigStats] = useState({ total: 0, healthy: 0, sick: 0, quarantine: 0 });
   const [dashboardInventory, setDashboardInventory] = useState([]);
   const [inventoryLoading, setInventoryLoading] = useState(true);
 
@@ -107,95 +106,92 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
       .then(d => {
         if (!d) return;
         setPigStats({
-          total:      d.total ?? 0,
-          healthy:    d.healthy ?? 0,
-          sick:       d.sick ?? 0,
+          total: d.total ?? 0,
+          healthy: d.healthy ?? 0,
+          sick: d.sick ?? 0,
           quarantine: d.quarantine ?? 0,
         });
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
+
+  const loadDashboardInventory = async () => {
+    setInventoryLoading(true);
+    try {
+      const [itemsRes, txRes] = await Promise.all([
+        supabase
+          .from('inventory_items')
+          .select('*')
+          .eq('is_archived', false)
+          .order('last_updated_at', { ascending: false }),
+        supabase
+          .from('inventory_transactions')
+          .select('*')
+          .order('created_at', { ascending: false }),
+      ]);
+
+      const activeItems = itemsRes.data || [];
+      const txs = txRes.data || [];
+      const metricsMap = computeInventoryMetrics(activeItems, txs);
+
+      const priorityOrder = {
+        out_of_stock: 0,
+        critical: 1,
+        low_stock: 2,
+        at_risk: 3,
+        healthy: 4,
+      };
+
+      const enriched = activeItems
+        .map(item => {
+          const m = metricsMap[item.item_id] || {};
+          const percent = getStockPercent(item.current_stock_level, item.ideal_stock_level);
+          const status = getStockStatus(item.current_stock_level, item.low_stock_threshold, m.daysUntilLow);
+          return {
+            id: item.item_id,
+            name: item.item_name,
+            category: item.category || 'General',
+            current: item.current_stock_level,
+            ideal: item.ideal_stock_level,
+            threshold: item.low_stock_threshold,
+            unit: item.unit_of_measure,
+            percent,
+            status,
+            dailyBurnRate: m.dailyBurnRate || 0,
+            daysUntilLow: m.daysUntilLow,
+            daysUntilEmpty: m.daysUntilEmpty,
+            color: status.barColor,
+          };
+        })
+        .sort((a, b) => {
+          if (priorityOrder[a.status.key] !== priorityOrder[b.status.key]) {
+            return priorityOrder[a.status.key] - priorityOrder[b.status.key];
+          }
+          return a.percent - b.percent;
+        })
+        .slice(0, 5);
+
+      setDashboardInventory(enriched);
+    } catch {
+      // Keep previous state on network hiccup
+    } finally {
+      setInventoryLoading(false);
+    }
+  };
 
   // Load live inventory items & 14-day burn-rate forecasts whenever Dashboard tab is viewed
   useEffect(() => {
-    if (activeTab !== 'dashboard') return;
-    let cancelled = false;
-
-    const loadDashboardInventory = async () => {
-      setInventoryLoading(true);
-      try {
-        const [itemsRes, txRes] = await Promise.all([
-          supabase
-            .from('inventory_items')
-            .select('*')
-            .eq('is_archived', false)
-            .order('last_updated_at', { ascending: false }),
-          supabase
-            .from('inventory_transactions')
-            .select('*')
-            .order('created_at', { ascending: false }),
-        ]);
-
-        if (cancelled) return;
-        const activeItems = itemsRes.data || [];
-        const txs = txRes.data || [];
-        const metricsMap = computeInventoryMetrics(activeItems, txs);
-
-        const priorityOrder = {
-          out_of_stock: 0,
-          critical: 1,
-          low_stock: 2,
-          at_risk: 3,
-          healthy: 4,
-        };
-
-        const enriched = activeItems
-          .map(item => {
-            const m = metricsMap[item.item_id] || {};
-            const percent = getStockPercent(item.current_stock_level, item.ideal_stock_level);
-            const status = getStockStatus(item.current_stock_level, item.low_stock_threshold, m.daysUntilLow);
-            return {
-              id: item.item_id,
-              name: item.item_name,
-              category: item.category || 'General',
-              current: item.current_stock_level,
-              ideal: item.ideal_stock_level,
-              threshold: item.low_stock_threshold,
-              unit: item.unit_of_measure,
-              percent,
-              status,
-              dailyBurnRate: m.dailyBurnRate || 0,
-              daysUntilLow: m.daysUntilLow,
-              daysUntilEmpty: m.daysUntilEmpty,
-              color: status.barColor,
-            };
-          })
-          .sort((a, b) => {
-            if (priorityOrder[a.status.key] !== priorityOrder[b.status.key]) {
-              return priorityOrder[a.status.key] - priorityOrder[b.status.key];
-            }
-            return a.percent - b.percent;
-          })
-          .slice(0, 5);
-
-        setDashboardInventory(enriched);
-      } catch {
-        // Keep previous state on network hiccup
-      } finally {
-        if (!cancelled) setInventoryLoading(false);
-      }
-    };
-
-    loadDashboardInventory();
-    return () => { cancelled = true; };
+    if (activeTab === 'dashboard') {
+      loadDashboardInventory();
+    }
   }, [activeTab]);
 
-  const firstDay    = new Date(calMonth.year, calMonth.month, 1).getDay();
+  const firstDay = new Date(calMonth.year, calMonth.month, 1).getDay();
   const daysInMonth = new Date(calMonth.year, calMonth.month + 1, 0).getDate();
-  const prevMonth   = () => setCalMonth(p => p.month === 0 ? { year: p.year - 1, month: 11 } : { ...p, month: p.month - 1 });
-  const nextMonth   = () => setCalMonth(p => p.month === 11 ? { year: p.year + 1, month: 0 } : { ...p, month: p.month + 1 });
+  const prevMonth = () => setCalMonth(p => p.month === 0 ? { year: p.year - 1, month: 11 } : { ...p, month: p.month - 1 });
+  const nextMonth = () => setCalMonth(p => p.month === 11 ? { year: p.year + 1, month: 0 } : { ...p, month: p.month + 1 });
 
-  const toggleTodo     = id => setTodos(ts => ts.map(t => t.id === id ? { ...t, done: !t.done } : t));
+  const toggleTodo = id => setTodos(ts => ts.map(t => t.id === id ? { ...t, done: !t.done } : t));
   const completedTodos = todos.filter(t => t.done).length;
 
   const getInitialsSafe = () => {
@@ -281,9 +277,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                   ) : (
                     <div className="space-y-3">
                       {HEALTH_ALERTS.map((alert, i) => (
-                        <div key={i} className={`flex items-center gap-4 p-3.5 rounded-xl border ${
-                          alert.severity === 'high' ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-100'
-                        }`}>
+                        <div key={i} className={`flex items-center gap-4 p-3.5 rounded-xl border ${alert.severity === 'high' ? 'bg-rose-50 border-rose-100' : 'bg-amber-50 border-amber-100'
+                          }`}>
                           <div className={`w-11 h-11 rounded-xl shrink-0 flex items-center justify-center text-xl
                             ${alert.severity === 'high' ? 'bg-rose-100' : 'bg-amber-100'}`}>
                             🐷
@@ -299,10 +294,13 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                   )}
                 </SectionCard>
 
+                {/* 1-Click Today's Feeding Panel */}
+                <DailyFeedingPanel variant="dashboard" onUpdated={loadDashboardInventory} />
+
                 <SectionCard
                   title="To-Do"
                   id="todo-card"
-                  action={() => {}}
+                  action={() => { }}
                   actionLabel={`${completedTodos}/${todos.length} done`}
                 >
                   <div className="space-y-2.5">
@@ -310,11 +308,10 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                       <button
                         key={todo.id}
                         onClick={() => toggleTodo(todo.id)}
-                        className={`w-full flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          todo.done
+                        className={`w-full flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all cursor-pointer ${todo.done
                             ? 'bg-slate-50 border-slate-100 opacity-60'
                             : 'bg-white border-slate-100 hover:border-slate-200 hover:shadow-sm'
-                        }`}
+                          }`}
                       >
                         {todo.done
                           ? <CheckSquare className="w-5 h-5 text-emerald-500 fill-emerald-100 shrink-0 mt-0.5" />
@@ -326,11 +323,10 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                           </p>
                           <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">{todo.sub}</p>
                         </div>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                          todo.urgency === 'TODAY'  ? 'bg-emerald-100 text-emerald-700' :
-                          todo.urgency === 'URGENT' ? 'bg-rose-100    text-rose-700'    :
-                                                      'bg-slate-100   text-slate-500'
-                        }`}>{todo.urgency}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${todo.urgency === 'TODAY' ? 'bg-emerald-100 text-emerald-700' :
+                            todo.urgency === 'URGENT' ? 'bg-rose-100    text-rose-700' :
+                              'bg-slate-100   text-slate-500'
+                          }`}>{todo.urgency}</span>
                       </button>
                     ))}
                   </div>
@@ -404,8 +400,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                                   <strong>{item.name}</strong> will hit low stock in{' '}
                                   <strong>{item.daysUntilLow} {item.daysUntilLow === 1 ? 'day' : 'days'}</strong>
                                   {item.dailyBurnRate > 0 &&
-                                    ` (~${item.dailyBurnRate} ${getShortUnit(item.unit)}/day${
-                                      hasSubUnit(item.unit) ? ` • ${formatSubUnitEquivalent(item.dailyBurnRate, item.unit)}/day` : ""
+                                    ` (~${item.dailyBurnRate} ${getShortUnit(item.unit)}/day${hasSubUnit(item.unit) ? ` • ${formatSubUnitEquivalent(item.dailyBurnRate, item.unit)}/day` : ""
                                     })`} — consider restocking soon.
                                 </span>
                               </p>
@@ -431,10 +426,10 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                 {/* Visual stats cards with upgraded shadow elevations */}
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: 'Total Herd',  value: pigStats.total,      color: 'text-slate-900',   bg: 'bg-white'       },
-                    { label: 'Healthy',     value: pigStats.healthy,    color: 'text-emerald-600', bg: 'bg-emerald-50'  },
-                    { label: 'Sick',        value: pigStats.sick,       color: 'text-amber-600',   bg: 'bg-amber-50'    },
-                    { label: 'Quarantine',  value: pigStats.quarantine, color: 'text-rose-600',    bg: 'bg-rose-50'     },
+                    { label: 'Total Herd', value: pigStats.total, color: 'text-slate-900', bg: 'bg-white' },
+                    { label: 'Healthy', value: pigStats.healthy, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                    { label: 'Sick', value: pigStats.sick, color: 'text-amber-600', bg: 'bg-amber-50' },
+                    { label: 'Quarantine', value: pigStats.quarantine, color: 'text-rose-600', bg: 'bg-rose-50' },
                   ].map((s, i) => (
                     <div key={i} className={`${s.bg} border border-slate-200/60 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow text-center`}>
                       <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
@@ -522,14 +517,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
           )}
 
           {activeTab === 'growth' && (
-            <main>
+            <main className="h-full">
               <GrowthProgramManagement loggedInUser={loggedInUser} />
-            </main>
-          )}
-
-          {activeTab === 'growth_analytics' && (
-            <main>
-              <GrowthAnalytics loggedInUser={loggedInUser} />
             </main>
           )}
 
@@ -539,25 +528,19 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {activeTab === 'medication_treatment' && (
-            <main>
-              <MedicationTreatmentLogs loggedInUser={loggedInUser} setActiveTab={setActiveTab} />
-            </main>
-          )}
-
-          {activeTab === 'mortality_record' && (
-            <main>
-              <MortalityRecord loggedInUser={loggedInUser} setActiveTab={setActiveTab} />
-            </main>
-          )}
-
           {activeTab === 'inventory' && (
             <main>
               <InventoryManagement loggedInUser={loggedInUser} />
             </main>
           )}
 
-          {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && activeTab !== 'breeding_logs' && activeTab !== 'growth' && activeTab !== 'growth_analytics' && activeTab !== 'health_management' && activeTab !== 'medication_treatment' && activeTab !== 'mortality_record' && activeTab !== 'inventory' && (
+          {activeTab === 'transactions' && (
+            <main>
+              <TransactionRecords loggedInUser={loggedInUser} />
+            </main>
+          )}
+
+          {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && activeTab !== 'breeding_logs' && activeTab !== 'growth' && activeTab !== 'health_management' && activeTab !== 'inventory' && activeTab !== 'transactions' && (
             <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
               <div className="text-center space-y-4 max-w-xs mx-auto animate-fade-in">
                 <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">

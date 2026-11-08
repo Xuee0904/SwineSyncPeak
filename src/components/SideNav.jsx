@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import {
-  LayoutDashboard, Users, TrendingUp, Activity,
+  LayoutDashboard, Users, TrendingUp,
   Baby, ClipboardList, Receipt, Settings, LogOut, X, ChevronRight,
-  Grid3X3, Skull, HeartPulse,
+  Grid3X3, HeartPulse,
 } from 'lucide-react';
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -14,22 +14,11 @@ export const NAV_ITEMS = [
       { id: 'pen_management', label: 'Pen Management', icon: Grid3X3 },
     ]
   },
-  {
-    id: 'growth', label: 'Growth Management', icon: TrendingUp, sub: true,
-    children: [
-      { id: 'growth_analytics', label: 'Growth Analytics', icon: Activity },
-    ]
-  },
-  {
-    id: 'health_management', label: 'Health Management', icon: HeartPulse, sub: true,
-    children: [
-      { id: 'medication_treatment', label: 'Treatment Logs', icon: ClipboardList },
-      { id: 'mortality_record', label: 'Mortality Records', icon: Skull },
-    ]
-  },
+  { id: 'growth', label: 'Growth Management', icon: TrendingUp },
+  { id: 'health_management', label: 'Health Management', icon: HeartPulse },
   { id: 'breeding_logs', label: 'Breeding Logs', icon: Baby },
-  { id: 'inventory', label: 'Inventory Mgmt', icon: ClipboardList, sub: true },
-  { id: 'transactions', label: 'Transaction Records', icon: Receipt, sub: true },
+  { id: 'inventory', label: 'Inventory', icon: ClipboardList },
+  { id: 'transactions', label: 'Transaction Records', icon: Receipt },
   { id: 'admin', label: 'Admin Settings', icon: Settings },
 ];
 
@@ -166,13 +155,12 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
                         aria-current={active ? 'page' : undefined}
                       >
                         <Icon
-                          className={`w-4 h-4 shrink-0 ${
-                            active
+                          className={`w-4 h-4 shrink-0 ${active
                               ? 'text-white'
                               : showCollapsedChildIndicator
                                 ? 'text-emerald-400'
                                 : 'text-slate-400'
-                          }`}
+                            }`}
                         />
                         <span className="flex-1 truncate">{label}</span>
                       </button>
@@ -193,15 +181,13 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
                         aria-label={isExpanded ? `Collapse ${label} menu` : `Expand ${label} menu`}
                       >
                         <ChevronRight
-                          className={`w-4 h-4 shrink-0 transition-transform duration-300 ease-in-out stroke-[2.5px] ${
-                            isExpanded ? 'rotate-90' : ''
-                          } ${
-                            active
+                          className={`w-4 h-4 shrink-0 transition-transform duration-300 ease-in-out stroke-[2.5px] ${isExpanded ? 'rotate-90' : ''
+                            } ${active
                               ? 'text-white'
                               : showCollapsedChildIndicator
                                 ? 'text-emerald-400'
                                 : 'text-slate-400'
-                          }`}
+                            }`}
                         />
                       </button>
                     </div>

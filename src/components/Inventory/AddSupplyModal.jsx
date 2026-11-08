@@ -18,25 +18,27 @@ import {
 // Medical items by the vial (e.g. 100ml bottle or 50-dose vaccine vial), so the
 // container size is stored in the unit itself, e.g. "sacks (25kg)", "vials (100ml)".
 const CATEGORY_UNITS = {
-  Feed:        { default: "sacks (25kg)", options: ["sacks (25kg)", "sacks (50kg)", "kg"] },
-  Medication:  { default: "vials (100ml)", options: [
-    "vials (50ml)", "vials (100ml)", "vials (250ml)",
-    "ml", "tablets", "capsules", "sachets",
-  ] },
-  Vaccines:    { default: "vials (50 doses)", options: [
-    "vials (10 doses)", "vials (20 doses)", "vials (50 doses)", "vials (100ml)", "doses", "ml",
-  ] },
-  Supplements: { default: "packs (500g)", options: [
-    "packs (100g)", "packs (500g)", "packs (1000g)",
-    "bottles (500ml)", "bottles (1000ml)",
-    "sacks (25kg)", "sacks (50kg)",
-    "kg", "g", "ml", "sachets",
-  ] },
-  Medical:     { default: "vials (100ml)", options: [
-    "vials (50ml)", "vials (100ml)", "vials (250ml)",
-    "vials (10 doses)", "vials (20 doses)", "vials (50 doses)",
-    "ml", "doses", "tablets", "capsules", "sachets",
-  ] },
+  Feed: { default: "sacks (25kg)", options: ["sacks (25kg)", "sacks (50kg)", "kg"] },
+  Medication: {
+    default: "vials (100ml)", options: [
+      "vials (50ml)", "vials (100ml)", "vials (250ml)",
+      "ml", "tablets", "capsules", "sachets",
+    ]
+  },
+  Supplements: {
+    default: "packs (500g)", options: [
+      "packs (100g)", "packs (500g)", "packs (1000g)",
+      "bottles (500ml)", "bottles (1000ml)",
+      "sacks (25kg)", "sacks (50kg)",
+      "kg", "g", "ml", "sachets",
+    ]
+  },
+  Medical: {
+    default: "vials (100ml)", options: [
+      "vials (50ml)", "vials (100ml)", "vials (250ml)",
+      "ml", "tablets", "capsules", "sachets",
+    ]
+  },
 };
 
 const unitLabel = (u) => {
@@ -46,8 +48,8 @@ const unitLabel = (u) => {
   return `${noun} (${meta.size} ${meta.subUnit} each)`;
 };
 
-// Medical, Medication, and Vaccines items share the same treatment-focused UI labels
-const isMedicalCategory = (cat) => cat === "Medical" || cat === "Medication" || cat === "Vaccines";
+// Medical and Medication items share the same treatment-focused UI labels
+const isMedicalCategory = (cat) => cat === "Medical" || cat === "Medication";
 
 const EMPTY_FORM = {
   item_name: "",
@@ -57,10 +59,9 @@ const EMPTY_FORM = {
   low_stock_threshold: "",
   ideal_stock_level: "",
   unit_cost: "",
-  description: "",
 };
 
-export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser }) {
+export default function AddSupplyModal({ item, prefill, onClose, onSaved, loggedInUser }) {
   const isEdit = !!item;
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -74,26 +75,35 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
     onClose
   );
 
-  // Prefill for edit mode
+  // Prefill for edit mode or prefill from Growth Program custom item
   useEffect(() => {
     if (item) {
       setForm({
-        item_name:           item.item_name           ?? "",
-        category:            item.category            ?? "Feed",
-        unit_of_measure:     item.unit_of_measure     ?? "kg",
+        item_name: item.item_name ?? "",
+        category: item.category ?? "Feed",
+        unit_of_measure: item.unit_of_measure ?? "kg",
         current_stock_level: item.current_stock_level ?? "",
         low_stock_threshold: item.low_stock_threshold ?? "",
-        ideal_stock_level:   item.ideal_stock_level   ?? "",
-        unit_cost:           item.unit_cost           ?? "",
-        description:         item.description         ?? "",
+        ideal_stock_level: item.ideal_stock_level ?? "",
+        unit_cost: item.unit_cost ?? "",
       });
       setLowAlertManuallyEdited(true);
+    } else if (prefill) {
+      const cat = prefill.category || "Feed";
+      const defaultUnit = CATEGORY_UNITS[cat]?.default ?? "sacks (25kg)";
+      setForm({
+        ...EMPTY_FORM,
+        item_name: prefill.item_name ?? "",
+        category: cat,
+        unit_of_measure: prefill.unit_of_measure || defaultUnit,
+      });
+      setLowAlertManuallyEdited(false);
     } else {
       setForm(EMPTY_FORM);
       setLowAlertManuallyEdited(false);
     }
     setSuccessInfo(null);
-  }, [item]);
+  }, [item, prefill]);
 
   const computeStockErrors = (f) => {
     const errs = {};
@@ -158,20 +168,30 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
     const newCategory = e.target.value;
     const oldCategoryDefault = CATEGORY_UNITS[form.category]?.default;
     const newDefault = CATEGORY_UNITS[newCategory]?.default || "kg";
-    setForm(f => ({
-      ...f,
-      category: newCategory,
-      unit_of_measure: (f.unit_of_measure === "" || f.unit_of_measure === oldCategoryDefault)
-        ? newDefault
-        : f.unit_of_measure,
-    }));
+    setForm(f => {
+      const isMed = newCategory === "Medication" || newCategory === "Medical";
+      const next = {
+        ...f,
+        category: newCategory,
+        unit_of_measure: (f.unit_of_measure === "" || f.unit_of_measure === oldCategoryDefault)
+          ? newDefault
+          : f.unit_of_measure,
+      };
+      // For medicines (typically 1-bottle standby stock), suggest single-bottle defaults if empty
+      if (!isEdit && isMed && (!f.ideal_stock_level || f.ideal_stock_level === "100")) {
+        next.ideal_stock_level = "1";
+        next.current_stock_level = f.current_stock_level || "1";
+        next.low_stock_threshold = "0.25";
+      }
+      return next;
+    });
     setErrors(er => ({ ...er, category: undefined, unit_of_measure: undefined }));
   };
 
   const validate = () => {
     const e = {};
-    if (!form.item_name.trim())                  e.item_name = "Item name is required";
-    if (!form.unit_of_measure.trim())            e.unit_of_measure = "Unit is required";
+    if (!form.item_name.trim()) e.item_name = "Item name is required";
+    if (!form.unit_of_measure.trim()) e.unit_of_measure = "Unit is required";
     const cur = parseFloat(form.current_stock_level);
     const low = parseFloat(form.low_stock_threshold);
     const max = parseFloat(form.ideal_stock_level);
@@ -189,6 +209,10 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
     } else if (!isNaN(max) && max > 0 && low >= max) {
       e.low_stock_threshold = "Must be less than max capacity";
     }
+    const cost = parseFloat(form.unit_cost);
+    if (form.unit_cost === "" || isNaN(cost) || cost <= 0) {
+      e.unit_cost = "Cost per unit is required for financial records (> ₱0)";
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -200,19 +224,20 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
     setSaving(true);
     try {
       const payload = {
-        item_name:           form.item_name.trim(),
-        category:            form.category,
-        unit_of_measure:     form.unit_of_measure.trim() || "units",
+        item_name: form.item_name.trim(),
+        category: form.category,
+        unit_of_measure: form.unit_of_measure.trim() || "units",
         current_stock_level: parseFloat(form.current_stock_level),
         low_stock_threshold: parseFloat(form.low_stock_threshold),
-        ideal_stock_level:   parseFloat(form.ideal_stock_level),
-        unit_cost:           form.unit_cost ? parseFloat(form.unit_cost) : 0,
-        description:         form.description.trim() || null,
-        is_archived:         false,
-        last_updated_at:     new Date().toISOString(),
+        ideal_stock_level: parseFloat(form.ideal_stock_level),
+        unit_cost: form.unit_cost ? parseFloat(form.unit_cost) : 0,
+        description: isEdit ? (item.description || null) : null,
+        is_archived: false,
+        last_updated_at: new Date().toISOString(),
       };
 
       const staff = getStaffDetails(loggedInUser);
+      let savedRecord = item ? { ...item, ...payload } : null;
 
       if (isEdit) {
         const { error } = await supabase
@@ -255,6 +280,7 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
           .single();
 
         if (error) throw error;
+        savedRecord = inserted;
 
         // Automatically log initial stock as RESTOCK transaction if > 0
         if (inserted && payload.current_stock_level > 0) {
@@ -297,7 +323,7 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
       });
 
       // Refresh parent dataset in background
-      if (onSaved) onSaved(true);
+      if (onSaved) onSaved(true, savedRecord);
     } catch (err) {
       console.error(err);
       const msg = /duplicate key|unique/i.test(err.message || "")
@@ -369,16 +395,10 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
             {/* Header */}
             <div className="flex items-center justify-between px-7 pt-7 pb-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-                  <Package className="w-5 h-5 text-emerald-600" />
-                </div>
                 <div>
                   <h2 className="text-base font-bold text-slate-900 leading-tight">
                     {isEdit ? "Edit Supply Item" : "Add New Supply"}
                   </h2>
-                  <p className="text-[11px] text-slate-400">
-                    {isEdit ? "Update item details and stock thresholds" : "Register a new supply item into inventory"}
-                  </p>
                 </div>
               </div>
               <button
@@ -402,9 +422,8 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
                   value={form.item_name}
                   onChange={set("item_name")}
                   placeholder="e.g. Corn Mix (Pre-Starter)"
-                  className={`w-full rounded-xl border py-2.5 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${
-                    errors.item_name ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
-                  }`}
+                  className={`w-full rounded-xl border py-2.5 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${errors.item_name ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
+                    }`}
                 />
                 {errors.item_name && <p className="mt-1 text-xs text-rose-600 field-error">{errors.item_name}</p>}
               </div>
@@ -420,7 +439,6 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
                   >
                     <option value="Feed">Feed (sacks)</option>
                     <option value="Medication">Medication (vials, ml, tablets…)</option>
-                    <option value="Vaccines">Vaccines (doses, vials…)</option>
                     <option value="Supplements">Supplements (packs, bottles, kg…)</option>
                   </select>
                 </div>
@@ -431,9 +449,8 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
                   <select
                     value={form.unit_of_measure}
                     onChange={set("unit_of_measure")}
-                    className={`w-full rounded-xl border py-2.5 px-3 text-sm text-slate-800 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 cursor-pointer ${
-                      errors.unit_of_measure ? "border-rose-300 bg-rose-50" : "border-slate-200"
-                    }`}
+                    className={`w-full rounded-xl border py-2.5 px-3 text-sm text-slate-800 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 cursor-pointer ${errors.unit_of_measure ? "border-rose-300 bg-rose-50" : "border-slate-200"
+                      }`}
                   >
                     {(() => {
                       const base = CATEGORY_UNITS[form.category]?.options || ["sacks (25kg)", "sacks (50kg)", "kg", "ml", "vials"];
@@ -496,9 +513,8 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
                       value={form.ideal_stock_level}
                       onChange={set("ideal_stock_level")}
                       placeholder="e.g. 20"
-                      className={`w-full rounded-xl border bg-white py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${
-                        errors.ideal_stock_level ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
-                      }`}
+                      className={`w-full rounded-xl border bg-white py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${errors.ideal_stock_level ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
+                        }`}
                     />
                     <p className="mt-1 text-[10px] text-slate-400">
                       {kgHint(form.ideal_stock_level) || (isMedicalCategory(form.category) ? "Max stock to keep on hand" : "100% full storage")}
@@ -532,9 +548,8 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
                       value={form.current_stock_level}
                       onChange={set("current_stock_level")}
                       placeholder="0"
-                      className={`w-full rounded-xl border bg-white py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${
-                        errors.current_stock_level ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
-                      }`}
+                      className={`w-full rounded-xl border bg-white py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${errors.current_stock_level ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
+                        }`}
                     />
                     <p className="mt-1 text-[10px] text-slate-400">
                       {kgHint(form.current_stock_level) || "On-hand count"}
@@ -553,9 +568,8 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
                       value={form.low_stock_threshold}
                       onChange={set("low_stock_threshold")}
                       placeholder="Auto (25%)"
-                      className={`w-full rounded-xl border bg-white py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${
-                        errors.low_stock_threshold ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
-                      }`}
+                      className={`w-full rounded-xl border bg-white py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${errors.low_stock_threshold ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
+                        }`}
                     />
                     <p className="mt-1 text-[10px] text-slate-400">
                       {kgHint(form.low_stock_threshold) || "Reorder trigger"}
@@ -568,18 +582,20 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
               {/* Unit cost */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Unit Cost{containerMeta ? ` (per ${getContainerSingular(form.unit_of_measure)})` : ""} <span className="text-slate-400 font-normal">(optional — for valuation)</span>
+                  Cost per Unit{containerMeta ? ` (per ${getContainerSingular(form.unit_of_measure)})` : ""} <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">₱</span>
                   <input
                     type="number"
-                    min="0"
+                    min="0.01"
                     step="any"
                     value={form.unit_cost}
                     onChange={set("unit_cost")}
                     placeholder="0.00"
-                    className="w-full rounded-xl border border-slate-200 py-2.5 pl-7 pr-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                    className={`w-full rounded-xl border py-2.5 pl-7 pr-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${
+                      errors.unit_cost ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
+                    }`}
                   />
                 </div>
                 {containerMeta && parseFloat(form.unit_cost) > 0 && (
@@ -587,18 +603,9 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
                     = ₱{(parseFloat(form.unit_cost) / containerMeta.size).toFixed(2)} per {subUnitLabel}
                   </p>
                 )}
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Description / Notes</label>
-                <textarea
-                  value={form.description}
-                  onChange={set("description")}
-                  rows={2}
-                  placeholder="Optional notes about this supply item..."
-                  className="w-full rounded-xl border border-slate-200 py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 resize-none"
-                />
+                {errors.unit_cost && (
+                  <p className="mt-1 text-xs text-rose-600 field-error">{errors.unit_cost}</p>
+                )}
               </div>
 
               {/* Footer */}
@@ -681,11 +688,10 @@ export default function AddSupplyModal({ item, onClose, onSaved, loggedInUser })
               <button
                 type="button"
                 onClick={handleSuccessClose}
-                className={`w-full py-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                  successInfo.isEdit
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
-                    : "border border-slate-200 hover:bg-slate-50 text-slate-600"
-                }`}
+                className={`w-full py-3 text-xs font-bold rounded-xl transition-all cursor-pointer ${successInfo.isEdit
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20"
+                  : "border border-slate-200 hover:bg-slate-50 text-slate-600"
+                  }`}
               >
                 Done
               </button>

@@ -8,10 +8,10 @@ import {
   Stethoscope,
   ChevronDown,
   SlidersHorizontal,
-  ClipboardList,
   Pencil,
   Archive,
   X,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "../utils/toast";
 import VaccinationFormModal from "../components/HealthManagement/VaccinationFormModal";
@@ -43,15 +43,25 @@ const archivedVaccinationExportColumns = [
 const healthEventsExportColumns = [
   { header: "Date", accessor: "date" },
   { header: "Swine/Herd ID", accessor: "swineId" },
+  { header: "Type", accessor: "pigType" },
   { header: "Event Type", accessor: "eventType" },
-  { header: "Medication", accessor: "medication" },
-  { header: "Veterinarian", accessor: "vet" },
+  { header: "Diagnosis / Symptoms", accessor: "diagnosis" },
+  { header: "Medication / Treatment", accessor: "medication" },
+  { header: "Dosage", accessor: "dosage" },
+  { header: "Examined By", accessor: "vet" },
   { header: "Status", accessor: (r) => r.status || "—" },
 ];
 
-// ---------------------------------------------------------------------------
-// Data fetched from backend API
-// ---------------------------------------------------------------------------
+const archivedHealthEventsExportColumns = [
+  { header: "Date", accessor: "date" },
+  { header: "Swine/Herd ID", accessor: "swineId" },
+  { header: "Type", accessor: "pigType" },
+  { header: "Event Type", accessor: "eventType" },
+  { header: "Diagnosis / Symptoms", accessor: "diagnosis" },
+  { header: "Medication / Treatment", accessor: "medication" },
+  { header: "Dosage", accessor: "dosage" },
+  { header: "Examined By", accessor: "vet" },
+];
 
 // ---------------------------------------------------------------------------
 // Small building blocks
@@ -62,6 +72,26 @@ const statusStyles = {
   alert: "bg-rose-50 text-rose-700 ring-rose-600/20",
   tomorrow: "bg-amber-50 text-amber-700 ring-amber-600/20",
 };
+
+const healthStatusStyles = {
+  sick: "bg-rose-50 text-rose-700 ring-rose-600/20",
+  monitoring: "bg-amber-50 text-amber-700 ring-amber-600/20",
+  resolved: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  healthy: "bg-slate-50 text-slate-700 ring-slate-600/20",
+};
+
+function HealthStatusPill({ status }) {
+  const s = (status || "healthy").toLowerCase();
+  const cls = healthStatusStyles[s] || healthStatusStyles.healthy;
+  const label = s === "healthy" ? "Healthy" : s.charAt(0).toUpperCase() + s.slice(1);
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
 
 function DueBadge({ label }) {
   const isOverdue = label === "Overdue";
@@ -133,27 +163,6 @@ function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, load
   );
 }
 
-function SubModuleCard({ icon: Icon, title, description, accent, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-emerald-300 hover:shadow-md"
-      type="button"
-    >
-      <div
-        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${accent}`}
-      >
-        <Icon className="h-5 w-5" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-slate-900">{title}</p>
-        <p className="mt-0.5 text-xs text-slate-500">{description}</p>
-      </div>
-      <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:text-emerald-500" />
-    </button>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
@@ -170,35 +179,58 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
   const [vacModal, setVacModal] = useState(false);
   const [editVacRecord, setEditVacRecord] = useState(null);
   const [prefillVac, setPrefillVac] = useState(null);
+
   const [healthModal, setHealthModal] = useState(false);
+  const [editHealthRecord, setEditHealthRecord] = useState(null);
   const [prefillHealth, setPrefillHealth] = useState(null);
   const [activeGrowthTask, setActiveGrowthTask] = useState(null);
+  const [resolvingHealthId, setResolvingHealthId] = useState(null);
+  const [archivingHealthId, setArchivingHealthId] = useState(null);
 
   const [vaccinationRegistry, setVaccinationRegistry] = useState([]);
   const [archivedRegistry, setArchivedRegistry] = useState([]);
   const [healthEventsLog, setHealthEventsLog] = useState([]);
+  const [archivedHealthLog, setArchivedHealthLog] = useState([]);
   const [growthTasks, setGrowthTasks] = useState([]);
+
+  // Pagination & Filtering for Vaccination Registry
+  const [vacPage, setVacPage] = useState(1);
+  const VAC_PER_PAGE = 8;
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivingId, setArchivingId] = useState(null);
+
+  // Pagination & Filtering for Health Events Log
+  const [healthPage, setHealthPage] = useState(1);
+  const HEALTH_PER_PAGE = 8;
+  const [showHealthArchived, setShowHealthArchived] = useState(false);
+  const [healthQuery, setHealthQuery] = useState("");
+  const [healthStatusFilter, setHealthStatusFilter] = useState("all");
+  const [healthDateFrom, setHealthDateFrom] = useState("");
+  const [healthDateTo, setHealthDateTo] = useState("");
+  const [healthFiltersOpen, setHealthFiltersOpen] = useState(false);
+
+  // Growth Tasks List
   const [tasksPage, setTasksPage] = useState(1);
   const TASKS_PER_PAGE = 5;
   const [taskQuery, setTaskQuery] = useState("");
   const [taskTypeFilter, setTaskTypeFilter] = useState("all");
   const [taskStatusFilter, setTaskStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
-  const [showArchived, setShowArchived] = useState(false);
-  const [archivingId, setArchivingId] = useState(null);
 
   const fetchData = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [vacRes, vacArchivedRes, healthRes, tasksRes] = await Promise.all([
+      const [vacRes, vacArchivedRes, healthRes, healthArchivedRes, tasksRes] = await Promise.all([
         fetch(`${API_BASE}/api/vaccination-records?t=` + Date.now()),
         fetch(`${API_BASE}/api/vaccination-records?archived=true&t=` + Date.now()),
         fetch(`${API_BASE}/api/health-logs?t=` + Date.now()),
+        fetch(`${API_BASE}/api/health-logs?archived=true&t=` + Date.now()),
         fetch(`${API_BASE}/api/growth-tasks?status=pending&t=` + Date.now())
       ]);
       const vacData = await vacRes.json();
       const vacArchivedData = await vacArchivedRes.json();
       const healthData = await healthRes.json();
+      const healthArchivedData = await healthArchivedRes.json();
       const tasksData = await tasksRes.json();
 
       const mapVacRow = (v) => {
@@ -220,17 +252,25 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         };
       };
 
+      const mapHealthRow = (h) => ({
+        id: h.health_id.substring(0, 8),
+        date: new Date(h.log_date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
+        rawDate: h.log_date,
+        swineId: h.pigs?.pig_tag || h.piglet_batches?.batch_tag || (h.pig_id ? `Pig ${h.pig_id.substring(0, 8)}` : `Batch ${h.batch_id?.substring(0, 8)}`),
+        pigType: h.pig_id ? "Individual" : "Batch",
+        eventType: h.treatment ? "Treatment" : h.diagnosis ? "Check-up" : "Log",
+        diagnosis: h.diagnosis || h.symptoms || "Routine",
+        medication: h.medication_name || "None",
+        dosage: h.dosage || "—",
+        vet: h.examined_by || h.recorded_by || "System",
+        status: h.status || "healthy",
+        _raw: h,
+      });
+
       setVaccinationRegistry((vacData.data || []).map(mapVacRow));
       setArchivedRegistry((vacArchivedData.data || []).map(mapVacRow));
-
-      setHealthEventsLog((healthData.data || []).map(h => ({
-        date: new Date(h.log_date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }),
-        swineId: h.pigs?.pig_tag || h.piglet_batches?.batch_tag || (h.pig_id ? `Pig ${h.pig_id.substring(0, 8)}` : `Batch ${h.batch_id?.substring(0, 8)}`),
-        eventType: h.treatment ? "Treatment" : h.diagnosis ? "Check-up" : "Log",
-        medication: h.medication_name || "None",
-        vet: h.examined_by || h.recorded_by || "System",
-        status: h.status
-      })));
+      setHealthEventsLog((healthData.data || []).map(mapHealthRow));
+      setArchivedHealthLog((healthArchivedData.data || []).map(mapHealthRow));
 
       // FEED tasks are routine husbandry, not health events — managed in Growth Program Management
       setGrowthTasks((tasksData.data || []).filter(t => t.activity_type !== 'FEED'));
@@ -284,6 +324,60 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         .includes(query.toLowerCase());
     });
   }, [archivedRegistry, query]);
+
+  const currentVacList = showArchived ? filteredArchivedRegistry : filteredRegistry;
+  const totalVacPages = Math.ceil(currentVacList.length / VAC_PER_PAGE) || 1;
+  const safeVacPage = Math.min(Math.max(1, vacPage), totalVacPages);
+  const paginatedVacRegistry = useMemo(() => {
+    const start = (safeVacPage - 1) * VAC_PER_PAGE;
+    return currentVacList.slice(start, start + VAC_PER_PAGE);
+  }, [currentVacList, safeVacPage]);
+
+  // Health Events filtering & pagination
+  const filteredHealthLog = useMemo(() => {
+    return healthEventsLog.filter((row) => {
+      const q = healthQuery.trim().toLowerCase();
+      const matchesQuery =
+        q === "" ||
+        [row.id, row.swineId, row.diagnosis, row.medication, row.vet, row.eventType]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      const matchesStatus = healthStatusFilter === "all" || row.status === healthStatusFilter;
+
+      let matchesDate = true;
+      if (healthDateFrom || healthDateTo) {
+        const given = new Date(row.rawDate);
+        if (healthDateFrom && given < new Date(healthDateFrom)) matchesDate = false;
+        if (healthDateTo) {
+          const toEnd = new Date(healthDateTo);
+          toEnd.setHours(23, 59, 59, 999);
+          if (given > toEnd) matchesDate = false;
+        }
+      }
+
+      return matchesQuery && matchesStatus && matchesDate;
+    });
+  }, [healthEventsLog, healthQuery, healthStatusFilter, healthDateFrom, healthDateTo]);
+
+  const filteredArchivedHealthLog = useMemo(() => {
+    return archivedHealthLog.filter((row) => {
+      const q = healthQuery.trim().toLowerCase();
+      if (q === "") return true;
+      return [row.id, row.swineId, row.diagnosis, row.medication, row.vet, row.eventType]
+        .join(" ")
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [archivedHealthLog, healthQuery]);
+
+  const currentHealthList = showHealthArchived ? filteredArchivedHealthLog : filteredHealthLog;
+  const totalHealthPages = Math.ceil(currentHealthList.length / HEALTH_PER_PAGE) || 1;
+  const safeHealthPage = Math.min(Math.max(1, healthPage), totalHealthPages);
+  const paginatedHealthLog = useMemo(() => {
+    const start = (safeHealthPage - 1) * HEALTH_PER_PAGE;
+    return currentHealthList.slice(start, start + HEALTH_PER_PAGE);
+  }, [currentHealthList, safeHealthPage]);
 
   const overdueVacCount = vaccinationRegistry.filter((r) => {
     if (!r.nextDueDate) return false;
@@ -702,14 +796,14 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                     </tr>
                   ))
                 ) : showArchived ? (
-                  filteredArchivedRegistry.length === 0 ? (
+                  paginatedVacRegistry.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-5 py-12 text-center text-sm text-slate-400">
                         {archivedRegistry.length === 0 ? "No archived records yet." : "No archived records match your search."}
                       </td>
                     </tr>
                   ) : (
-                    filteredArchivedRegistry.map((row) => (
+                    paginatedVacRegistry.map((row) => (
                       <tr key={row.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                         <td className="px-5 py-4">
                           <div className="text-slate-800">{row.pigHerdId}</div>
@@ -722,14 +816,14 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                       </tr>
                     ))
                   )
-                ) : filteredRegistry.length === 0 ? (
+                ) : paginatedVacRegistry.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">
                       No records match your filters.
                     </td>
                   </tr>
                 ) : (
-                  filteredRegistry.map((row) => (
+                  paginatedVacRegistry.map((row) => (
                     <tr key={row.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                       <td className="px-5 py-4">
                         <div className="text-slate-800">{row.pigHerdId}</div>
@@ -785,36 +879,153 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
               </tbody>
             </table>
           </div>
+          {currentVacList.length > VAC_PER_PAGE && (
+            <div className="border-t border-slate-100 p-4">
+              <Pagination
+                currentPage={safeVacPage}
+                totalPages={totalVacPages}
+                onPageChange={setVacPage}
+                totalItems={currentVacList.length}
+                itemsPerPage={VAC_PER_PAGE}
+                itemName="records"
+              />
+            </div>
+          )}
         </div>
 
         {/* Health Events Log */}
         <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 p-5">
+          <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <h2 className="text-base font-semibold text-slate-900">Health Events Log</h2>
-              {activeTreatmentsCount > 0 && (
+              {/* Active / Archived toggle */}
+              <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => { setShowHealthArchived(false); setHealthPage(1); }}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${!showHealthArchived
+                      ? 'bg-white shadow-sm text-slate-800'
+                      : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                  Active
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowHealthArchived(true); setHealthPage(1); }}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${showHealthArchived
+                      ? 'bg-white shadow-sm text-slate-800'
+                      : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                  Archived
+                </button>
+              </div>
+              {activeTreatmentsCount > 0 && !showHealthArchived && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">
-                  {activeTreatmentsCount} ACTIVE
+                  {activeTreatmentsCount} ACTIVE CASES
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={healthQuery}
+                  onChange={(e) => { setHealthQuery(e.target.value); setHealthPage(1); }}
+                  placeholder="Search health events..."
+                  className="w-56 rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                />
+              </div>
+              {!showHealthArchived && (
+                <button
+                  onClick={() => setHealthFiltersOpen((v) => !v)}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  type="button"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Filters
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 transition-transform ${healthFiltersOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+              )}
               <ExportDropdown
-                data={healthEventsLog}
-                columns={healthEventsExportColumns}
-                filename="health_events_log"
-                pdfTitle="Health Events Log"
+                data={showHealthArchived ? filteredArchivedHealthLog : filteredHealthLog}
+                columns={showHealthArchived ? archivedHealthEventsExportColumns : healthEventsExportColumns}
+                filename={showHealthArchived ? "archived_health_events_log" : "health_events_log"}
+                pdfTitle={showHealthArchived ? "Archived Health Events Log" : "Health Events Log"}
               />
-              <button
-                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
-                type="button"
-                onClick={() => { setPrefillHealth(null); setHealthModal(true); }}
-              >
-                <Plus className="h-4 w-4" />
-                Log Health Event
-              </button>
+              {!showHealthArchived && (
+                <button
+                  className="flex items-center gap-2 rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700"
+                  type="button"
+                  onClick={() => { setEditHealthRecord(null); setPrefillHealth(null); setHealthModal(true); }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Log Health Event
+                </button>
+              )}
             </div>
           </div>
+
+          {/* Filter panel — only available in Active view, animated open/close */}
+          <div
+            aria-hidden={!(healthFiltersOpen && !showHealthArchived)}
+            className={`grid transition-all duration-300 ease-in-out ${healthFiltersOpen && !showHealthArchived ? "grid-rows-[1fr] opacity-100 visible" : "grid-rows-[0fr] opacity-0 invisible"}`}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-slate-500">Status</label>
+                  <select
+                    value={healthStatusFilter}
+                    onChange={(e) => { setHealthStatusFilter(e.target.value); setHealthPage(1); }}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="sick">Sick</option>
+                    <option value="monitoring">Monitoring</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="healthy">Healthy / Routine</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-slate-500">Date range</label>
+                  <input
+                    type="date"
+                    value={healthDateFrom}
+                    onChange={(e) => { setHealthDateFrom(e.target.value); setHealthPage(1); }}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                  />
+                  <span className="text-xs text-slate-400">to</span>
+                  <input
+                    type="date"
+                    value={healthDateTo}
+                    onChange={(e) => { setHealthDateTo(e.target.value); setHealthPage(1); }}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                  />
+                </div>
+                {(healthStatusFilter !== "all" || healthDateFrom || healthDateTo || healthQuery) && (
+                  <button
+                    onClick={() => {
+                      setHealthStatusFilter("all");
+                      setHealthDateFrom("");
+                      setHealthDateTo("");
+                      setHealthQuery("");
+                      setHealthPage(1);
+                    }}
+                    className="ml-auto flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+                    type="button"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
@@ -822,8 +1033,12 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   <th className="px-5 py-3 font-medium">Date</th>
                   <th className="px-5 py-3 font-medium">Swine/Herd ID</th>
                   <th className="px-5 py-3 font-medium">Event type</th>
+                  <th className="px-5 py-3 font-medium">Diagnosis / Symptoms</th>
                   <th className="px-5 py-3 font-medium">Medication / Treatment</th>
+                  <th className="px-5 py-3 font-medium">Dosage</th>
                   <th className="px-5 py-3 font-medium">Examined By</th>
+                  {!showHealthArchived && <th className="px-5 py-3 font-medium">Status</th>}
+                  {!showHealthArchived && <th className="px-5 py-3 font-medium text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
@@ -833,32 +1048,152 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                       <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-6 w-16 bg-slate-200 rounded-full"></div></td>
-                      <td className="px-5 py-4"><div className="h-4 w-32 bg-slate-200 rounded"></div></td>
+                      <td className="px-5 py-4"><div className="h-4 w-28 bg-slate-200 rounded"></div></td>
+                      <td className="px-5 py-4"><div className="h-4 w-28 bg-slate-200 rounded"></div></td>
+                      <td className="px-5 py-4"><div className="h-4 w-16 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded"></div></td>
+                      {!showHealthArchived && <td className="px-5 py-4"><div className="h-6 w-16 bg-slate-200 rounded-full"></div></td>}
+                      {!showHealthArchived && <td className="px-5 py-4"><div className="h-6 w-24 bg-slate-200 rounded"></div></td>}
                     </tr>
                   ))
-                ) : healthEventsLog.length > 0 ? (
-                  healthEventsLog.map((row, i) => (
-                    <tr key={i} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                      <td className="px-5 py-4 text-slate-600">{row.date}</td>
-                      <td className="px-5 py-4 font-medium text-slate-800">{row.swineId}</td>
-                      <td className="px-5 py-4">
-                        <EventTypePill type={row.eventType} />
+                ) : showHealthArchived ? (
+                  paginatedHealthLog.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-400">
+                        {archivedHealthLog.length === 0 ? "No archived health events yet." : "No archived records match your search."}
                       </td>
-                      <td className="px-5 py-4 text-slate-600">{row.medication}</td>
-                      <td className="px-5 py-4 text-slate-600">{row.vet}</td>
                     </tr>
-                  ))
-                ) : (
+                  ) : (
+                    paginatedHealthLog.map((row) => (
+                      <tr key={row.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                        <td className="px-5 py-4 text-slate-600">{row.date}</td>
+                        <td className="px-5 py-4">
+                          <div className="font-medium text-slate-800">{row.swineId}</div>
+                          <div className="text-xs text-slate-400">{row.pigType}</div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <EventTypePill type={row.eventType} />
+                        </td>
+                        <td className="px-5 py-4 text-slate-600 max-w-[200px] truncate" title={row.diagnosis}>{row.diagnosis}</td>
+                        <td className="px-5 py-4 text-slate-600">{row.medication}</td>
+                        <td className="px-5 py-4 text-slate-600">{row.dosage}</td>
+                        <td className="px-5 py-4 text-slate-600">{row.vet}</td>
+                      </tr>
+                    ))
+                  )
+                ) : paginatedHealthLog.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">
+                    <td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-400">
                       No health events match your criteria.
                     </td>
                   </tr>
+                ) : (
+                  paginatedHealthLog.map((row) => (
+                    <tr key={row.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                      <td className="px-5 py-4 text-slate-600">{row.date}</td>
+                      <td className="px-5 py-4">
+                        <div className="font-medium text-slate-800">{row.swineId}</div>
+                        <div className="text-xs text-slate-400">{row.pigType}</div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <EventTypePill type={row.eventType} />
+                      </td>
+                      <td className="px-5 py-4 text-slate-600 max-w-[200px] truncate" title={row.diagnosis}>{row.diagnosis}</td>
+                      <td className="px-5 py-4 text-slate-600">{row.medication}</td>
+                      <td className="px-5 py-4 text-slate-600">{row.dosage}</td>
+                      <td className="px-5 py-4 text-slate-600">{row.vet}</td>
+                      <td className="px-5 py-4">
+                        <HealthStatusPill status={row.status} />
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {(row.status === "sick" || row.status === "monitoring") && (
+                            <button
+                              type="button"
+                              disabled={resolvingHealthId === row._raw.health_id}
+                              onClick={async () => {
+                                setResolvingHealthId(row._raw.health_id);
+                                try {
+                                  const res = await fetch(`${API_BASE}/api/health-logs/${row._raw.health_id}`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      status: 'resolved',
+                                      performed_by: loggedInUser?.name || loggedInUser?.email || 'Admin',
+                                    }),
+                                  });
+                                  if (!res.ok) throw new Error('Failed to resolve health log');
+                                  toast.success(`Marked as resolved for ${row.swineId}. Herd status updated.`);
+                                  fetchData();
+                                } catch (e) {
+                                  toast.error(e.message);
+                                } finally {
+                                  setResolvingHealthId(null);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50/50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 transition-colors disabled:opacity-50"
+                              title="Mark case as resolved (restores swine status to Healthy)"
+                            >
+                              <CheckCircle2 className="h-3 w-3" />
+                              {resolvingHealthId === row._raw.health_id ? "Saving..." : "Resolve"}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditHealthRecord(row);
+                              setPrefillHealth(null);
+                              setHealthModal(true);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-emerald-300 transition-colors"
+                          >
+                            <Pencil className="h-3 w-3" /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={archivingHealthId === row._raw.health_id}
+                            onClick={async () => {
+                              if (!confirm(`Archive health record for ${row.swineId}?`)) return;
+                              setArchivingHealthId(row._raw.health_id);
+                              try {
+                                const res = await fetch(`${API_BASE}/api/health-logs/${row._raw.health_id}/archive`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ performed_by: loggedInUser?.name || loggedInUser?.email || 'Admin' }),
+                                });
+                                if (!res.ok) throw new Error('Failed to archive');
+                                toast.success('Health record archived.');
+                                fetchData();
+                              } catch (e) {
+                                toast.error(e.message);
+                              } finally {
+                                setArchivingHealthId(null);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                          >
+                            <Archive className="h-3 w-3" /> Archive
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
           </div>
+          {currentHealthList.length > HEALTH_PER_PAGE && (
+            <div className="border-t border-slate-100 p-4">
+              <Pagination
+                currentPage={safeHealthPage}
+                totalPages={totalHealthPages}
+                onPageChange={setHealthPage}
+                totalItems={currentHealthList.length}
+                itemsPerPage={HEALTH_PER_PAGE}
+                itemName="events"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -890,9 +1225,11 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         open={healthModal}
         onClose={() => {
           setHealthModal(false);
+          setEditHealthRecord(null);
           setPrefillHealth(null);
           setActiveGrowthTask(null);
         }}
+        editRecord={editHealthRecord}
         prefillData={prefillHealth}
         currentUser={loggedInUser}
         onSuccess={async (createdLog) => {

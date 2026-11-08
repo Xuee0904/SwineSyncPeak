@@ -20,20 +20,143 @@ router.get('/api/growth/programs', async (req, res) => {
           *,
           inventory_items (item_id, item_name, unit_of_measure, category, current_stock_level)
         ),
-        enrolled_batches:piglet_batches(batch_id, current_count)
+        enrolled_batches:piglet_batches(batch_id, batch_tag, current_count, date_of_birth, status, is_archived)
       `)
       .eq('is_archived', isArchived)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    // Flatten enrolled_batches to counts for the card display
-    const programsWithCount = programs.map(p => ({
-      ...p,
-      enrolled_batch_count: p.enrolled_batches?.length ?? 0,
-      enrolled_head_count: (p.enrolled_batches || []).reduce((sum, b) => sum + (Number(b.current_count) || 0), 0),
-      enrolled_batches: undefined, // strip the raw array, count is enough
-    }));
+    const today = new Date();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    // Fetch today's feeding logs for all active batches across these programs
+    const allActiveBatchIds = [];
+    programs.forEach(p => {
+      (p.enrolled_batches || []).forEach(b => {
+        if (!b.is_archived && b.status !== 'Archived') {
+          allActiveBatchIds.push(b.batch_id);
+        }
+      });
+    });
+
+    let todayFeedBatchIds = new Set();
+    if (allActiveBatchIds.length > 0) {
+      try {
+        const { data: bLogs } = await db
+          .from('batch_activity_logs')
+          .select('batch_id')
+          .in('batch_id', allActiveBatchIds)
+          .eq('activity_type', 'FEED')
+          .gte('created_at', startOfToday.toISOString());
+        if (bLogs) {
+          bLogs.forEach(l => todayFeedBatchIds.add(l.batch_id));
+        }
+      } catch (err) {
+        console.warn('[Growth API] batch_activity_logs lookup note:', err.message);
+      }
+
+      // Complementary check: completed FEED growth_tasks today
+      try {
+        const { data: gTasks } = await db
+          .from('growth_tasks')
+          .select('batch_id')
+          .in('batch_id', allActiveBatchIds)
+          .eq('activity_type', 'FEED')
+          .eq('status', 'completed')
+          .gte('completed_at', startOfToday.toISOString());
+        if (gTasks) {
+          gTasks.forEach(t => todayFeedBatchIds.add(t.batch_id));
+        }
+      } catch (tErr) {
+        // ignore
+      }
+
+      // Complementary check: inventory_transactions today with batch tags
+      try {
+        const { data: txs } = await db
+          .from('inventory_transactions')
+          .select('notes')
+          .gte('created_at', startOfToday.toISOString());
+        if (txs) {
+          const allActiveBatches = programs.flatMap(p => p.enrolled_batches || []).filter(b => !b.is_archived && b.status !== 'Archived');
+          txs.forEach(tx => {
+            allActiveBatches.forEach(b => {
+              if (b.batch_tag && tx.notes && tx.notes.includes(b.batch_tag)) {
+                todayFeedBatchIds.add(b.batch_id);
+              }
+            });
+          });
+        }
+      } catch (txErr) {
+        // ignore
+      }
+    }
+
+    // Compute actionable metrics for each growth program
+    const programsWithCount = programs.map(p => {
+      const activeBatches = (p.enrolled_batches || []).filter(b => !b.is_archived && b.status !== 'Archived');
+      const guidelines = (p.guidelines || []).sort((a, b) => a.days_after_birth - b.days_after_birth);
+      const feedGuidelines = guidelines.filter(g => g.activity_type === 'FEED');
+      const targetWeight = Number(p.target_weight) || 105;
+
+      let estDailyFeed = 0;
+      let readyWeanersHeads = 0;
+      let readyWeanersBatches = 0;
+      let readyFattenersHeads = 0;
+      let readyFattenersBatches = 0;
+      let unfedBatchesCount = 0;
+
+      activeBatches.forEach(b => {
+        const count = Number(b.current_count) || 0;
+        const dob = b.date_of_birth ? new Date(b.date_of_birth) : null;
+        const ageInDays = dob ? Math.max(0, Math.floor((today - dob) / (1000 * 60 * 60 * 24))) : 0;
+
+        if (!todayFeedBatchIds.has(b.batch_id)) {
+          unfedBatchesCount++;
+        }
+
+        // Determine active feed guideline for current age
+        if (feedGuidelines.length > 0 && count > 0) {
+          let currentFeed = feedGuidelines[0];
+          for (const fg of feedGuidelines) {
+            if (ageInDays >= fg.days_after_birth) {
+              currentFeed = fg;
+            } else {
+              break;
+            }
+          }
+          const dailyConsumption = Number(currentFeed?.daily_consumption_per_head) || 0;
+          estDailyFeed += (dailyConsumption * count);
+        }
+
+        // Birthdate-based market readiness:
+        // Weaners: 28 to 89 days old (weaned from sow, ready for market/nursery sale)
+        // Fatteners: 150+ days old (finished growing cycle, ready for market/slaughter)
+        if (ageInDays >= 28 && ageInDays < 90) {
+          readyWeanersHeads += count;
+          readyWeanersBatches += 1;
+        } else if (ageInDays >= 150) {
+          readyFattenersHeads += count;
+          readyFattenersBatches += 1;
+        }
+      });
+
+      return {
+        ...p,
+        enrolled_batch_count: activeBatches.length,
+        enrolled_head_count: activeBatches.reduce((sum, b) => sum + (Number(b.current_count) || 0), 0),
+        est_daily_feed_kg: Number(estDailyFeed.toFixed(1)),
+        unfed_batches_today_count: unfedBatchesCount,
+        ready_weaners_heads: readyWeanersHeads,
+        ready_weaners_batches: readyWeanersBatches,
+        ready_fatteners_heads: readyFattenersHeads,
+        ready_fatteners_batches: readyFattenersBatches,
+        market_ready_batches_count: readyWeanersBatches + readyFattenersBatches,
+        enrolled_batches: undefined,
+      };
+    });
 
     res.json(programsWithCount);
   } catch (error) {
@@ -263,6 +386,7 @@ router.put('/api/growth/programs/:id', async (req, res) => {
 
     if (deleteErr) throw deleteErr;
 
+    let insertedGuidelines = [];
     if (guidelines && guidelines.length > 0) {
       const guidelineRows = guidelines.map(g => ({
         program_id: id,
@@ -274,11 +398,48 @@ router.put('/api/growth/programs/:id', async (req, res) => {
         dosage_instructions: g.dosage_instructions || null,
       }));
 
-      const { error: guidelinesErr } = await db
+      const { data: gData, error: guidelinesErr } = await db
         .from('growth_program_guidelines')
-        .insert(guidelineRows);
+        .insert(guidelineRows)
+        .select();
 
       if (guidelinesErr) throw guidelinesErr;
+      insertedGuidelines = gData || [];
+    }
+
+    // 2b. Regenerate pending growth_tasks for any active batches enrolled in this program
+    if (insertedGuidelines.length > 0) {
+      const { data: enrolledBatches } = await db
+        .from('piglet_batches')
+        .select('batch_id, date_of_birth, status, is_archived')
+        .eq('assigned_program_id', id)
+        .eq('is_archived', false);
+
+      if (enrolledBatches && enrolledBatches.length > 0) {
+        const newTasks = [];
+        for (const batch of enrolledBatches) {
+          if (!batch.date_of_birth || batch.status === 'Archived') continue;
+          const dob = new Date(batch.date_of_birth);
+          for (const g of insertedGuidelines) {
+            const due = new Date(dob);
+            due.setDate(due.getDate() + (Number(g.days_after_birth) || 0));
+            const dueDateStr = due.toISOString().split('T')[0];
+            newTasks.push({
+              batch_id: batch.batch_id,
+              program_id: id,
+              guideline_id: g.guideline_id,
+              item_id: g.item_id || null,
+              activity_type: g.activity_type,
+              task_name: g.task_name,
+              due_date: dueDateStr,
+              status: 'pending',
+            });
+          }
+        }
+        if (newTasks.length > 0) {
+          await db.from('growth_tasks').insert(newTasks);
+        }
+      }
     }
 
     // 3. Log the activity
@@ -293,6 +454,99 @@ router.put('/api/growth/programs/:id', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating growth program:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/growth/unlinked-guidelines
+// Returns custom stocked supply guidelines (FEED, MEDICATION, SUPPLEMENT) from active programs where item_id is null.
+// PROCEDURES and on-demand VACCINATIONS are excluded as they are not warehouse inventory.
+router.get('/api/growth/unlinked-guidelines', async (req, res) => {
+  try {
+    const { data, error } = await db
+      .from('growth_program_guidelines')
+      .select(`
+        guideline_id,
+        program_id,
+        days_after_birth,
+        activity_type,
+        task_name,
+        item_id,
+        growth_programs!inner (program_id, name, is_archived)
+      `)
+      .is('item_id', null)
+      .neq('activity_type', 'PROCEDURE')
+      .neq('activity_type', 'VACCINATION')
+      .eq('growth_programs.is_archived', false)
+      .order('days_after_birth', { ascending: true });
+
+    if (error) throw error;
+
+    const valid = (data || []).filter(g => 
+      g.task_name && 
+      g.task_name.trim() !== '' && 
+      g.activity_type !== 'PROCEDURE' && 
+      g.activity_type !== 'VACCINATION'
+    );
+    res.json(valid);
+  } catch (error) {
+    console.error('Error fetching unlinked guidelines:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/growth/guidelines/link-inventory
+// Links a custom growth program guideline (and any matching unlinked guidelines/pending tasks) to a newly created inventory item
+router.patch('/api/growth/guidelines/link-inventory', async (req, res) => {
+  try {
+    const { guideline_id, item_id, item_name, original_task_name, activity_type } = req.body;
+    if (!item_id) {
+      return res.status(400).json({ error: 'item_id is required.' });
+    }
+
+    const updatePayload = { item_id };
+    if (item_name && item_name.trim()) {
+      updatePayload.task_name = item_name.trim();
+    }
+
+    // 1. Link the specific guideline if guideline_id is provided
+    if (guideline_id) {
+      await db
+        .from('growth_program_guidelines')
+        .update(updatePayload)
+        .eq('guideline_id', guideline_id);
+
+      await db
+        .from('growth_tasks')
+        .update(updatePayload)
+        .eq('guideline_id', guideline_id)
+        .eq('status', 'pending');
+    }
+
+    // 2. Also link any other unlinked guidelines/pending tasks that share the exact custom task_name + activity_type
+    const matchName = (original_task_name || item_name || '').trim();
+    if (matchName) {
+      let gQuery = db
+        .from('growth_program_guidelines')
+        .update(updatePayload)
+        .is('item_id', null)
+        .ilike('task_name', matchName);
+      if (activity_type) gQuery = gQuery.eq('activity_type', activity_type);
+      await gQuery;
+
+      let tQuery = db
+        .from('growth_tasks')
+        .update(updatePayload)
+        .is('item_id', null)
+        .eq('status', 'pending')
+        .ilike('task_name', matchName);
+      if (activity_type) tQuery = tQuery.eq('activity_type', activity_type);
+      await tQuery;
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error linking guideline to inventory:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -382,6 +636,13 @@ router.get('/api/growth/programs/:id/batches', async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Fetch the program target_weight and guidelines
+    const { data: program } = await db
+      .from('growth_programs')
+      .select('target_weight, guidelines:growth_program_guidelines(*, inventory_items(item_id, item_name, unit_of_measure, current_stock_level))')
+      .eq('program_id', id)
+      .single();
+
     const { data: batches, error } = await db
       .from('piglet_batches')
       .select(`
@@ -390,24 +651,403 @@ router.get('/api/growth/programs/:id/batches', async (req, res) => {
         current_count,
         date_of_birth,
         status,
+        is_archived,
         pen:pens(pen_code)
       `)
       .eq('assigned_program_id', id)
+      .eq('is_archived', false)
       .order('date_of_birth', { ascending: false });
 
     if (error) throw error;
 
-    // Calculate age in days for each batch
     const today = new Date();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const batchIds = batches.map(b => b.batch_id);
+    let todayLogs = [];
+    if (batchIds.length > 0) {
+      try {
+        const { data: bLogs } = await db
+          .from('batch_activity_logs')
+          .select('batch_id, amount_given, created_at')
+          .in('batch_id', batchIds)
+          .eq('activity_type', 'FEED')
+          .gte('created_at', startOfToday.toISOString());
+        if (bLogs && bLogs.length > 0) todayLogs.push(...bLogs);
+      } catch (err) {
+        console.warn('[Growth Batches] batch_activity_logs note:', err.message);
+      }
+
+      // Check completed growth_tasks
+      try {
+        const { data: gTasks } = await db
+          .from('growth_tasks')
+          .select('batch_id, completed_at')
+          .in('batch_id', batchIds)
+          .eq('activity_type', 'FEED')
+          .eq('status', 'completed')
+          .gte('completed_at', startOfToday.toISOString());
+        (gTasks || []).forEach(t => {
+          if (!todayLogs.some(l => l.batch_id === t.batch_id)) {
+            todayLogs.push({ batch_id: t.batch_id, amount_given: 0, created_at: t.completed_at });
+          }
+        });
+      } catch (tErr) {
+        // ignore
+      }
+
+      // Check inventory_transactions today
+      try {
+        const { data: txs } = await db
+          .from('inventory_transactions')
+          .select('notes, quantity, created_at')
+          .gte('created_at', startOfToday.toISOString());
+        (txs || []).forEach(tx => {
+          batches.forEach(b => {
+            if (b.batch_tag && tx.notes && tx.notes.includes(b.batch_tag)) {
+              if (!todayLogs.some(l => l.batch_id === b.batch_id)) {
+                const matchKg = tx.notes.match(/\((\d+(?:\.\d+)?)\s*kg\s*fed\)/i);
+                const kgFed = matchKg ? parseFloat(matchKg[1]) : (Number(tx.quantity) || 0);
+                todayLogs.push({ batch_id: b.batch_id, amount_given: kgFed, created_at: tx.created_at });
+              }
+            }
+          });
+        });
+      } catch (txErr) {
+        // ignore
+      }
+    }
+
+    const guidelines = (program?.guidelines || []).sort((a, b) => a.days_after_birth - b.days_after_birth);
+    const feedGuidelines = guidelines.filter(g => g.activity_type === 'FEED');
+    const targetWeight = Number(program?.target_weight) || 105;
+
     const enriched = batches.map(b => {
       const dob = b.date_of_birth ? new Date(b.date_of_birth) : null;
-      const ageInDays = dob ? Math.floor((today - dob) / (1000 * 60 * 60 * 24)) : null;
-      return { ...b, age_in_days: ageInDays };
+      const ageInDays = dob ? Math.max(0, Math.floor((today - dob) / (1000 * 60 * 60 * 24))) : 0;
+      const count = Number(b.current_count) || 0;
+
+      // Active feed guideline
+      let activeFeed = null;
+      if (feedGuidelines.length > 0) {
+        activeFeed = feedGuidelines[0];
+        for (const fg of feedGuidelines) {
+          if (ageInDays >= fg.days_after_birth) {
+            activeFeed = fg;
+          } else {
+            break;
+          }
+        }
+      }
+
+      // Next guideline on timeline
+      const nextActivity = guidelines.find(g => g.days_after_birth > ageInDays) || null;
+
+      // Check today's feed logs for this batch
+      const batchFeedLogs = todayLogs.filter(l => l.batch_id === b.batch_id);
+      const fedTodayKg = batchFeedLogs.reduce((sum, l) => sum + (Number(l.amount_given) || 0), 0);
+      const fedToday = batchFeedLogs.length > 0;
+
+      // Birthdate-based readiness classification:
+      // Weaner: 28 to 89 days old
+      // Fattener: 150+ days old
+      let marketStatus = null; // null | 'weaner_ready' | 'fattener_ready'
+      if (ageInDays >= 28 && ageInDays < 90) {
+        marketStatus = 'weaner_ready';
+      } else if (ageInDays >= 150) {
+        marketStatus = 'fattener_ready';
+      }
+
+      const dailyRate = Number(activeFeed?.daily_consumption_per_head) || 0;
+      const totalDailyFeed = Number((dailyRate * count).toFixed(1));
+
+      return {
+        ...b,
+        age_in_days: ageInDays,
+        target_weight: targetWeight,
+        market_status: marketStatus,
+        is_market_ready: marketStatus !== null,
+        current_feed: activeFeed ? {
+          guideline_id: activeFeed.guideline_id,
+          item_id: activeFeed.item_id || null,
+          inventory_items: activeFeed.inventory_items || null,
+          task_name: activeFeed.task_name,
+          daily_consumption_per_head: dailyRate,
+          total_daily_feed_kg: totalDailyFeed,
+          fed_today: fedToday,
+          fed_today_kg: Number(fedTodayKg.toFixed(1)),
+        } : null,
+        next_activity: nextActivity ? {
+          days_after_birth: nextActivity.days_after_birth,
+          task_name: nextActivity.task_name,
+          activity_type: nextActivity.activity_type,
+        } : null,
+      };
     });
 
     res.json(enriched);
   } catch (error) {
     console.error('Error fetching batches for program:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/growth/active-feed-batches
+// Returns all active piglet batches along with their current estimated daily feed requirement and breeder herd summary
+router.get('/api/growth/active-feed-batches', async (req, res) => {
+  try {
+    const { data: batches, error } = await db
+      .from('piglet_batches')
+      .select(`
+        batch_id,
+        batch_tag,
+        current_count,
+        date_of_birth,
+        status,
+        is_archived,
+        assigned_program_id,
+        pen:pens(pen_code),
+        program:growth_programs(
+          program_id,
+          name,
+          guidelines:growth_program_guidelines(
+            guideline_id,
+            days_after_birth,
+            activity_type,
+            task_name,
+            item_id,
+            daily_consumption_per_head,
+            inventory_items(item_id, item_name, unit_of_measure, current_stock_level)
+          )
+        )
+      `)
+      .eq('is_archived', false)
+      .order('date_of_birth', { ascending: false });
+
+    if (error) throw error;
+
+    const today = new Date();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const activeBatches = (batches || []).filter(b => b.status !== 'Archived' && Number(b.current_count) > 0);
+    const batchIds = activeBatches.map(b => b.batch_id);
+
+    // Collect today's feeding records for batches
+    const fedBatchLogsMap = new Map();
+    if (batchIds.length > 0) {
+      try {
+        const { data: bLogs } = await db
+          .from('batch_activity_logs')
+          .select('batch_id, amount_given')
+          .in('batch_id', batchIds)
+          .eq('activity_type', 'FEED')
+          .gte('created_at', startOfToday.toISOString());
+        (bLogs || []).forEach(l => {
+          const prev = fedBatchLogsMap.get(l.batch_id) || 0;
+          fedBatchLogsMap.set(l.batch_id, prev + (Number(l.amount_given) || 0));
+        });
+      } catch (err) {
+        console.warn('[Active Feed Batches] batch_activity_logs note:', err.message);
+      }
+
+      try {
+        const { data: gTasks } = await db
+          .from('growth_tasks')
+          .select('batch_id')
+          .in('batch_id', batchIds)
+          .eq('activity_type', 'FEED')
+          .eq('status', 'completed')
+          .gte('completed_at', startOfToday.toISOString());
+        (gTasks || []).forEach(t => {
+          if (!fedBatchLogsMap.has(t.batch_id)) {
+            fedBatchLogsMap.set(t.batch_id, 0);
+          }
+        });
+      } catch (tErr) {
+        // ignore
+      }
+
+      try {
+        const { data: txs } = await db
+          .from('inventory_transactions')
+          .select('notes, quantity')
+          .gte('created_at', startOfToday.toISOString());
+        (txs || []).forEach(tx => {
+          activeBatches.forEach(b => {
+            if (b.batch_tag && tx.notes && tx.notes.includes(b.batch_tag)) {
+              if (!fedBatchLogsMap.has(b.batch_id)) {
+                const matchKg = tx.notes.match(/\((\d+(?:\.\d+)?)\s*kg\s*fed\)/i);
+                const kgFed = matchKg ? parseFloat(matchKg[1]) : (Number(tx.quantity) || 0);
+                fedBatchLogsMap.set(b.batch_id, kgFed);
+              }
+            }
+          });
+        });
+      } catch (txErr) {
+        // ignore
+      }
+    }
+
+    // Query active breeder pigs (sows and boars)
+    let sowsCount = 0;
+    let boarsCount = 0;
+    try {
+      const { data: breederPigs } = await db
+        .from('pigs')
+        .select('gender')
+        .eq('is_archived', false);
+      (breederPigs || []).forEach(p => {
+        const g = String(p.gender || '').toUpperCase();
+        if (g.startsWith('F')) sowsCount++;
+        else if (g.startsWith('M')) boarsCount++;
+      });
+    } catch (pErr) {
+      console.warn('[Active Feed Batches] Breeder query note:', pErr.message);
+    }
+
+    // Check if breeder herd was fed today in inventory_transactions
+    let breederFedToday = false;
+    let breederFedTodayKg = 0;
+    try {
+      const { data: breederTxs } = await db
+        .from('inventory_transactions')
+        .select('notes, quantity')
+        .gte('created_at', startOfToday.toISOString());
+      (breederTxs || []).forEach(tx => {
+        if (tx.notes && tx.notes.includes('Used in Feeding - Sows & Boars')) {
+          breederFedToday = true;
+          const matchKg = tx.notes.match(/\((\d+(?:\.\d+)?)\s*kg\s*fed\)/i);
+          if (matchKg) {
+            breederFedTodayKg += parseFloat(matchKg[1]);
+          }
+        }
+      });
+    } catch (bTxErr) {
+      // ignore
+    }
+
+    const totalBreeders = sowsCount + boarsCount;
+
+    const batchList = activeBatches.map(b => {
+      const dob = b.date_of_birth ? new Date(b.date_of_birth) : null;
+      const ageInDays = dob ? Math.max(0, Math.floor((today - dob) / (1000 * 60 * 60 * 24))) : 0;
+      const count = Number(b.current_count) || 0;
+      const feedGuidelines = ((b.program?.guidelines) || [])
+        .filter(g => g.activity_type === 'FEED')
+        .sort((a, c) => a.days_after_birth - c.days_after_birth);
+
+      let activeFeed = null;
+      if (feedGuidelines.length > 0) {
+        activeFeed = feedGuidelines[0];
+        for (const fg of feedGuidelines) {
+          if (ageInDays >= fg.days_after_birth) {
+            activeFeed = fg;
+          } else {
+            break;
+          }
+        }
+      }
+
+      const dailyRate = Number(activeFeed?.daily_consumption_per_head) || 0;
+      const totalDailyFeed = Number((dailyRate * count).toFixed(2));
+      const isFed = fedBatchLogsMap.has(b.batch_id);
+      const fedKg = fedBatchLogsMap.get(b.batch_id) || totalDailyFeed;
+
+      return {
+        batch_id: b.batch_id,
+        batch_tag: b.batch_tag,
+        current_count: count,
+        age_in_days: ageInDays,
+        pen_code: b.pen?.pen_code || null,
+        program_id: b.program?.program_id || b.assigned_program_id,
+        program_name: b.program?.name || null,
+        current_feed: activeFeed ? {
+          guideline_id: activeFeed.guideline_id,
+          item_id: activeFeed.item_id || null,
+          inventory_items: activeFeed.inventory_items || null,
+          task_name: activeFeed.task_name,
+          daily_consumption_per_head: dailyRate,
+          total_daily_feed_kg: totalDailyFeed,
+          fed_today: isFed,
+          fed_today_kg: Number(fedKg.toFixed(1)),
+        } : null,
+      };
+    });
+
+    res.json({
+      batches: batchList,
+      breeder_summary: {
+        sows_count: sowsCount,
+        boars_count: boarsCount,
+        total_breeders: totalBreeders,
+        breeder_fed_today: breederFedToday,
+        breeder_fed_today_kg: Number(breederFedTodayKg.toFixed(1)),
+        est_daily_feed_kg: Number((totalBreeders * 2.5).toFixed(1)),
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching active feed batches:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/growth/log-breeder-feed
+// Log feeding for the breeding herd (sows & boars) and deduct from inventory
+router.post('/api/growth/log-breeder-feed', async (req, res) => {
+  try {
+    const { item_id, amount_kg, head_count, performed_by } = req.body;
+    const staffName = performed_by || 'Staff';
+    const rawKg = parseFloat(amount_kg);
+
+    if (!item_id) {
+      return res.status(400).json({ error: 'Feed item is required.' });
+    }
+    if (isNaN(rawKg) || rawKg <= 0) {
+      return res.status(400).json({ error: 'Valid feed amount in kg is required.' });
+    }
+
+    // 1. Fetch inventory item to check unit of measure
+    const { data: invItem, error: invErr } = await db
+      .from('inventory_items')
+      .select('item_id, item_name, unit_of_measure, current_stock_level')
+      .eq('item_id', item_id)
+      .single();
+
+    if (invErr || !invItem) {
+      return res.status(404).json({ error: 'Inventory feed item not found.' });
+    }
+
+    // 2. Convert kg to container units (sacks/bags) if applicable
+    const unitStr = String(invItem.unit_of_measure || '').trim();
+    const sackMatch = unitStr.match(/^(?:sacks?|bags?)(?:\s*\(\s*(\d+(?:\.\d+)?)\s*kg\s*\))?$/i);
+    let deductionQty = rawKg;
+    if (sackMatch) {
+      const sackKg = sackMatch[1] ? Number(sackMatch[1]) : 25;
+      deductionQty = Number((rawKg / sackKg).toFixed(4));
+    }
+
+    // 3. Deduct stock and record audit transaction
+    const headsText = head_count ? ` (${head_count} heads)` : '';
+    const deductionResult = await deductInventoryStock({
+      db,
+      itemId: item_id,
+      quantity: deductionQty,
+      notes: `Used in Feeding - Sows & Boars${headsText} (${rawKg} kg fed) • By: ${staffName}`,
+      performedBy: staffName
+    });
+
+    res.json({
+      success: true,
+      amount_kg: rawKg,
+      quantity_deducted: deductionQty,
+      unit_of_measure: invItem.unit_of_measure,
+      new_stock_level: deductionResult?.newStockLevel ?? invItem.current_stock_level,
+      message: `Logged ${rawKg} kg of ${invItem.item_name} for Breeder Herd.`
+    });
+  } catch (error) {
+    console.error('Error logging breeder feed:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -560,15 +1200,39 @@ router.post('/api/growth/logs', async (req, res) => {
   try {
     const { batch_id, activity_type, guideline_id, amount_given, item_id, quantity_deducted, performed_by } = req.body;
 
-    const { data, error } = await db.from('batch_activity_logs').insert({
-      batch_id,
-      activity_type,
-      guideline_id: guideline_id || null,
-      amount_given: amount_given || 0,
-      performed_by: performed_by || 'System'
-    }).select().single();
+    let logResult = null;
+    try {
+      const { data, error } = await db.from('batch_activity_logs').insert({
+        batch_id,
+        activity_type,
+        guideline_id: guideline_id || null,
+        amount_given: amount_given || 0,
+        performed_by: performed_by || 'System'
+      }).select().single();
+      if (error) {
+        console.warn('[Growth Log] batch_activity_logs insert warning:', error.message);
+      } else {
+        logResult = data;
+      }
+    } catch (insertErr) {
+      console.warn('[Growth Log] batch_activity_logs insert skipped:', insertErr.message);
+    }
 
-    if (error) throw error;
+    // Complete corresponding task in growth_tasks if present
+    try {
+      if (batch_id && activity_type) {
+        await db
+          .from('growth_tasks')
+          .update({
+            status: 'completed',
+            completed_at: new Date().toISOString()
+          })
+          .eq('batch_id', batch_id)
+          .eq('activity_type', activity_type);
+      }
+    } catch (taskErr) {
+      console.warn('[Growth Log] growth_tasks update note:', taskErr.message);
+    }
 
     // Fetch the task name and item_id from the guideline if available
     let taskName = activity_type;
@@ -585,24 +1249,59 @@ router.post('/api/growth/logs', async (req, res) => {
         taskName = g.task_name || activity_type;
         if (!resolvedItemId && g.item_id) resolvedItemId = g.item_id;
         resolvedDosage = g.dosage_instructions;
+
+        // Auto-link guideline if it lacked an item_id but the caller supplied one
+        if (!g.item_id && resolvedItemId) {
+          await db
+            .from('growth_program_guidelines')
+            .update({ item_id: resolvedItemId })
+            .eq('guideline_id', guideline_id)
+            .catch(() => {});
+        }
+      }
+    }
+
+    // Fetch batch tag for readable inventory transaction notes
+    let batchTag = 'Batch';
+    if (batch_id) {
+      const { data: bRow } = await db
+        .from('piglet_batches')
+        .select('batch_tag, current_count')
+        .eq('batch_id', batch_id)
+        .single();
+      if (bRow?.batch_tag) {
+        batchTag = `${bRow.batch_tag} (${bRow.current_count || 0} heads)`;
       }
     }
 
     // Determine deduction quantity (container units)
     let deductionAmount = quantity_deducted ? parseFloat(quantity_deducted) : null;
     if (!deductionAmount && resolvedItemId && amount_given > 0) {
-      // If amount_given is provided (e.g. kg for feed)
-      deductionAmount = parseFloat(amount_given);
+      const rawKg = parseFloat(amount_given);
+      const { data: invItem } = await db
+        .from('inventory_items')
+        .select('unit_of_measure')
+        .eq('item_id', resolvedItemId)
+        .single();
+      const unitStr = String(invItem?.unit_of_measure || '').trim();
+      const sackMatch = unitStr.match(/^(?:sacks?|bags?)(?:\s*\(\s*(\d+(?:\.\d+)?)\s*kg\s*\))?$/i);
+      if (sackMatch) {
+        const sackKg = sackMatch[1] ? Number(sackMatch[1]) : 25;
+        deductionAmount = Number((rawKg / sackKg).toFixed(4));
+      } else {
+        deductionAmount = rawKg;
+      }
     }
 
     // Deduct from inventory if item is linked and quantity > 0
     if (resolvedItemId && deductionAmount && deductionAmount > 0) {
+      const kgNote = amount_given > 0 ? ` (${amount_given} kg fed)` : '';
       await deductInventoryStock({
         db,
         itemId: resolvedItemId,
         quantity: deductionAmount,
-        notes: `Growth log: ${taskName} for batch • By: ${performedBy || 'System'}`,
-        performedBy: performed_by || 'System'
+        notes: `Used in Feeding - ${batchTag}${kgNote} • By: ${performed_by || 'Staff'}`,
+        performedBy: performed_by || 'Staff'
       }).catch(err => console.warn('[Growth Log] Stock deduction skipped/failed:', err.message));
     }
 
@@ -632,9 +1331,207 @@ router.post('/api/growth/logs', async (req, res) => {
       });
     }
 
-    res.json({ success: true, log: data });
+    res.json({ success: true, log: logResult || { batch_id, activity_type, amount_given }, quantity_deducted: deductionAmount });
   } catch (error) {
     console.error('Error logging batch activity:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/growth/programs/:id/log-daily-feed
+// 1-Click Bulk Log for all active unfed batches in a growth program
+router.post('/api/growth/programs/:id/log-daily-feed', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { performed_by } = req.body;
+    const staffName = performed_by || 'Staff';
+
+    // 1. Fetch program guidelines with inventory items
+    const { data: program, error: pErr } = await db
+      .from('growth_programs')
+      .select('name, guidelines:growth_program_guidelines(*, inventory_items(item_id, item_name, unit_of_measure, current_stock_level))')
+      .eq('program_id', id)
+      .single();
+
+    if (pErr) throw pErr;
+
+    // 2. Fetch active batches
+    const { data: batches, error: bErr } = await db
+      .from('piglet_batches')
+      .select('batch_id, batch_tag, current_count, date_of_birth, status')
+      .eq('assigned_program_id', id)
+      .eq('is_archived', false)
+      .neq('status', 'Archived');
+
+    if (bErr) throw bErr;
+    if (!batches || batches.length === 0) {
+      return res.json({ success: true, count: 0, message: 'No active batches enrolled in this program.' });
+    }
+
+    // 3. Find which batches have already been fed today
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const batchIds = batches.map(b => b.batch_id);
+    const fedBatchIds = new Set();
+
+    try {
+      const { data: todayLogs } = await db
+        .from('batch_activity_logs')
+        .select('batch_id')
+        .in('batch_id', batchIds)
+        .eq('activity_type', 'FEED')
+        .gte('created_at', startOfToday.toISOString());
+      (todayLogs || []).forEach(l => fedBatchIds.add(l.batch_id));
+    } catch (err) {
+      console.warn('[Bulk Feed] batch_activity_logs lookup note:', err.message);
+    }
+
+    try {
+      const { data: gTasks } = await db
+        .from('growth_tasks')
+        .select('batch_id')
+        .in('batch_id', batchIds)
+        .eq('activity_type', 'FEED')
+        .eq('status', 'completed')
+        .gte('completed_at', startOfToday.toISOString());
+      (gTasks || []).forEach(t => fedBatchIds.add(t.batch_id));
+    } catch (tErr) {
+      // ignore
+    }
+
+    try {
+      const { data: txs } = await db
+        .from('inventory_transactions')
+        .select('notes')
+        .gte('created_at', startOfToday.toISOString());
+      (txs || []).forEach(tx => {
+        batches.forEach(b => {
+          if (b.batch_tag && tx.notes && tx.notes.includes(b.batch_tag)) {
+            fedBatchIds.add(b.batch_id);
+          }
+        });
+      });
+    } catch (txErr) {
+      // ignore
+    }
+
+    const unfedBatches = batches.filter(b => !fedBatchIds.has(b.batch_id) && Number(b.current_count) > 0);
+
+    if (unfedBatches.length === 0) {
+      return res.json({ success: true, count: 0, message: 'All active batches have already been fed today!' });
+    }
+
+    const today = new Date();
+    const guidelines = (program?.guidelines || []).sort((a, b) => a.days_after_birth - b.days_after_birth);
+    const feedGuidelines = guidelines.filter(g => g.activity_type === 'FEED');
+
+    let totalFedKg = 0;
+    const newLogs = [];
+
+    // Group deductions by item_id
+    const deductionsByItem = {};
+
+    for (const b of unfedBatches) {
+      const dob = b.date_of_birth ? new Date(b.date_of_birth) : null;
+      const ageInDays = dob ? Math.max(0, Math.floor((today - dob) / (1000 * 60 * 60 * 24))) : 0;
+      const count = Number(b.current_count) || 0;
+
+      let activeFeed = null;
+      if (feedGuidelines.length > 0) {
+        activeFeed = feedGuidelines[0];
+        for (const fg of feedGuidelines) {
+          if (ageInDays >= fg.days_after_birth) {
+            activeFeed = fg;
+          } else {
+            break;
+          }
+        }
+      }
+
+      if (!activeFeed) continue;
+
+      const dailyRate = Number(activeFeed.daily_consumption_per_head) || 0;
+      const batchFeedKg = Number((dailyRate * count).toFixed(2));
+      if (batchFeedKg <= 0) continue;
+
+      totalFedKg += batchFeedKg;
+      newLogs.push({
+        batch_id: b.batch_id,
+        activity_type: 'FEED',
+        guideline_id: activeFeed.guideline_id,
+        amount_given: batchFeedKg,
+        performed_by: staffName,
+      });
+
+      if (activeFeed.item_id) {
+        if (!deductionsByItem[activeFeed.item_id]) {
+          deductionsByItem[activeFeed.item_id] = {
+            item_id: activeFeed.item_id,
+            item_name: activeFeed.task_name,
+            unit_of_measure: activeFeed.inventory_items?.unit_of_measure,
+            total_kg: 0,
+            batches: [],
+          };
+        }
+        deductionsByItem[activeFeed.item_id].total_kg += batchFeedKg;
+        deductionsByItem[activeFeed.item_id].batches.push(`${b.batch_tag} (${batchFeedKg}kg)`);
+      }
+    }
+
+    if (newLogs.length > 0) {
+      try {
+        await db.from('batch_activity_logs').insert(newLogs);
+      } catch (logErr) {
+        console.warn('[Bulk Feed] batch_activity_logs insert warning:', logErr.message);
+      }
+
+      // Mark corresponding tasks in growth_tasks as completed
+      try {
+        const fedBatchIds = newLogs.map(l => l.batch_id);
+        await db
+          .from('growth_tasks')
+          .update({
+            status: 'completed',
+            completed_at: new Date().toISOString()
+          })
+          .in('batch_id', fedBatchIds)
+          .eq('activity_type', 'FEED');
+      } catch (taskErr) {
+        console.warn('[Bulk Feed] growth_tasks update note:', taskErr.message);
+      }
+    }
+
+    // Process inventory deductions
+    for (const itemKey of Object.keys(deductionsByItem)) {
+      const itemInfo = deductionsByItem[itemKey];
+      const rawKg = itemInfo.total_kg;
+      const unitStr = String(itemInfo.unit_of_measure || '').trim();
+      const sackMatch = unitStr.match(/^(?:sacks?|bags?)(?:\s*\(\s*(\d+(?:\.\d+)?)\s*kg\s*\))?$/i);
+      let deductionQty = rawKg;
+      if (sackMatch) {
+        const sackKg = sackMatch[1] ? Number(sackMatch[1]) : 25;
+        deductionQty = Number((rawKg / sackKg).toFixed(4));
+      }
+
+      if (deductionQty > 0) {
+        await deductInventoryStock({
+          db,
+          itemId: itemInfo.item_id,
+          quantity: deductionQty,
+          notes: `Program Feeding: ${program.name} - ${itemInfo.batches.join(', ')} (${rawKg.toFixed(1)} kg) • By: ${staffName}`,
+          performedBy: staffName,
+        }).catch(err => console.warn('[Bulk Feed] Stock deduction error:', err.message));
+      }
+    }
+
+    res.json({
+      success: true,
+      batches_fed_count: newLogs.length,
+      total_kg_fed: Number(totalFedKg.toFixed(1)),
+      message: `Successfully logged daily feed for ${newLogs.length} batches (${totalFedKg.toFixed(1)} kg total).`,
+    });
+  } catch (error) {
+    console.error('Error logging program daily feed:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
