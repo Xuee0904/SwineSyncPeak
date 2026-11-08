@@ -793,141 +793,159 @@ router.get('/api/growth/programs/:id/batches', async (req, res) => {
   }
 });
 
+// In-memory micro-cache for active feed batches to accelerate repeat queries
+let activeFeedBatchesCache = {
+  data: null,
+  timestamp: 0,
+};
+
+export function invalidateActiveFeedBatchesCache() {
+  activeFeedBatchesCache = { data: null, timestamp: 0 };
+}
+
 // GET /api/growth/active-feed-batches
 // Returns all active piglet batches along with their current estimated daily feed requirement and breeder herd summary
 router.get('/api/growth/active-feed-batches', async (req, res) => {
   try {
-    const { data: batches, error } = await db
-      .from('piglet_batches')
-      .select(`
-        batch_id,
-        batch_tag,
-        current_count,
-        date_of_birth,
-        status,
-        is_archived,
-        assigned_program_id,
-        pen:pens(pen_code),
-        program:growth_programs(
-          program_id,
-          name,
-          guidelines:growth_program_guidelines(
-            guideline_id,
-            days_after_birth,
-            activity_type,
-            task_name,
-            item_id,
-            daily_consumption_per_head,
-            inventory_items(item_id, item_name, unit_of_measure, current_stock_level)
-          )
-        )
-      `)
-      .eq('is_archived', false)
-      .order('date_of_birth', { ascending: false });
-
-    if (error) throw error;
+    const now = Date.now();
+    // Return cached data if fresh (15s TTL)
+    if (activeFeedBatchesCache.data && now - activeFeedBatchesCache.timestamp < 15000) {
+      return res.json(activeFeedBatchesCache.data);
+    }
 
     const today = new Date();
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodayIso = startOfToday.toISOString();
+
+    // Parallelize all independent database queries simultaneously
+    const [
+      batchesResult,
+      logsResult,
+      tasksResult,
+      txsResult,
+      pigsResult,
+    ] = await Promise.allSettled([
+      // 1. Batches & active feeding guidelines
+      db
+        .from('piglet_batches')
+        .select(`
+          batch_id,
+          batch_tag,
+          current_count,
+          date_of_birth,
+          status,
+          is_archived,
+          assigned_program_id,
+          pen:pens(pen_code),
+          program:growth_programs(
+            program_id,
+            name,
+            guidelines:growth_program_guidelines(
+              guideline_id,
+              days_after_birth,
+              activity_type,
+              task_name,
+              item_id,
+              daily_consumption_per_head,
+              inventory_items(item_id, item_name, unit_of_measure, current_stock_level)
+            )
+          )
+        `)
+        .eq('is_archived', false)
+        .order('date_of_birth', { ascending: false }),
+
+      // 2. Today's feed activity logs
+      db
+        .from('batch_activity_logs')
+        .select('batch_id, amount_given')
+        .eq('activity_type', 'FEED')
+        .gte('created_at', startOfTodayIso),
+
+      // 3. Today's completed feed growth tasks
+      db
+        .from('growth_tasks')
+        .select('batch_id')
+        .eq('activity_type', 'FEED')
+        .eq('status', 'completed')
+        .gte('completed_at', startOfTodayIso),
+
+      // 4. Single query for today's transactions (re-used for both batch feeds and breeder feeding)
+      db
+        .from('inventory_transactions')
+        .select('notes, quantity')
+        .gte('created_at', startOfTodayIso),
+
+      // 5. Breeder pigs gender distribution
+      db
+        .from('pigs')
+        .select('gender')
+        .eq('is_archived', false),
+    ]);
+
+    if (batchesResult.status === 'rejected' || batchesResult.value?.error) {
+      throw batchesResult.value?.error || new Error('Failed to load piglet batches');
+    }
+
+    const batches = batchesResult.value?.data || [];
+    const bLogs = logsResult.status === 'fulfilled' && !logsResult.value?.error ? (logsResult.value?.data || []) : [];
+    const gTasks = tasksResult.status === 'fulfilled' && !tasksResult.value?.error ? (tasksResult.value?.data || []) : [];
+    const txs = txsResult.status === 'fulfilled' && !txsResult.value?.error ? (txsResult.value?.data || []) : [];
+    const breederPigs = pigsResult.status === 'fulfilled' && !pigsResult.value?.error ? (pigsResult.value?.data || []) : [];
 
     const activeBatches = (batches || []).filter(b => b.status !== 'Archived' && Number(b.current_count) > 0);
-    const batchIds = activeBatches.map(b => b.batch_id);
+    const batchIdSet = new Set(activeBatches.map(b => b.batch_id));
 
     // Collect today's feeding records for batches
     const fedBatchLogsMap = new Map();
-    if (batchIds.length > 0) {
-      try {
-        const { data: bLogs } = await db
-          .from('batch_activity_logs')
-          .select('batch_id, amount_given')
-          .in('batch_id', batchIds)
-          .eq('activity_type', 'FEED')
-          .gte('created_at', startOfToday.toISOString());
-        (bLogs || []).forEach(l => {
-          const prev = fedBatchLogsMap.get(l.batch_id) || 0;
-          fedBatchLogsMap.set(l.batch_id, prev + (Number(l.amount_given) || 0));
-        });
-      } catch (err) {
-        console.warn('[Active Feed Batches] batch_activity_logs note:', err.message);
+    bLogs.forEach(l => {
+      if (batchIdSet.has(l.batch_id)) {
+        const prev = fedBatchLogsMap.get(l.batch_id) || 0;
+        fedBatchLogsMap.set(l.batch_id, prev + (Number(l.amount_given) || 0));
       }
+    });
 
-      try {
-        const { data: gTasks } = await db
-          .from('growth_tasks')
-          .select('batch_id')
-          .in('batch_id', batchIds)
-          .eq('activity_type', 'FEED')
-          .eq('status', 'completed')
-          .gte('completed_at', startOfToday.toISOString());
-        (gTasks || []).forEach(t => {
-          if (!fedBatchLogsMap.has(t.batch_id)) {
-            fedBatchLogsMap.set(t.batch_id, 0);
-          }
-        });
-      } catch (tErr) {
-        // ignore
+    gTasks.forEach(t => {
+      if (batchIdSet.has(t.batch_id) && !fedBatchLogsMap.has(t.batch_id)) {
+        fedBatchLogsMap.set(t.batch_id, 0);
       }
+    });
 
-      try {
-        const { data: txs } = await db
-          .from('inventory_transactions')
-          .select('notes, quantity')
-          .gte('created_at', startOfToday.toISOString());
-        (txs || []).forEach(tx => {
-          activeBatches.forEach(b => {
-            if (b.batch_tag && tx.notes && tx.notes.includes(b.batch_tag)) {
-              if (!fedBatchLogsMap.has(b.batch_id)) {
-                const matchKg = tx.notes.match(/\((\d+(?:\.\d+)?)\s*kg\s*fed\)/i);
-                const kgFed = matchKg ? parseFloat(matchKg[1]) : (Number(tx.quantity) || 0);
-                fedBatchLogsMap.set(b.batch_id, kgFed);
-              }
-            }
-          });
-        });
-      } catch (txErr) {
-        // ignore
-      }
-    }
-
-    // Query active breeder pigs (sows and boars)
-    let sowsCount = 0;
-    let boarsCount = 0;
-    try {
-      const { data: breederPigs } = await db
-        .from('pigs')
-        .select('gender')
-        .eq('is_archived', false);
-      (breederPigs || []).forEach(p => {
-        const g = String(p.gender || '').toUpperCase();
-        if (g.startsWith('F')) sowsCount++;
-        else if (g.startsWith('M')) boarsCount++;
-      });
-    } catch (pErr) {
-      console.warn('[Active Feed Batches] Breeder query note:', pErr.message);
-    }
-
-    // Check if breeder herd was fed today in inventory_transactions
-    let breederFedToday = false;
-    let breederFedTodayKg = 0;
-    try {
-      const { data: breederTxs } = await db
-        .from('inventory_transactions')
-        .select('notes, quantity')
-        .gte('created_at', startOfToday.toISOString());
-      (breederTxs || []).forEach(tx => {
-        if (tx.notes && tx.notes.includes('Used in Feeding - Sows & Boars')) {
-          breederFedToday = true;
-          const matchKg = tx.notes.match(/\((\d+(?:\.\d+)?)\s*kg\s*fed\)/i);
-          if (matchKg) {
-            breederFedTodayKg += parseFloat(matchKg[1]);
+    // Check inventory transactions for batch feed notes
+    txs.forEach(tx => {
+      if (!tx.notes) return;
+      activeBatches.forEach(b => {
+        if (b.batch_tag && tx.notes.includes(b.batch_tag)) {
+          if (!fedBatchLogsMap.has(b.batch_id)) {
+            const matchKg = tx.notes.match(/\((\d+(?:\.\d+)?)\s*kg\s*fed\)/i);
+            const kgFed = matchKg ? parseFloat(matchKg[1]) : (Number(tx.quantity) || 0);
+            fedBatchLogsMap.set(b.batch_id, kgFed);
           }
         }
       });
-    } catch (bTxErr) {
-      // ignore
-    }
+    });
 
+    // Check breeder herd from the SAME inventory transactions result
+    let breederFedToday = false;
+    let breederFedTodayKg = 0;
+    txs.forEach(tx => {
+      if (tx.notes && tx.notes.includes('Used in Feeding - Sows & Boars')) {
+        breederFedToday = true;
+        const matchKg = tx.notes.match(/\((\d+(?:\.\d+)?)\s*kg\s*fed\)/i);
+        if (matchKg) {
+          breederFedTodayKg += parseFloat(matchKg[1]);
+        }
+      }
+    });
+
+    // Count breeder pigs
+    let sowsCount = 0;
+    let boarsCount = 0;
+    breederPigs.forEach(p => {
+      const g = String(p.gender || '').toUpperCase();
+      if (g.startsWith('F')) sowsCount++;
+      else if (g.startsWith('M')) boarsCount++;
+    });
     const totalBreeders = sowsCount + boarsCount;
 
     const batchList = activeBatches.map(b => {
@@ -976,7 +994,7 @@ router.get('/api/growth/active-feed-batches', async (req, res) => {
       };
     });
 
-    res.json({
+    const payload = {
       batches: batchList,
       breeder_summary: {
         sows_count: sowsCount,
@@ -986,7 +1004,14 @@ router.get('/api/growth/active-feed-batches', async (req, res) => {
         breeder_fed_today_kg: Number(breederFedTodayKg.toFixed(1)),
         est_daily_feed_kg: Number((totalBreeders * 2.5).toFixed(1)),
       }
-    });
+    };
+
+    activeFeedBatchesCache = {
+      data: payload,
+      timestamp: Date.now(),
+    };
+
+    res.json(payload);
   } catch (error) {
     console.error('Error fetching active feed batches:', error.message);
     res.status(500).json({ error: error.message });
@@ -1037,6 +1062,8 @@ router.post('/api/growth/log-breeder-feed', async (req, res) => {
       notes: `Used in Feeding - Sows & Boars${headsText} (${rawKg} kg fed) • By: ${staffName}`,
       performedBy: staffName
     });
+
+    invalidateActiveFeedBatchesCache();
 
     res.json({
       success: true,
@@ -1331,6 +1358,7 @@ router.post('/api/growth/logs', async (req, res) => {
       });
     }
 
+    invalidateActiveFeedBatchesCache();
     res.json({ success: true, log: logResult || { batch_id, activity_type, amount_given }, quantity_deducted: deductionAmount });
   } catch (error) {
     console.error('Error logging batch activity:', error.message);
@@ -1523,6 +1551,8 @@ router.post('/api/growth/programs/:id/log-daily-feed', async (req, res) => {
         }).catch(err => console.warn('[Bulk Feed] Stock deduction error:', err.message));
       }
     }
+
+    invalidateActiveFeedBatchesCache();
 
     res.json({
       success: true,

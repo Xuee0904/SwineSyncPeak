@@ -217,7 +217,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         mobileOpen={mobileNav}
       />
 
-      <div className="flex-1 flex flex-col ml-0 lg:ml-60 min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col ml-0 lg:ml-64 min-w-0 overflow-hidden">
         <header className="sticky top-0 z-10 bg-white border-b border-slate-100 px-5 py-3.5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <button

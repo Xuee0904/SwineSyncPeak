@@ -710,7 +710,7 @@ export default function InventoryManagement({ loggedInUser }) {
   // ── Render ─────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-[1400px] px-6 py-8 space-y-6">
+      <div className="p-5 lg:p-6 space-y-6">
         {/* Top Section: Critical Stock & Burn-Rate Watch */}
         {!viewArchived && !viewHistory && (
           <section className="space-y-3">

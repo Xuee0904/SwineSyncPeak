@@ -75,7 +75,7 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
       <aside
         className={[
           'fixed inset-y-0 left-0 z-50', // Elevated from z-30 to z-50 to sit above modal overlays
-          'w-60 h-screen',
+          'w-64 h-screen',
           'bg-slate-900 border-r border-slate-800/80 shadow-[4px_0_24px_-4px_rgba(2,6,23,0.35)]',
           'flex flex-col justify-between',
           'overflow-y-auto',

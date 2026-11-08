@@ -450,7 +450,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-[1400px] px-6 py-8">
+      <div className="p-5 lg:p-6">
 
         {/* Stat cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

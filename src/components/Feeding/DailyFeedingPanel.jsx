@@ -9,9 +9,23 @@ import Pagination from '../common/Pagination';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, title = "Today's Feeding" }) {
-  const [data, setData] = useState({ batches: [], breeder_summary: null });
+  const [data, setData] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('swinesync_daily_feeding_cache');
+      return cached ? JSON.parse(cached) : { batches: [], breeder_summary: null };
+    } catch {
+      return { batches: [], breeder_summary: null };
+    }
+  });
   const [feedItems, setFeedItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('swinesync_daily_feeding_cache');
+      return !cached;
+    } catch {
+      return true;
+    }
+  });
   const [submittingBatchId, setSubmittingBatchId] = useState(null);
   const [editingBatchId, setEditingBatchId] = useState(null);
   const [editKg, setEditKg] = useState('');
@@ -56,7 +70,13 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
         const batchJson = await batchesRes.json();
         const list = Array.isArray(batchJson) ? batchJson : (batchJson?.batches || []);
         const breeder = batchJson?.breeder_summary || null;
-        setData({ batches: list, breeder_summary: breeder });
+        const fresh = { batches: list, breeder_summary: breeder };
+        setData(fresh);
+        try {
+          sessionStorage.setItem('swinesync_daily_feeding_cache', JSON.stringify(fresh));
+        } catch {
+          // ignore quota error
+        }
       }
 
       if (invRes.data) {
@@ -235,23 +255,27 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
       if (!res.ok) throw new Error(result.error || 'Failed to log feeding.');
 
       toast.success(`Fed ${kg} kg to batch ${batch.batch_tag}. Stock deducted.`);
-      setData(prev => ({
-        ...prev,
-        batches: prev.batches.map(b => {
-          if (b.batch_id === batch.batch_id) {
-            return {
-              ...b,
-              current_feed: {
-                ...b.current_feed,
-                fed_today: true,
-                fed_today_kg: kg,
-                item_id: effectiveItemId,
-              }
-            };
-          }
-          return b;
-        })
-      }));
+      setData(prev => {
+        const next = {
+          ...prev,
+          batches: prev.batches.map(b => {
+            if (b.batch_id === batch.batch_id) {
+              return {
+                ...b,
+                current_feed: {
+                  ...b.current_feed,
+                  fed_today: true,
+                  fed_today_kg: kg,
+                  item_id: effectiveItemId,
+                }
+              };
+            }
+            return b;
+          })
+        };
+        try { sessionStorage.setItem('swinesync_daily_feeding_cache', JSON.stringify(next)); } catch {}
+        return next;
+      });
       setEditingBatchId(null);
       if (onUpdated) onUpdated();
     } catch (err) {
@@ -290,14 +314,18 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
       if (!res.ok) throw new Error(result.error || 'Failed to log breeder feed.');
 
       toast.success(`Fed ${kg} kg to Breeder Herd (${breeder?.total_breeders || 0} heads). Stock deducted.`);
-      setData(prev => ({
-        ...prev,
-        breeder_summary: {
-          ...prev.breeder_summary,
-          breeder_fed_today: true,
-          breeder_fed_today_kg: kg,
-        }
-      }));
+      setData(prev => {
+        const next = {
+          ...prev,
+          breeder_summary: {
+            ...prev.breeder_summary,
+            breeder_fed_today: true,
+            breeder_fed_today_kg: kg,
+          }
+        };
+        try { sessionStorage.setItem('swinesync_daily_feeding_cache', JSON.stringify(next)); } catch {}
+        return next;
+      });
       setEditingBreeder(false);
       if (onUpdated) onUpdated();
     } catch (err) {
