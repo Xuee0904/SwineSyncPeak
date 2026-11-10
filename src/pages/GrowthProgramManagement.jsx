@@ -26,12 +26,16 @@ export function isVaccineItem(item) {
   if (!item) return false;
   const cat = (item.category || '').toLowerCase();
   if (cat === 'vaccines' || cat === 'vaccine') return true;
-  if (cat === 'medication' || cat === 'medicine') return false;
   const name = (item.item_name || '').toLowerCase();
   const unit = (item.unit_of_measure || '').toLowerCase();
-  return name.includes('vaccine') || name.includes('pcv') || name.includes('prrs') ||
+  if (name.includes('vaccine') || name.includes('pcv') || name.includes('prrs') ||
     name.includes('fmd') || name.includes('parvo') || name.includes('erysipelas') ||
-    name.includes('mycoplasma') || unit.includes('dose');
+    name.includes('mycoplasma') || name.includes('hog cholera') || name.includes('iron') ||
+    unit.includes('dose')) {
+    return true;
+  }
+  if (cat === 'medication' || cat === 'medicine') return false;
+  return false;
 }
 
 export function isMedicationItem(item) {

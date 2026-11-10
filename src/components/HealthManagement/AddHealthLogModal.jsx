@@ -15,6 +15,7 @@ const STATUS_OPTIONS = [
   { value: "monitoring", label: "Monitoring" },
   { value: "resolved", label: "Resolved" },
   { value: "healthy", label: "Healthy / Routine" },
+  { value: "deceased", label: "Deceased / Mortality" },
 ];
 
 // Helper to format Date object into YYYY-MM-DDTHH:MM format for datetime-local input
@@ -44,6 +45,7 @@ const EMPTY_FORM = {
   dose_per_head: "",
   dosage: "",
   status: "sick",
+  mortality_count: 1,
   notes: "",
 };
 
@@ -132,6 +134,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         dose_per_head: "",
         dosage: editRecord._raw.dosage || "",
         status: editRecord._raw.status || "sick",
+        mortality_count: editRecord._raw.mortality_count || 1,
         notes: editRecord._raw.notes || "",
       });
     } else if (prefillData) {
@@ -238,6 +241,14 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
     if (!form.log_date) errs.log_date = "Log date is required.";
     if (!form.examined_by.trim()) errs.examined_by = "Examined by is required.";
     if (!form.status) errs.status = "Status is required.";
+    if (form.status === "deceased" && form.targetType === "batch") {
+      const mCount = parseInt(form.mortality_count);
+      if (!mCount || mCount < 1) {
+        errs.mortality_count = "Must record at least 1 head lost.";
+      } else if (mCount > batchCount) {
+        errs.mortality_count = `Cannot exceed current batch headcount (${batchCount}).`;
+      }
+    }
     if (form.medication_name === "Other" && !form.medication_name_custom.trim()) {
       errs.medication_name_custom = "Please specify the medication name.";
     }
@@ -273,6 +284,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         medication_name: effectiveMedicationName || null,
         dosage: finalDosage || null,
         status: form.status,
+        mortality_count: form.status === "deceased" && form.targetType === "batch" ? (parseInt(form.mortality_count) || 1) : 1,
         notes: form.notes || null,
         performed_by: form.recorded_by,
         item_id: willDeduct ? selectedInventoryItem.item_id : (form.item_id || null),
@@ -535,6 +547,68 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                 </p>
               )}
             </div>
+
+            {/* Mortality Banner (Individual Pig) */}
+            {form.status === "deceased" && form.targetType === "pig" && (
+              <div className="col-span-2 p-3.5 rounded-xl border border-rose-200 bg-rose-50/70 text-xs text-rose-800 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Swine Mortality</p>
+                  <p className="text-[11px] text-rose-700 mt-0.5">
+                    Saving this log will mark this pig as deceased and automatically archive it from the active herd.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Mortality Loss Counter (Piglet Batch) */}
+            {form.status === "deceased" && form.targetType === "batch" && (
+              <div className="col-span-2 p-4 rounded-xl border border-rose-200 bg-rose-50/70 space-y-3">
+                <div className="flex items-start gap-2.5 text-xs text-rose-800">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Batch Mortality / Head Loss</p>
+                    <p className="text-[11px] text-rose-700 mt-0.5">
+                      Specify the number of piglets lost. The batch headcount will automatically decrease.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-rose-900 mb-1">
+                      Mortality Count (Heads Lost) *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={batchCount || undefined}
+                      value={form.mortality_count}
+                      onChange={(e) => setForm((f) => ({ ...f, mortality_count: e.target.value }))}
+                      className="w-full h-9 rounded-lg border border-rose-300 bg-white px-2.5 py-1.5 text-sm font-bold text-rose-900 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                    />
+                    {fieldErrors.mortality_count && (
+                      <p className="field-error mt-1 text-xs text-rose-600 flex items-center gap-1">
+                        <AlertCircle size={11} /> {fieldErrors.mortality_count}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Batch Headcount Preview
+                    </label>
+                    <div className="h-9 px-3 bg-white border border-rose-200 rounded-lg text-xs font-semibold text-slate-800 flex items-center justify-between">
+                      <span>{batchCount} head</span>
+                      <span className="text-rose-600 font-bold">&rarr; {Math.max(0, batchCount - (parseInt(form.mortality_count) || 1))} head remaining</span>
+                    </div>
+                    {Math.max(0, batchCount - (parseInt(form.mortality_count) || 1)) === 0 && (
+                      <p className="text-[10px] font-semibold text-rose-600 mt-1">
+                        Total batch loss &mdash; this batch will be automatically archived.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Symptoms & Diagnosis — clinical logs only */}
             {!isProcedure && !isRoutineTask && (

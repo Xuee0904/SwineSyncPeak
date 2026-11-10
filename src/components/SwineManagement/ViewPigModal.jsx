@@ -17,7 +17,7 @@ import VaccinationFormModal from '../HealthManagement/VaccinationFormModal';
 import { exportSwineProfile } from '../../utils/exportUtils';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
-const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
+const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Cull'];
 const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Quarantine'];
 
 const formatLogDate = (dateStr) => {
@@ -198,8 +198,10 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
 
   const totalBornAlive = Number(data.total_born_alive || 0);
   const currentCount = Number(data.current_count ?? totalBornAlive);
-  const mortalityLoss = Math.max(0, totalBornAlive - currentCount);
-  const survivability = totalBornAlive > 0 ? ((currentCount / totalBornAlive) * 100).toFixed(1) : null;
+  const soldCount = Number(data.sold_count || 0);
+  const mortalityLoss = Math.max(0, totalBornAlive - currentCount - soldCount);
+  const survivedHeads = Math.min(totalBornAlive, currentCount + soldCount);
+  const survivability = totalBornAlive > 0 ? ((survivedHeads / totalBornAlive) * 100).toFixed(1) : null;
 
   const sourceOrigin = data.source_origin || data.sourceOrigin || 'born_in_farm';
   const supplierName = data.supplier_name || data.supplierName || null;
@@ -506,15 +508,21 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                     }`}>{survivability}% Survivability</span>
                                 )}
                               </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                              <div className={`grid gap-3 pt-1 ${soldCount > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'}`}>
                                 <div className="bg-white rounded-xl p-3.5 border border-amber-100/80 shadow-2xs text-center">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Initial Head Count</span>
-                                  <span className="text-lg font-black text-emerald-600 mt-0.5 block">{totalBornAlive}</span>
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Initial Heads</span>
+                                  <span className="text-lg font-black text-slate-700 mt-0.5 block">{totalBornAlive}</span>
                                 </div>
                                 <div className="bg-white rounded-xl p-3.5 border border-amber-100/80 shadow-2xs text-center">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Current Head Count</span>
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Current Heads</span>
                                   <span className="text-lg font-black text-indigo-600 mt-0.5 block">{currentCount}</span>
                                 </div>
+                                {soldCount > 0 && (
+                                  <div className="bg-white rounded-xl p-3.5 border border-emerald-100/80 shadow-2xs text-center">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block">Sold / Marketed</span>
+                                    <span className="text-lg font-black text-emerald-600 mt-0.5 block">{soldCount}</span>
+                                  </div>
+                                )}
                                 <div className="bg-white rounded-xl p-3.5 border border-amber-100/80 shadow-2xs text-center">
                                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Mortality / Loss</span>
                                   <span className={`text-lg font-black mt-0.5 block ${mortalityLoss > 0 ? 'text-rose-600' : 'text-slate-700'}`}>{mortalityLoss}</span>

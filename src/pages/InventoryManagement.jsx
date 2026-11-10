@@ -33,6 +33,7 @@ import ArchiveSupplyModal from "../components/Inventory/ArchiveSupplyModal";
 import TransactionHistoryModal from "../components/Inventory/TransactionHistoryModal";
 import {
   computeInventoryMetrics,
+  BURN_WINDOW_DAYS,
   getStockStatus,
   getStockPercent,
   getBarColor,
@@ -41,6 +42,8 @@ import {
   hasSubUnit,
   getShortUnit,
   formatSubUnitEquivalent,
+  getContainerMeta,
+  toSubUnitQty,
 } from "../components/Inventory/inventoryUtils";
 
 // ----- Constants -----
@@ -57,14 +60,27 @@ const activeExportColumns = [
   { header: "Current Stock", accessor: "current_stock_level" },
   { header: "Low Stock Threshold", accessor: "low_stock_threshold" },
   {
-    header: "Daily Burn Rate (14d)",
-    accessor: (r) =>
-      r.dailyBurnRate > 0 ? `${r.dailyBurnRate} ${r.unit_of_measure}/day` : "0",
+    header: "Daily Burn Rate / Demand",
+    accessor: (r) => {
+      if (r.burnRateSource === "par_level") return "Par-Level (No Burn)";
+      if (r.upcomingDemandSubUnit > 0 && r.dailyBurnRate <= 0) {
+        return `Upcoming: ${r.upcomingDemandSubUnit} ${r.upcomingDemandSubUnitLabel} (14d)`;
+      }
+      if (r.dailyBurnRate > 0) {
+        const sourceLabel = r.burnRateSource === "prescribed" ? " (prescribed)" : "";
+        return `${r.dailyBurnRate} ${r.unit_of_measure}/day${sourceLabel}`;
+      }
+      return "0";
+    },
   },
   {
     header: "Days Until Low",
-    accessor: (r) =>
-      r.daysUntilLow != null ? `${r.daysUntilLow}d` : "Stable",
+    accessor: (r) => {
+      if (r.burnRateSource === "par_level") return "Par-Level";
+      if (r.hasUpcomingShortfall) return `Short ${r.shortfallSubUnit} in ${r.earliestDueDays}d`;
+      if (r.upcomingDemandSubUnit > 0 && r.dailyBurnRate <= 0) return `Covered (${r.earliestDueDays}d)`;
+      return r.daysUntilLow != null ? `${r.daysUntilLow}d` : "Stable";
+    },
   },
   {
     header: "Status",
@@ -72,7 +88,8 @@ const activeExportColumns = [
       getStockStatus(
         r.current_stock_level,
         r.low_stock_threshold,
-        r.daysUntilLow
+        r.daysUntilLow,
+        r
       ).label,
   },
 ];
@@ -162,20 +179,149 @@ export function getCategoryIconConfig(category) {
   };
 }
 
+// ----- CriticalStockCard Helpers -----
+function toTitleCase(name) {
+  if (!name || typeof name !== "string") return "";
+  if (/[A-Z]/.test(name)) return name;
+  return name.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+}
+
+function formatStatQty(n, unit) {
+  const num = Number(n) || 0;
+  const u = String(unit || "").trim().toLowerCase();
+  const isContinuous = ["kg", "g", "mg", "ml", "l", "liters", "litres"].includes(u);
+  if (isContinuous) {
+    const formatted = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(num);
+    return unit ? `${formatted} ${unit}` : formatted;
+  }
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(num));
+}
+
 // ----- CriticalStockCard -----
 function CriticalStockCard({ item, metrics, onAdjust, onViewHistory }) {
-  const pct = getStockPercent(item.current_stock_level, item.ideal_stock_level);
-  const burnRate = metrics?.dailyBurnRate || 0;
-  const daysUntilLow = metrics?.daysUntilLow ?? null;
-  const daysUntilEmpty = metrics?.daysUntilEmpty ?? null;
-  const status = getStockStatus(
-    item.current_stock_level,
-    item.low_stock_threshold,
-    daysUntilLow
-  );
+  if (!item) return null;
+  const current = Number(item.current_stock_level) || 0;
+  const capacity = Number(item.ideal_stock_level) || 1;
+  const level = capacity > 0 ? current / capacity : 0;
+  const pct = Math.round(Math.min(Math.max(level * 100, 0), 100));
 
+  const rawUnit = item.unit_of_measure || "";
+  const unitLabel = getShortUnit(rawUnit);
+
+  // Unified Threshold System
+  const thresholdRatio = item.low_stock_threshold && capacity > 0
+    ? Math.min(Math.max(item.low_stock_threshold / capacity, 0.1), 0.5)
+    : 0.35;
+  const criticalRatio = thresholdRatio * 0.6; // e.g. 21%
+
+  // Single source of truth evaluation (3 tiers: Critical, Low/Below threshold, Healthy buffer)
+  let statusKey = "healthy";
+  if (
+    level <= criticalRatio ||
+    pct <= 20 ||
+    (metrics?.hasUpcomingShortfall && current <= (metrics?.upcomingDemandUnits || 0) * 0.25)
+  ) {
+    statusKey = "critical";
+  } else if (
+    level <= thresholdRatio ||
+    pct <= 35 ||
+    metrics?.hasUpcomingShortfall ||
+    metrics?.willFallBelowThreshold
+  ) {
+    statusKey = "low";
+  }
+
+  const CONFIG = {
+    critical: {
+      label: metrics?.hasUpcomingShortfall ? "Critical Shortfall" : "Critical",
+      barClass: "bg-rose-500",
+      badgeClass: "bg-rose-50 text-rose-700 ring-rose-200 border border-rose-200",
+      textClass: "text-rose-600 font-bold",
+      iconClass: "text-rose-600",
+      Icon: AlertTriangle,
+      buttonClass: "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200",
+      buttonLabel: "Adjust / Restock",
+    },
+    low: {
+      label: metrics?.hasUpcomingShortfall ? "Upcoming Shortfall" : "Below threshold",
+      barClass: "bg-amber-500",
+      badgeClass: "bg-amber-50 text-amber-700 ring-amber-200 border border-amber-200",
+      textClass: "text-amber-600 font-bold",
+      iconClass: "text-amber-600",
+      Icon: AlertTriangle,
+      buttonClass: "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200",
+      buttonLabel: "Adjust / Restock",
+    },
+    healthy: {
+      label: "Healthy buffer",
+      barClass: "bg-emerald-500",
+      badgeClass: "bg-emerald-50 text-emerald-700 ring-emerald-200 border border-emerald-200",
+      textClass: "text-emerald-700 font-medium",
+      iconClass: "text-emerald-500",
+      Icon: CheckCircle2,
+      buttonClass: "bg-slate-50 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 border border-slate-200/80",
+      buttonLabel: "Update Stock",
+    },
+  };
+
+  const cfg = CONFIG[statusKey];
+  const StatusIcon = cfg.Icon;
+
+  // Days of supply on every card - category aware
+  let runwayText = "";
+  const isMedication = metrics?.burnRateSource === "par_level" || metrics?.supplyCategory === "medication";
+  const hasUpcoming = (metrics?.upcomingDemandSubUnit || 0) > 0;
+
+  if (isMedication) {
+    runwayText = statusKey === "healthy" ? " (Par-level)" : " (Restock par-level)";
+  } else if (hasUpcoming && (metrics?.dailyBurnRate || 0) <= 0) {
+    if (metrics?.hasUpcomingShortfall) {
+      runwayText = ` (${metrics.shortfallSubUnit} ${metrics.upcomingDemandSubUnitLabel} short in ${metrics.earliestDueDays}d)`;
+    } else {
+      runwayText = ` (${metrics.upcomingDemandSubUnit} ${metrics.upcomingDemandSubUnitLabel} needed in ${metrics.earliestDueDays}d)`;
+    }
+  } else {
+    const burnRate = Number(metrics?.dailyBurnRate) || 0;
+    let daysOfSupply = null;
+    if (burnRate > 0) {
+      daysOfSupply = Math.floor(current / burnRate);
+    } else if (metrics?.total_out > 0) {
+      const fallbackBurn = metrics.total_out / 30;
+      if (fallbackBurn > 0) {
+        daysOfSupply = Math.floor(current / fallbackBurn);
+      }
+    }
+
+    if (daysOfSupply !== null && !isNaN(daysOfSupply) && isFinite(daysOfSupply) && daysOfSupply >= 0) {
+      const formattedDays = daysOfSupply > 365 ? ">1y" : `~${daysOfSupply}d`;
+      if (statusKey === "healthy") {
+        runwayText = ` (${formattedDays} buffer)`;
+      } else {
+        runwayText = ` (${formattedDays} left)`;
+      }
+    } else {
+      runwayText = statusKey === "healthy" ? ` (>1y buffer)` : ` (>1y supply)`;
+    }
+  }
+
+  const statusLine = `${cfg.label}${runwayText}`;
+
+  // Formatting casing & numbers
+  const displayName = toTitleCase(item.item_name || "Unnamed Item");
   const catCfg = getCategoryIconConfig(item.category);
-  const IconComp = catCfg.Icon;
+  const CategoryIcon = catCfg.Icon;
+
+  const containerMeta = getContainerMeta(rawUnit);
+  let subUnitQtyText = null;
+  if (containerMeta) {
+    const subQty = toSubUnitQty(current, containerMeta.size);
+    subUnitQtyText = formatStatQty(subQty, containerMeta.subUnit);
+  }
+
+  const isDiscrete =
+    !containerMeta &&
+    unitLabel &&
+    !["kg", "g", "mg", "ml", "l", "liters", "litres"].includes(unitLabel.toLowerCase());
 
   return (
     <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm flex flex-col justify-between gap-3 hover:shadow-md transition-all hover:border-slate-200">
@@ -183,120 +329,96 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory }) {
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${catCfg.bg} border ${catCfg.border}`}>
-              <IconComp className={`w-4 h-4 ${catCfg.color}`} />
+              <CategoryIcon className={`w-4 h-4 ${catCfg.color}`} />
             </div>
             <div className="min-w-0">
               <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 {item.category || "General"}
               </span>
-              <p className="text-sm font-bold text-slate-900 leading-tight truncate" title={item.item_name}>
-                {item.item_name}
+              <p className="text-sm font-bold text-slate-900 leading-tight truncate" title={displayName}>
+                {displayName}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={onViewHistory}
-              title="View Transaction History"
-              className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
-            >
-              <History className="w-3.5 h-3.5" />
-            </button>
-            <span
-              className={`text-[11px] font-extrabold px-1.5 py-0.5 rounded-md ${status.label === "Healthy"
-                ? "bg-emerald-50 text-emerald-700"
-                : status.label === "Low Stock" || status.label === "At Risk"
-                  ? "bg-amber-50 text-amber-700"
-                  : "bg-rose-50 text-rose-700"
-                }`}
-            >
-              {pct}%
-            </span>
-          </div>
+          <span
+            className={`text-[11px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0 ${cfg.badgeClass}`}
+          >
+            {pct}%
+          </span>
         </div>
 
-        {/* Progress Bar */}
+        {/* Progress Bar with synced color and threshold tick */}
         <div className="space-y-1">
-          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+          <div
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`${displayName}: ${pct}% in stock, reorder threshold ${Math.round(thresholdRatio * 100)}%`}
+            className="relative h-1.5 w-full bg-slate-100 rounded-full"
+          >
             <div
-              className={`h-full rounded-full transition-all duration-500 ${getBarColor(pct)}`}
+              className={`h-full rounded-full transition-all duration-500 ${cfg.barClass}`}
               style={{ width: `${Math.min(pct, 100)}%` }}
             />
+            <div
+              className="absolute -top-0.5 -bottom-0.5 w-[2px] bg-slate-400 rounded-xs z-10 -translate-x-1/2 pointer-events-auto"
+              style={{ left: `${Math.min(Math.max(thresholdRatio * 100, 0), 100)}%` }}
+              title={`Reorder threshold: ${Math.round(thresholdRatio * 100)}%`}
+            />
           </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium">
+          <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium">
             <span>
-              <strong className="text-slate-800 font-bold">{item.current_stock_level}</strong>
-              <span className="text-slate-400">/{item.ideal_stock_level} {getShortUnit(item.unit_of_measure)}</span>
+              <strong className="text-slate-900 font-bold">
+                {formatStatQty(current, isDiscrete ? unitLabel : null)}
+              </strong>
+              <span className="text-slate-500">
+                {" "}/ {formatStatQty(capacity, isDiscrete ? unitLabel : null)} {unitLabel}
+              </span>
             </span>
-            {hasSubUnit(item.unit_of_measure) && (
-              <span className="text-[10px] text-slate-400">
-                {formatSubUnitEquivalent(item.current_stock_level, item.unit_of_measure)}
+            {subUnitQtyText && (
+              <span className="text-[11px] text-slate-500">
+                {subUnitQtyText}
               </span>
             )}
           </div>
         </div>
 
-        {/* Burn Rate & Runway Insight */}
+        {/* Synced Status Line with Days-of-Supply on every card */}
         <div className="min-h-[26px] text-[11px] flex items-center">
-          {status.label === "Critical" || status.label === "Out of Stock" ? (
-            <p className="font-bold text-rose-600 flex items-center gap-1 text-[11px]">
-              <AlertTriangle className="w-3 h-3 shrink-0" />
-              <span>
-                Critical reorder needed
-                {burnRate > 0 && daysUntilEmpty != null ? ` (~${daysUntilEmpty}d runway)` : ""}
-              </span>
-            </p>
-          ) : status.label === "Low Stock" ? (
-            <p className="font-bold text-amber-600 flex items-center gap-1 text-[11px]">
-              <AlertTriangle className="w-3 h-3 shrink-0" />
-              <span>
-                Below threshold
-                {burnRate > 0 && daysUntilEmpty != null ? ` (~${daysUntilEmpty}d to empty)` : ""}
-              </span>
-            </p>
-          ) : status.label === "At Risk" ? (
-            <p className="font-bold text-amber-600 flex items-center gap-1 text-[11px]">
-              <Flame className="w-3 h-3 shrink-0" />
-              <span>Hits low in {daysUntilLow} {daysUntilLow === 1 ? "day" : "days"}</span>
-            </p>
-          ) : (
-            <p className="text-slate-500 flex items-center gap-1 text-[11px]">
-              <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-              <span>
-                Healthy buffer
-                {burnRate > 0 && daysUntilLow != null ? ` (~${daysUntilLow}d buffer)` : ""}
-              </span>
-            </p>
-          )}
+          <p className={`flex items-center gap-1.5 text-[11px] ${cfg.textClass}`}>
+            <StatusIcon className={`w-3.5 h-3.5 shrink-0 ${cfg.iconClass}`} />
+            <span>{statusLine}</span>
+          </p>
         </div>
       </div>
 
-      {/* Action Button */}
-      <button
-        type="button"
-        onClick={onAdjust}
-        className={`w-full py-1.5 px-3 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs ${status.label === "Critical" || status.label === "Out of Stock"
-          ? "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200"
-          : status.label === "Low Stock" || status.label === "At Risk"
-            ? "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
-            : "bg-slate-50 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 border border-slate-200/80"
-          }`}
-      >
-        <SlidersHorizontal className="w-3 h-3" />
-        {status.label === "Critical" || status.label === "Out of Stock"
-          ? "Restock Immediately"
-          : status.label === "Low Stock" || status.label === "At Risk"
-            ? "Adjust / Restock"
-            : "Update Stock"}
-      </button>
+      {/* Action Buttons Row */}
+      <div className="flex items-stretch gap-1.5">
+        <button
+          type="button"
+          onClick={onViewHistory}
+          aria-label="View stock history"
+          title="View Stock History"
+          className="px-2.5 rounded-xl border border-slate-200/80 bg-slate-50 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0 flex items-center justify-center focus:outline-hidden focus:ring-2 focus:ring-slate-300"
+        >
+          <History className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onAdjust}
+          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center shadow-2xs ${cfg.buttonClass}`}
+        >
+          {cfg.buttonLabel}
+        </button>
+      </div>
     </div>
   );
 }
 
 // ----- StatusPill -----
-function StatusPill({ current, threshold, daysUntilLow }) {
-  const s = getStockStatus(current, threshold, daysUntilLow);
+function StatusPill({ current, threshold, daysUntilLow, extra }) {
+  const s = getStockStatus(current, threshold, daysUntilLow, extra);
   return (
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${s.cls}`}
@@ -324,6 +446,7 @@ export default function InventoryManagement({ loggedInUser }) {
   const [editItem, setEditItem] = useState(null);
   const [prefillSupply, setPrefillSupply] = useState(null);
   const [unlinkedGuidelines, setUnlinkedGuidelines] = useState([]);
+  const [growthData, setGrowthData] = useState(null);
   const [unregisteredOpen, setUnregisteredOpen] = useState(false);
   const [unregisteredPage, setUnregisteredPage] = useState(1);
   const [adjustItem, setAdjustItem] = useState(null);
@@ -334,11 +457,17 @@ export default function InventoryManagement({ loggedInUser }) {
   const viewArchived = viewTab === "archived";
   const viewHistory = viewTab === "history";
 
+  // Sliding tab indicator animation refs & state
+  const [tabPillStyle, setTabPillStyle] = useState({ left: 2, width: 0, opacity: 0 });
+  const activeTabRef = useRef(null);
+  const historyTabRef = useRef(null);
+  const archivedTabRef = useRef(null);
+
   // ── Fetch ──────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [itemsRes, txRes, unlinkedData] = await Promise.all([
+      const [itemsRes, txRes, unlinkedData, activeBatchesRes] = await Promise.all([
         supabase
           .from("inventory_items")
           .select("*")
@@ -350,6 +479,9 @@ export default function InventoryManagement({ loggedInUser }) {
         fetch(`${API_BASE}/api/growth/unlinked-guidelines`)
           .then((r) => (r.ok ? r.json() : []))
           .catch(() => []),
+        fetch(`${API_BASE}/api/growth/active-feed-batches`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
       ]);
 
       if (itemsRes.error) {
@@ -363,6 +495,9 @@ export default function InventoryManagement({ loggedInUser }) {
 
       setItems(itemsRes.data || []);
       setTransactions(txRes.data || []);
+      if (activeBatchesRes) {
+        setGrowthData(activeBatchesRes);
+      }
       if (Array.isArray(unlinkedData)) {
         const seen = new Set();
         const unique = [];
@@ -394,10 +529,17 @@ export default function InventoryManagement({ loggedInUser }) {
     fetchAll();
   }, [fetchAll]);
 
-  // Compute per-item metrics & 14-day burn-rate forecasts
+  // Compute per-item adaptive metrics (14-day window + growth program demand)
   const itemMetrics = useMemo(
-    () => computeInventoryMetrics(items, transactions),
-    [items, transactions]
+    () =>
+      computeInventoryMetrics(
+        items,
+        transactions,
+        BURN_WINDOW_DAYS,
+        growthData?.batches,
+        growthData?.breeder_summary
+      ),
+    [items, transactions, growthData]
   );
 
   // Map item_id -> item for fast lookup in global transaction history
@@ -434,6 +576,29 @@ export default function InventoryManagement({ loggedInUser }) {
     [items]
   );
 
+  // Tab indicator sliding animation effect
+  const updateTabPill = useCallback(() => {
+    const refMap = {
+      active: activeTabRef.current,
+      history: historyTabRef.current,
+      archived: archivedTabRef.current,
+    };
+    const target = refMap[viewTab];
+    if (target) {
+      setTabPillStyle({
+        left: target.offsetLeft,
+        width: target.offsetWidth,
+        opacity: 1,
+      });
+    }
+  }, [viewTab]);
+
+  React.useEffect(() => {
+    updateTabPill();
+    window.addEventListener("resize", updateTabPill);
+    return () => window.removeEventListener("resize", updateTabPill);
+  }, [updateTabPill, activeItems.length, transactions.length, archivedItems.length]);
+
   // Unregistered Growth Supplies pagination (4 items per page)
   const UNREG_PER_PAGE = 4;
   const totalUnregPages = Math.max(1, Math.ceil(unlinkedGuidelines.length / UNREG_PER_PAGE));
@@ -443,24 +608,30 @@ export default function InventoryManagement({ loggedInUser }) {
     return unlinkedGuidelines.slice(start, start + UNREG_PER_PAGE);
   }, [unlinkedGuidelines, safeUnregPage]);
 
-  // Derived stats for active inventory (including burn-rate "At Risk" items)
+  // Derived stats for active inventory (including burn-rate and milestone "At Risk" items)
   const lowOrAtRiskItems = useMemo(
     () =>
       activeItems.filter((i) => {
         const m = itemMetrics[i.item_id];
         return (
           i.current_stock_level <= i.low_stock_threshold ||
-          (m?.daysUntilLow != null && m.daysUntilLow <= 7)
+          (m?.daysUntilLow != null && m.daysUntilLow <= 7) ||
+          m?.hasUpcomingShortfall ||
+          m?.willFallBelowThreshold
         );
       }),
     [activeItems, itemMetrics]
   );
   const criticalItems = useMemo(
     () =>
-      activeItems.filter(
-        (i) => i.current_stock_level <= i.low_stock_threshold * 0.25
-      ),
-    [activeItems]
+      activeItems.filter((i) => {
+        const m = itemMetrics[i.item_id];
+        return (
+          i.current_stock_level <= i.low_stock_threshold * 0.25 ||
+          (m?.hasUpcomingShortfall && i.current_stock_level <= (m?.upcomingDemandUnits || 0) * 0.25)
+        );
+      }),
+    [activeItems, itemMetrics]
   );
   const healthyItems = useMemo(
     () =>
@@ -468,7 +639,9 @@ export default function InventoryManagement({ loggedInUser }) {
         const m = itemMetrics[i.item_id];
         return (
           i.current_stock_level > i.low_stock_threshold &&
-          (m?.daysUntilLow == null || m.daysUntilLow > 7)
+          (m?.daysUntilLow == null || m.daysUntilLow > 7) &&
+          !m?.hasUpcomingShortfall &&
+          !m?.willFallBelowThreshold
         );
       }),
     [activeItems, itemMetrics]
@@ -483,12 +656,14 @@ export default function InventoryManagement({ loggedInUser }) {
           const stA = getStockStatus(
             a.current_stock_level,
             a.low_stock_threshold,
-            mA?.daysUntilLow
+            mA?.daysUntilLow,
+            mA
           );
           const stB = getStockStatus(
             b.current_stock_level,
             b.low_stock_threshold,
-            mB?.daysUntilLow
+            mB?.daysUntilLow,
+            mB
           );
           const priority = {
             out_of_stock: 0,
@@ -564,8 +739,8 @@ export default function InventoryManagement({ loggedInUser }) {
     return filteredItems.sort((a, b) => {
       const mA = itemMetrics[a.item_id];
       const mB = itemMetrics[b.item_id];
-      const stA = getStockStatus(a.current_stock_level, a.low_stock_threshold, mA?.daysUntilLow);
-      const stB = getStockStatus(b.current_stock_level, b.low_stock_threshold, mB?.daysUntilLow);
+      const stA = getStockStatus(a.current_stock_level, a.low_stock_threshold, mA?.daysUntilLow, mA);
+      const stB = getStockStatus(b.current_stock_level, b.low_stock_threshold, mB?.daysUntilLow, mB);
 
       const prioA = statusPriority[stA.key] ?? 5;
       const prioB = statusPriority[stB.key] ?? 5;
@@ -611,6 +786,13 @@ export default function InventoryManagement({ loggedInUser }) {
         total_out: m.total_out ?? 0,
         dailyBurnRate: m.dailyBurnRate ?? 0,
         daysUntilLow: m.daysUntilLow ?? null,
+        burnRateSource: m.burnRateSource,
+        upcomingDemandSubUnit: m.upcomingDemandSubUnit,
+        upcomingDemandSubUnitLabel: m.upcomingDemandSubUnitLabel,
+        hasUpcomingShortfall: m.hasUpcomingShortfall,
+        shortfallSubUnit: m.shortfallSubUnit,
+        earliestDueDays: m.earliestDueDays,
+        willFallBelowThreshold: m.willFallBelowThreshold,
       };
     });
   }, [filtered, itemMetrics, viewHistory]);
@@ -619,7 +801,7 @@ export default function InventoryManagement({ loggedInUser }) {
   const handlePermanentDelete = async (item) => {
     if (
       !window.confirm(
-        `Permanently remove "${item.item_name}" and all historical transactions? This action CANNOT be undone.`
+        `Permanently remove "${item.item_name}" and all historical stock movements? This action CANNOT be undone.`
       )
     )
       return;
@@ -711,9 +893,23 @@ export default function InventoryManagement({ loggedInUser }) {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="p-5 lg:p-6 space-y-6">
-        {/* Top Section: Critical Stock & Burn-Rate Watch */}
-        {!viewArchived && !viewHistory && (
-          <section className="space-y-3">
+        {/* Top Section: Critical Stock & Growth Program Alerts (smoothly animates on tab switch) */}
+        <div
+          className={`grid transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            !viewArchived && !viewHistory
+              ? "grid-rows-[1fr] opacity-100"
+              : "grid-rows-[0fr] opacity-0 pointer-events-none"
+          }`}
+        >
+          <div className="overflow-hidden">
+            <div
+              className={`p-1 -m-1 space-y-6 pb-2 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                !viewArchived && !viewHistory
+                  ? "translate-y-0 opacity-100"
+                  : "-translate-y-4 opacity-0"
+              }`}
+            >
+              <section className="space-y-3">
 
             {loading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -747,37 +943,10 @@ export default function InventoryManagement({ loggedInUser }) {
               </div>
             )}
           </section>
-        )}
 
-        {viewArchived && (
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 shrink-0">
-                <Archive className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Viewing Archived Inventory Supplies
-                </h3>
-                <p className="text-xs text-slate-500">
-                  These items are hidden from active feeding regimens, health
-                  treatments, and stock alerts. You can restore them to active
-                  status at any time.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => switchTab("active")}
-              className="px-3.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-colors cursor-pointer shrink-0"
-            >
-              Switch to Active Supplies
-            </button>
-          </div>
-        )}
-
-        {/* Collapsible Unregistered Supplies Alert Card */}
-        {!viewArchived && !viewHistory && unlinkedGuidelines.length > 0 && (
-          <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition-all">
+          {/* Collapsible Unregistered Supplies Alert Card */}
+          {unlinkedGuidelines.length > 0 && (
+            <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition-all">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-bold text-slate-800">
                 Unregistered Growth Program Supplies
@@ -799,8 +968,8 @@ export default function InventoryManagement({ loggedInUser }) {
             {/* Smooth Animated Accordion Container (CSS Grid Transition) */}
             <div
               className={`grid transition-all duration-300 ease-in-out ${unregisteredOpen
-                  ? "grid-rows-[1fr] opacity-100 mt-3 pt-3 border-t border-slate-100"
-                  : "grid-rows-[0fr] opacity-0"
+                ? "grid-rows-[1fr] opacity-100 mt-3 pt-3 border-t border-slate-100"
+                : "grid-rows-[0fr] opacity-0"
                 }`}
             >
               <div className="overflow-hidden space-y-3">
@@ -898,22 +1067,40 @@ export default function InventoryManagement({ loggedInUser }) {
             </div>
           </section>
         )}
+            </div>
+          </div>
+        </div>
 
         {/* Detailed Supply Ledger & Transaction History */}
         <section className="rounded-2xl border border-slate-100 bg-white shadow-sm overflow-hidden">
           <div className="px-5 pt-5 pb-0">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-3 flex-wrap">
-                <h2 className="text-sm font-bold text-slate-800">
-                  {viewHistory ? "Stock Movement Audit Log" : "Supply Ledger"}
+                <h2 className="text-sm font-bold text-slate-800 transition-colors duration-200">
+                  {viewHistory
+                    ? "Stock Movement Audit Log"
+                    : viewArchived
+                      ? "Archived Supplies Ledger"
+                      : "Supply Ledger"}
                 </h2>
 
                 {/* Active / Transaction History / Archived Tabs */}
-                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/60">
+                <div className="relative flex bg-slate-100 p-0.5 rounded-lg border border-slate-200/60 isolate">
+                  {/* Sliding active pill indicator */}
+                  <span
+                    className="absolute top-0.5 bottom-0.5 bg-white rounded-md shadow-xs transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-none"
+                    style={{
+                      left: `${tabPillStyle.left}px`,
+                      width: `${tabPillStyle.width}px`,
+                      opacity: tabPillStyle.opacity,
+                    }}
+                  />
+
                   <button
+                    ref={activeTabRef}
                     onClick={() => switchTab("active")}
-                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${viewTab === "active"
-                      ? "bg-white text-slate-900 shadow-sm"
+                    className={`relative z-10 px-3 py-1 text-xs font-bold rounded-md transition-colors duration-200 cursor-pointer ${viewTab === "active"
+                      ? `${tabPillStyle.opacity === 0 ? "bg-white shadow-xs " : ""}text-slate-900`
                       : "text-slate-500 hover:text-slate-800"
                       }`}
                     id="inventory-tab-active"
@@ -921,20 +1108,21 @@ export default function InventoryManagement({ loggedInUser }) {
                     Active ({activeItems.length})
                   </button>
                   <button
+                    ref={historyTabRef}
                     onClick={() => switchTab("history")}
-                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${viewTab === "history"
-                      ? "bg-white text-slate-900 shadow-sm"
+                    className={`relative z-10 px-3 py-1 text-xs font-bold rounded-md transition-colors duration-200 cursor-pointer flex items-center gap-1.5 ${viewTab === "history"
+                      ? `${tabPillStyle.opacity === 0 ? "bg-white shadow-xs " : ""}text-slate-900`
                       : "text-slate-500 hover:text-slate-800"
                       }`}
                     id="inventory-tab-history"
                   >
-                    <History className="w-3.5 h-3.5" />
-                    Transaction History ({transactions.length})
+                    Stock Movements ({transactions.length})
                   </button>
                   <button
+                    ref={archivedTabRef}
                     onClick={() => switchTab("archived")}
-                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${viewTab === "archived"
-                      ? "bg-white text-slate-900 shadow-sm"
+                    className={`relative z-10 px-3 py-1 text-xs font-bold rounded-md transition-colors duration-200 cursor-pointer ${viewTab === "archived"
+                      ? `${tabPillStyle.opacity === 0 ? "bg-white shadow-xs " : ""}text-slate-900`
                       : "text-slate-500 hover:text-slate-800"
                       }`}
                     id="inventory-tab-archived"
@@ -956,14 +1144,14 @@ export default function InventoryManagement({ loggedInUser }) {
                   }
                   filename={
                     viewHistory
-                      ? "inventory_transaction_history"
+                      ? "inventory_stock_movements"
                       : viewArchived
                         ? "inventory_archived_ledger"
                         : "inventory_active_ledger"
                   }
                   pdfTitle={
                     viewHistory
-                      ? "Inventory Transaction Audit Log"
+                      ? "Inventory Stock Movement Audit Log"
                       : viewArchived
                         ? "Archived Supply Ledger"
                         : "Active Supply Ledger"
@@ -999,7 +1187,7 @@ export default function InventoryManagement({ loggedInUser }) {
                   }}
                   placeholder={
                     viewHistory
-                      ? "Search transactions by item name, category, reason/notes, or staff..."
+                      ? "Search movements by item name, category, reason/notes, or staff..."
                       : "Search items by name, or category"
                   }
                   className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-4 text-sm text-slate-700 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors"
@@ -1013,6 +1201,7 @@ export default function InventoryManagement({ loggedInUser }) {
                     { id: "all", label: "All Categories" },
                     { id: "feed", label: "Feed" },
                     { id: "medication", label: "Medication" },
+                    { id: "vaccines", label: "Vaccines" },
                     { id: "supplements", label: "Supplements" },
                   ].map((cat) => (
                     <button
@@ -1049,7 +1238,7 @@ export default function InventoryManagement({ loggedInUser }) {
           </div>
 
           {/* Table */}
-          <div className="overflow-x-auto">
+          <div key={viewTab} className="overflow-x-auto tab-crossfade">
             {viewHistory ? (
               /* ── Global Transaction History Table ── */
               <table className="w-full text-left">
@@ -1205,12 +1394,6 @@ export default function InventoryManagement({ loggedInUser }) {
                           Max Capacity
                         </th>
                         <th className="px-4 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">
-                          Restocked
-                        </th>
-                        <th className="px-4 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">
-                          Used / Wasted
-                        </th>
-                        <th className="px-4 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">
                           Current Stock
                         </th>
                         <th className="px-4 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center">
@@ -1239,7 +1422,7 @@ export default function InventoryManagement({ loggedInUser }) {
                   {loading ? (
                     [...Array(5)].map((_, i) => (
                       <tr key={i}>
-                        {[...Array(viewArchived ? 5 : 7)].map((_, j) => (
+                        {[...Array(5)].map((_, j) => (
                           <td key={j} className="px-5 py-4">
                             <div
                               className="skeleton h-4 rounded-md"
@@ -1252,7 +1435,7 @@ export default function InventoryManagement({ loggedInUser }) {
                   ) : paginated.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={viewArchived ? 5 : 7}
+                        colSpan={5}
                         className="px-5 py-12 text-center text-sm text-slate-400"
                       >
                         {query || categoryFilter !== "all"
@@ -1300,10 +1483,6 @@ export default function InventoryManagement({ loggedInUser }) {
                                 <p className="text-[11px] text-slate-400">
                                   {item.category || "General"} &bull;{" "}
                                   {item.unit_of_measure}
-                                  {m.dailyBurnRate > 0 &&
-                                    (hasSubUnit(item.unit_of_measure)
-                                      ? ` • Burn: ${m.dailyBurnRate} ${getShortUnit(item.unit_of_measure)}/d (${formatSubUnitEquivalent(m.dailyBurnRate, item.unit_of_measure)}/d)`
-                                      : ` • Burn: ${m.dailyBurnRate} ${item.unit_of_measure}/d`)}
                                 </p>
                               </div>
                             </button>
@@ -1331,28 +1510,6 @@ export default function InventoryManagement({ loggedInUser }) {
                                   </div>
                                 </div>
                               </td>
-                              {/* Restocked */}
-                              <td className="px-4 py-4 text-center">
-                                <span className="text-sm font-semibold text-emerald-600">
-                                  +{m.total_in}
-                                </span>
-                                {hasSubUnit(item.unit_of_measure) && m.total_in > 0 && (
-                                  <span className="text-[10px] text-emerald-500 font-medium block">
-                                    +{formatSubUnitEquivalent(m.total_in, item.unit_of_measure)}
-                                  </span>
-                                )}
-                              </td>
-                              {/* Used/Wasted */}
-                              <td className="px-4 py-4 text-center">
-                                <span className="text-sm font-semibold text-rose-500">
-                                  -{m.total_out}
-                                </span>
-                                {hasSubUnit(item.unit_of_measure) && m.total_out > 0 && (
-                                  <span className="text-[10px] text-rose-400 font-medium block">
-                                    -{formatSubUnitEquivalent(m.total_out, item.unit_of_measure)}
-                                  </span>
-                                )}
-                              </td>
                               {/* Current Stock + Burn Forecast */}
                               <td className="px-4 py-4 text-center">
                                 <div className="flex flex-col items-center">
@@ -1365,7 +1522,7 @@ export default function InventoryManagement({ loggedInUser }) {
                                       ({formatSubUnitEquivalent(item.current_stock_level, item.unit_of_measure)})
                                     </span>
                                   )}
-                                  {m.dailyBurnRate > 0 && (
+                                  {m.dailyBurnRate > 0 ? (
                                     <span
                                       className={`text-[10px] font-semibold mt-0.5 ${m.daysUntilLow != null &&
                                         m.daysUntilLow <= 7
@@ -1379,7 +1536,26 @@ export default function InventoryManagement({ loggedInUser }) {
                                           : "Below threshold"
                                         : `~${m.daysUntilLow}d to low`}
                                     </span>
-                                  )}
+                                  ) : m.upcomingDemandSubUnit > 0 ? (
+                                    <span
+                                      className={`text-[10px] font-semibold mt-0.5 ${
+                                        m.hasUpcomingShortfall
+                                          ? "text-rose-600 font-bold"
+                                          : m.willFallBelowThreshold
+                                          ? "text-amber-600"
+                                          : "text-slate-400"
+                                      }`}
+                                      title={`Scheduled in next 14 days for ${m.upcomingBatchesCount} batch(es)`}
+                                    >
+                                      {m.hasUpcomingShortfall
+                                        ? `Short ${m.shortfallSubUnit} ${m.upcomingDemandSubUnitLabel} in ${m.earliestDueDays}d`
+                                        : `Upcoming: ${m.upcomingDemandSubUnit} ${m.upcomingDemandSubUnitLabel} (${m.earliestDueDays}d)`}
+                                    </span>
+                                  ) : m.burnRateSource === "par_level" || m.supplyCategory === "medication" ? (
+                                    <span className="text-[10px] font-medium text-slate-400 mt-0.5">
+                                      Par-level tracked
+                                    </span>
+                                  ) : null}
                                 </div>
                               </td>
                               {/* Status */}
@@ -1388,6 +1564,7 @@ export default function InventoryManagement({ loggedInUser }) {
                                   current={item.current_stock_level}
                                   threshold={item.low_stock_threshold}
                                   daysUntilLow={m.daysUntilLow}
+                                  extra={m}
                                 />
                               </td>
                             </>
@@ -1436,7 +1613,7 @@ export default function InventoryManagement({ loggedInUser }) {
                                   </button>
                                   <button
                                     onClick={() => setHistoryItem(item)}
-                                    title="View Transaction History"
+                                    title="View Stock Movements"
                                     className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 transition-colors cursor-pointer"
                                   >
                                     <History className="w-3.5 h-3.5" />
@@ -1466,7 +1643,7 @@ export default function InventoryManagement({ loggedInUser }) {
                                 <>
                                   <button
                                     onClick={() => setHistoryItem(item)}
-                                    title="View Transaction History"
+                                    title="View Stock Movements"
                                     className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 transition-colors cursor-pointer"
                                   >
                                     <History className="w-3.5 h-3.5" />
@@ -1512,7 +1689,7 @@ export default function InventoryManagement({ loggedInUser }) {
             onPageChange={setPage}
             totalItems={filtered.length}
             itemsPerPage={ITEMS_PER_PAGE}
-            itemName={viewHistory ? "transactions" : "inventory items"}
+            itemName={viewHistory ? "stock movements" : "inventory items"}
             disabled={loading}
           />
         </section>

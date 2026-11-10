@@ -223,6 +223,15 @@ input::-ms-clear {
 }
 
 /* ── Staggered Tab Content Entry ───────────────────────── */
+@keyframes tab-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.tab-crossfade {
+  animation: tab-fade 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 @keyframes tab-slide-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }

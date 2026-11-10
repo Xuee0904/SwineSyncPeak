@@ -78,12 +78,13 @@ const healthStatusStyles = {
   monitoring: "bg-amber-50 text-amber-700 ring-amber-600/20",
   resolved: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
   healthy: "bg-slate-50 text-slate-700 ring-slate-600/20",
+  deceased: "bg-rose-950/10 text-rose-900 ring-rose-900/20 font-bold",
 };
 
 function HealthStatusPill({ status }) {
   const s = (status || "healthy").toLowerCase();
   const cls = healthStatusStyles[s] || healthStatusStyles.healthy;
-  const label = s === "healthy" ? "Healthy" : s.charAt(0).toUpperCase() + s.slice(1);
+  const label = s === "healthy" ? "Healthy" : s === "deceased" ? "Deceased" : s.charAt(0).toUpperCase() + s.slice(1);
   return (
     <span
       className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${cls}`}
@@ -988,6 +989,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                     <option value="monitoring">Monitoring</option>
                     <option value="resolved">Resolved</option>
                     <option value="healthy">Healthy / Routine</option>
+                    <option value="deceased">Deceased / Mortality</option>
                   </select>
                 </div>
                 <div className="flex items-center gap-2">

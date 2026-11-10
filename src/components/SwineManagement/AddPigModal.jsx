@@ -13,7 +13,7 @@ import { supabase } from '../../supabaseClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
+const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Cull'];
 
 const COMMON_VACCINES = [
   'FMD Vaccine',

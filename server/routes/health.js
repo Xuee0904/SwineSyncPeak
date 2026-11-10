@@ -67,7 +67,7 @@ router.get('/api/health-logs', async (req, res) => {
 });
 
 // Helper to map health log status to pig/batch status
-const syncSwineStatus = async (healthStatus, pig_id, batch_id) => {
+const syncSwineStatus = async (healthStatus, pig_id, batch_id, mortality_count = 1, performed_by = 'Health Management') => {
   if (!healthStatus) return;
   const statusLower = healthStatus.toLowerCase();
   
@@ -83,6 +83,58 @@ const syncSwineStatus = async (healthStatus, pig_id, batch_id) => {
   } else if (statusLower === 'resolved') {
     pigStatus = 'Healthy';
     batchStatus = 'healthy';
+  } else if (statusLower === 'deceased') {
+    if (pig_id) {
+      await supabaseAdmin
+        .from('pigs')
+        .update({
+          is_archived: true,
+          archived_at: new Date().toISOString(),
+          archive_reasoning: 'Mortality - Clinical / Health Log',
+          status: 'Inactive'
+        })
+        .eq('pig_id', pig_id);
+
+      await logActivity({
+        creator: performed_by,
+        bg_color: 'bg-rose-100 text-rose-700',
+        event_title: 'Swine Marked Deceased',
+        event_desc: `Swine ${pig_id.substring(0, 8)} marked deceased and archived from active herd.`,
+      });
+      return;
+    } else if (batch_id) {
+      const { data: batch } = await supabaseAdmin
+        .from('piglet_batches')
+        .select('current_count, batch_tag, total_born_alive')
+        .eq('batch_id', batch_id)
+        .maybeSingle();
+
+      if (batch) {
+        const cur = Number(batch.current_count ?? batch.total_born_alive ?? 0);
+        const lost = Math.max(1, parseInt(mortality_count) || 1);
+        const newCount = Math.max(0, cur - lost);
+
+        const updatePayload = { current_count: newCount };
+        if (newCount === 0) {
+          updatePayload.is_archived = true;
+          updatePayload.archived_at = new Date().toISOString();
+          updatePayload.archive_reasoning = 'Mortality - Total Batch Loss';
+        }
+
+        await supabaseAdmin
+          .from('piglet_batches')
+          .update(updatePayload)
+          .eq('batch_id', batch_id);
+
+        await logActivity({
+          creator: performed_by,
+          bg_color: 'bg-rose-100 text-rose-700',
+          event_title: newCount === 0 ? 'Batch Fully Lost' : 'Batch Mortality Recorded',
+          event_desc: `Recorded ${lost} head loss for batch ${batch.batch_tag || batch_id.substring(0, 8)}. Remaining: ${newCount} head.${newCount === 0 ? ' Batch has been archived.' : ''}`,
+        });
+      }
+      return;
+    }
   }
 
   try {
@@ -113,7 +165,8 @@ router.post('/api/health-logs', async (req, res) => {
       status,
       notes,
       item_id,
-      quantity_deducted
+      quantity_deducted,
+      mortality_count,
     } = req.body;
 
     if (!pig_id && !batch_id) {
@@ -165,7 +218,7 @@ router.post('/api/health-logs', async (req, res) => {
     });
 
     if (status) {
-      await syncSwineStatus(status, pig_id, batch_id);
+      await syncSwineStatus(status, pig_id, batch_id, mortality_count, recorded_by);
     }
 
     res.json({ data: data[0] });
@@ -196,7 +249,7 @@ router.patch('/api/health-logs/:id', async (req, res) => {
     });
 
     if (updates.status) {
-      await syncSwineStatus(updates.status, data[0].pig_id, data[0].batch_id);
+      await syncSwineStatus(updates.status, data[0].pig_id, data[0].batch_id, updates.mortality_count, performed_by);
     }
 
     res.json({ data: data[0] });
@@ -533,7 +586,7 @@ router.get('/api/growth-tasks', async (req, res) => {
     const { batch_id, status } = req.query;
     let dbQuery = supabaseAdmin
       .from('growth_tasks')
-      .select('*, piglet_batches(batch_tag, current_count), growth_programs(name), inventory_items(item_id, item_name, unit_of_measure, category, current_stock_level)');
+      .select('*, piglet_batches(batch_tag, current_count, is_archived), growth_programs(name), inventory_items(item_id, item_name, unit_of_measure, category, current_stock_level)');
     
     if (batch_id) dbQuery = dbQuery.eq('batch_id', batch_id);
     if (status) dbQuery = dbQuery.eq('status', status);
@@ -542,8 +595,11 @@ router.get('/api/growth-tasks', async (req, res) => {
     
     const { data, error } = await dbQuery;
     if (error) throw error;
+
+    // Filter out tasks belonging to archived/liquidated batches unless specifically querying that batch
+    const filtered = batch_id ? (data ?? []) : (data ?? []).filter(t => !t.piglet_batches?.is_archived);
     
-    res.json({ data: data ?? [] });
+    res.json({ data: filtered });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

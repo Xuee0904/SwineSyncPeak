@@ -1,59 +1,45 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Wheat, Check, Pencil, X, Loader2, ChevronDown
+  Leaf, Check, Pencil, X, Loader2, ChevronUp, ChevronDown, Undo2
 } from 'lucide-react';
 import { toast } from '../../utils/toast';
 import { supabase } from '../../supabaseClient';
-import Pagination from '../common/Pagination';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, title = "Today's Feeding" }) {
-  const [data, setData] = useState(() => {
-    try {
-      const cached = sessionStorage.getItem('swinesync_daily_feeding_cache');
-      return cached ? JSON.parse(cached) : { batches: [], breeder_summary: null };
-    } catch {
-      return { batches: [], breeder_summary: null };
-    }
-  });
+  const [data, setData] = useState({ batches: [], breeder_summary: null });
   const [feedItems, setFeedItems] = useState([]);
-  const [loading, setLoading] = useState(() => {
-    try {
-      const cached = sessionStorage.getItem('swinesync_daily_feeding_cache');
-      return !cached;
-    } catch {
-      return true;
-    }
-  });
-  const [submittingBatchId, setSubmittingBatchId] = useState(null);
-  const [editingBatchId, setEditingBatchId] = useState(null);
-  const [editKg, setEditKg] = useState('');
-  const [bulkFeeding, setBulkFeeding] = useState(false);
-  const [userCollapsed, setUserCollapsed] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Local overrides for linking feed items inline
+  const [submittingBatchId, setSubmittingBatchId] = useState(null);
+  const [submittingBreeder, setSubmittingBreeder] = useState(false);
+  const [bulkFeeding, setBulkFeeding] = useState(false);
+  const [undoingId, setUndoingId] = useState(null);
+  const [undoingBreeder, setUndoingBreeder] = useState(false);
+
+  // Inline adjustment state (only for the current single day)
+  const [editingBatchId, setEditingBatchId] = useState(null);
+  const [tempAmount, setTempAmount] = useState('');
+  const [customAmounts, setCustomAmounts] = useState({});
+
+  const [editingBreeder, setEditingBreeder] = useState(false);
+  const [tempBreederAmount, setTempBreederAmount] = useState('');
+  const [customBreederKg, setCustomBreederKg] = useState(null);
+
+  // Link guideline to inventory inline state
+  const [linkingGuidelineId, setLinkingGuidelineId] = useState(null);
   const [batchFeedItemOverrides, setBatchFeedItemOverrides] = useState({});
 
-  // Breeder herd state
+  // Breeder herd state (changeable, default saved in localStorage or 2.0 kg/hd)
   const [selectedBreederFeedId, setSelectedBreederFeedId] = useState(() => {
     return localStorage.getItem('swinesync_breeder_feed_item_id') || '';
   });
   const [breederRatePerHead, setBreederRatePerHead] = useState(() => {
     const saved = localStorage.getItem('swinesync_breeder_rate_per_head');
-    return saved ? parseFloat(saved) : 2.5;
+    return saved ? parseFloat(saved) : 2.0;
   });
-  const [editingBreeder, setEditingBreeder] = useState(false);
-  const [breederKgInput, setBreederKgInput] = useState('');
-  const [submittingBreeder, setSubmittingBreeder] = useState(false);
-
-  const handleUpdateBreederRate = (newRate) => {
-    const val = parseFloat(newRate);
-    setBreederRatePerHead(newRate);
-    if (!isNaN(val) && val > 0) {
-      localStorage.setItem('swinesync_breeder_rate_per_head', String(val));
-    }
-  };
 
   const fetchFeedingData = async () => {
     try {
@@ -83,10 +69,25 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
         const feeds = invRes.data.filter(i => {
           const cat = (i.category || '').toLowerCase();
           const name = (i.item_name || '').toLowerCase();
-          return cat === 'feed' || name.includes('feed') || name.includes('pellet') || name.includes('mash');
+          return (
+            cat.includes('feed') ||
+            name.includes('feed') ||
+            name.includes('pellet') ||
+            name.includes('mash') ||
+            name.includes('starter') ||
+            name.includes('grower') ||
+            name.includes('finisher') ||
+            name.includes('booster') ||
+            name.includes('lactat') ||
+            name.includes('gestat') ||
+            name.includes('corn') ||
+            name.includes('bran') ||
+            cat === 'general'
+          );
         });
         setFeedItems(feeds);
 
+        // Auto-select breeder feed if not selected
         if (!selectedBreederFeedId && feeds.length > 0) {
           const defaultFeed = feeds.find(f => (f.item_name || '').toLowerCase().includes('gestat') || (f.item_name || '').toLowerCase().includes('sow')) || feeds[0];
           setSelectedBreederFeedId(defaultFeed.item_id);
@@ -104,9 +105,13 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
     fetchFeedingData();
   }, []);
 
-  const handleSelectBreederFeed = (id) => {
-    setSelectedBreederFeedId(id);
-    localStorage.setItem('swinesync_breeder_feed_item_id', id);
+  const handleSelectBreederFeed = (newFeedId) => {
+    setSelectedBreederFeedId(newFeedId);
+    localStorage.setItem('swinesync_breeder_feed_item_id', newFeedId);
+    const chosen = feedItems.find(f => f.item_id === newFeedId);
+    if (chosen) {
+      toast.success(`Breeder feed changed to "${chosen.item_name}".`);
+    }
   };
 
   // Smart suggestion: matches task name (e.g. "Grower Feed") to available inventory
@@ -127,112 +132,193 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
     return matchAny || null;
   };
 
-  // Inline feed linking
-  const handleLinkBatchFeed = async (batch, newItemId) => {
-    if (!newItemId) return;
+  // Resolve inventory item name from growth program template
+  const getBatchFeedItem = (batch) => {
+    const feed = batch.current_feed;
+    if (!feed) return null;
+    if (feed.inventory_items?.item_name) {
+      return feed.inventory_items;
+    }
+    const overrideId = batchFeedItemOverrides[batch.batch_id];
+    if (overrideId) {
+      const f = feedItems.find(item => item.item_id === overrideId);
+      if (f) return f;
+    }
+    if (feed.item_id) {
+      const f = feedItems.find(item => item.item_id === feed.item_id);
+      if (f) return f;
+    }
+    return getSuggestedFeed(feed.task_name);
+  };
 
-    setBatchFeedItemOverrides(prev => ({
-      ...prev,
-      [batch.batch_id]: newItemId,
-    }));
+  const getBatchFeedName = (batch) => {
+    const item = getBatchFeedItem(batch);
+    if (item?.item_name) return item.item_name;
+    return batch.current_feed?.task_name || 'Prescribed Feed';
+  };
 
-    const selectedInv = feedItems.find(f => f.item_id === newItemId);
-    toast.success(`Linked ${selectedInv?.item_name || 'feed'} to batch ${batch.batch_tag}.`);
+  // Link an unlinked template guideline to an inventory feed item
+  const handleLinkGuidelineToInventory = async (guidelineId, itemId, batchTag) => {
+    if (!itemId || !guidelineId) return;
+    try {
+      const selectedItem = feedItems.find(f => f.item_id === itemId);
+      const res = await fetch(`${API_BASE}/api/growth/guidelines/link-inventory`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          guideline_id: guidelineId,
+          item_id: itemId,
+          item_name: selectedItem?.item_name || null,
+          activity_type: 'FEED',
+        }),
+      });
 
-    const guidelineId = batch.current_feed?.guideline_id;
-    if (guidelineId) {
-      try {
-        await fetch(`${API_BASE}/api/growth/guidelines/link-inventory`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            guideline_id: guidelineId,
-            item_id: newItemId,
-            activity_type: 'FEED',
-          }),
-        });
+      if (!res.ok) throw new Error('Failed to update template guideline link.');
 
-        setData(prev => ({
-          ...prev,
-          batches: prev.batches.map(b => {
-            if (b.batch_id === batch.batch_id) {
-              return {
-                ...b,
-                current_feed: {
-                  ...b.current_feed,
-                  item_id: newItemId,
-                  inventory_items: selectedInv || null,
-                }
-              };
-            }
-            return b;
-          })
-        }));
-      } catch (err) {
-        console.warn('Failed to persist guideline inventory link:', err);
-      }
+      toast.success(`Connected "${selectedItem?.item_name}" to growth program template for batch ${batchTag}.`);
+      setLinkingGuidelineId(null);
+      await fetchFeedingData();
+      if (onUpdated) onUpdated();
+    } catch (err) {
+      toast.error(err.message || 'Error linking feed to template.');
+    }
+  };
+
+  const formatFedTime = (timeStr) => {
+    if (!timeStr) return '';
+    try {
+      const d = new Date(timeStr);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch {
+      return '';
     }
   };
 
   const batches = data.batches || [];
   const breeder = data.breeder_summary;
+  const breederHeadCount = breeder?.total_breeders || 0;
+  const numericBreederRate = parseFloat(breederRatePerHead) || 2.0;
+  const calculatedBreederKg = Number((breederHeadCount * numericBreederRate).toFixed(1));
+
   const unfedBatches = batches.filter(b => b.current_feed && !b.current_feed.fed_today);
   const fedBatchesCount = batches.filter(b => b.current_feed?.fed_today).length;
   const totalBatchesCount = batches.length;
-  const unfedTotalKg = unfedBatches
-    .reduce((sum, b) => sum + (Number(b.current_feed?.total_daily_feed_kg) || 0), 0)
-    .toFixed(1);
 
-  const breederHeadCount = breeder?.total_breeders || 0;
-  const numericBreederRate = parseFloat(breederRatePerHead) || 2.5;
-  const calculatedBreederKg = Number((breederHeadCount * numericBreederRate).toFixed(1));
+  const hasBreeder = breeder && breederHeadCount > 0;
+  const breederFed = hasBreeder ? !!breeder.breeder_fed_today : true;
 
-  const hasAnimals = batches.length > 0 || (breeder && breeder.total_breeders > 0);
-  const allBatchesFed = batches.length === 0 || unfedBatches.length === 0;
-  const breederFed = !breeder || breeder.total_breeders === 0 || !!breeder.breeder_fed_today;
-  const allFed = hasAnimals && allBatchesFed && breederFed;
+  // Counts for the progress bar: batches + breeder herd
+  const totalGroupsCount = totalBatchesCount + (hasBreeder ? 1 : 0);
+  const fedGroupsCount = fedBatchesCount + (hasBreeder && breeder.breeder_fed_today ? 1 : 0);
+  const progressPercent = totalGroupsCount > 0 ? Math.round((fedGroupsCount / totalGroupsCount) * 100) : 0;
 
-  const batchesFedTodayKg = batches.reduce(
-    (sum, b) => sum + (Number(b.current_feed?.fed_today ? b.current_feed.fed_today_kg : 0) || 0),
-    0
-  );
-  const breederFedTodayKg = breeder?.breeder_fed_today ? Number(breeder.breeder_fed_today_kg) || 0 : 0;
-  const totalFedTodayKg = (batchesFedTodayKg + breederFedTodayKg).toFixed(1);
+  // Piglet batch total kg: sum of all amounts (fed today or prescribed/adjusted)
+  const pigletTotalKg = useMemo(() => {
+    return batches.reduce((sum, b) => {
+      const feed = b.current_feed;
+      if (!feed) return sum;
+      if (feed.fed_today) {
+        const fedAmount = typeof feed.fed_today_kg === 'number' && feed.fed_today_kg > 0
+          ? feed.fed_today_kg
+          : (Number(feed.total_daily_feed_kg) || 0);
+        return sum + fedAmount;
+      }
+      const adjusted = customAmounts[b.batch_id];
+      const amount = adjusted !== undefined ? Number(adjusted) : (Number(feed.total_daily_feed_kg) || 0);
+      return sum + amount;
+    }, 0);
+  }, [batches, customAmounts]);
 
-  // Auto-collapse when all animals are fed, unless user manually toggled
-  const isPanelCollapsed = userCollapsed !== null ? userCollapsed : allFed;
+  // Breeder total kg and dynamic rate
+  const breederDisplayKg = breeder?.breeder_fed_today
+    ? Number(breeder.breeder_fed_today_kg) || 0
+    : (customBreederKg !== null ? customBreederKg : calculatedBreederKg);
+  const breederTotalKg = breederDisplayKg;
 
-  // Auto-sort: Unfed batches first, then already fed batches
-  const sortedBatches = [...batches].sort((a, b) => {
-    const aFed = !!a.current_feed?.fed_today;
-    const bFed = !!b.current_feed?.fed_today;
-    if (aFed !== bFed) {
-      return aFed ? 1 : -1;
+  const breederIsAdjusted = breeder?.breeder_fed_today
+    ? Math.abs(breeder.breeder_fed_today_kg - calculatedBreederKg) > 0.05
+    : (customBreederKg !== null && Math.abs(customBreederKg - calculatedBreederKg) > 0.05);
+
+  const breederDisplayRate = breederIsAdjusted && breederHeadCount > 0
+    ? breederDisplayKg / breederHeadCount
+    : numericBreederRate;
+
+  // Remaining kg summary for CTA button
+  const remainingBatchesKg = unfedBatches.reduce((sum, b) => {
+    const adjusted = customAmounts[b.batch_id];
+    const amount = adjusted !== undefined ? Number(adjusted) : (Number(b.current_feed?.total_daily_feed_kg) || 0);
+    return sum + amount;
+  }, 0);
+  const remainingBreederKg = !breederFed ? breederDisplayKg : 0;
+  const totalRemainingKg = remainingBatchesKg + remainingBreederKg;
+
+  // Breeder feed name
+  const breederFeedItem = feedItems.find(f => f.item_id === selectedBreederFeedId) || feedItems[0] || null;
+  const breederFeedName = breederFeedItem?.item_name || 'Standard Breeder Feed';
+
+  // Dynamic header remaining summary text matching reference screenshot
+  let remainingSummaryText = '';
+  if (unfedBatches.length === 0 && breederFed) {
+    remainingSummaryText = 'All animals fed today';
+  } else if (unfedBatches.length === 1 && breederFed) {
+    const single = unfedBatches[0];
+    const singleKg = customAmounts[single.batch_id] !== undefined ? customAmounts[single.batch_id] : single.current_feed?.total_daily_feed_kg;
+    const singleFeed = getBatchFeedName(single);
+    remainingSummaryText = `Remaining: 1 batch • ${singleKg} kg ${singleFeed}`;
+  } else if (unfedBatches.length > 0 && breederFed) {
+    remainingSummaryText = `Remaining: ${unfedBatches.length} batches • ${remainingBatchesKg.toFixed(1)} kg`;
+  } else if (unfedBatches.length === 0 && !breederFed) {
+    remainingSummaryText = `Remaining: Breeder Herd • ${breederDisplayKg} kg ${breederFeedName}`;
+  } else {
+    remainingSummaryText = `Remaining: ${unfedBatches.length} ${unfedBatches.length === 1 ? 'batch' : 'batches'} + Breeder • ${totalRemainingKg.toFixed(1)} kg`;
+  }
+
+  // --- Actions ---
+
+  const handleStartEditBatch = (batchId, currentKg) => {
+    setEditingBatchId(batchId);
+    setTempAmount(String(currentKg));
+  };
+
+  const handleSaveCustomAmount = (batchId) => {
+    const val = parseFloat(tempAmount);
+    if (!isNaN(val) && val > 0) {
+      setCustomAmounts(prev => ({ ...prev, [batchId]: val }));
     }
-    return (a.batch_tag || '').localeCompare(b.batch_tag || '');
-  });
+    setEditingBatchId(null);
+  };
 
-  // Pagination for sorted batches (3 batches per page)
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 3;
-  const totalPages = Math.ceil(sortedBatches.length / itemsPerPage) || 1;
-  const safePage = Math.min(currentPage, totalPages);
-  const paginatedBatches = sortedBatches.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
+  const handleStartEditBreeder = () => {
+    setEditingBreeder(true);
+    setTempBreederAmount(String(breederDisplayKg));
+  };
 
-  // 1-Click Feed Batch
-  const handleFeedBatch = async (batch, customKg = null, explicitItemId = null) => {
+  const handleSaveBreederCustomAmount = () => {
+    const val = parseFloat(tempBreederAmount);
+    if (!isNaN(val) && val > 0) {
+      setCustomBreederKg(val);
+    }
+    setEditingBreeder(false);
+  };
+
+  const handleFeedBatch = async (batch, customKg = null, explicitItemId = null, silent = false) => {
     const feed = batch.current_feed;
     if (!feed) return;
-    const kg = customKg !== null ? parseFloat(customKg) : Number(feed.total_daily_feed_kg);
+    const kg = customKg !== null ? parseFloat(customKg) : (customAmounts[batch.batch_id] !== undefined ? customAmounts[batch.batch_id] : Number(feed.total_daily_feed_kg));
     if (!kg || kg <= 0) {
       toast.error('Please enter a valid feed amount in kg.');
       return;
     }
 
-    const suggested = getSuggestedFeed(feed.task_name);
-    const effectiveItemId = explicitItemId || batchFeedItemOverrides[batch.batch_id] || feed.item_id || suggested?.item_id;
+    const effectiveItem = getBatchFeedItem(batch);
+    const effectiveItemId = explicitItemId || effectiveItem?.item_id || batchFeedItemOverrides[batch.batch_id] || feed.item_id;
     if (!effectiveItemId) {
-      toast.error(`Please select a feed supply for batch ${batch.batch_tag} first.`);
+      toast.error(`Please link a feed supply to batch ${batch.batch_tag} first.`);
       return;
     }
 
@@ -254,44 +340,27 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed to log feeding.');
 
-      toast.success(`Fed ${kg} kg to batch ${batch.batch_tag}. Stock deducted.`);
-      setData(prev => {
-        const next = {
-          ...prev,
-          batches: prev.batches.map(b => {
-            if (b.batch_id === batch.batch_id) {
-              return {
-                ...b,
-                current_feed: {
-                  ...b.current_feed,
-                  fed_today: true,
-                  fed_today_kg: kg,
-                  item_id: effectiveItemId,
-                }
-              };
-            }
-            return b;
-          })
-        };
-        try { sessionStorage.setItem('swinesync_daily_feeding_cache', JSON.stringify(next)); } catch {}
-        return next;
-      });
+      if (!silent) {
+        toast.success(`Fed ${kg} kg to batch ${batch.batch_tag}. Stock deducted.`);
+      }
+
+      await fetchFeedingData();
       setEditingBatchId(null);
       if (onUpdated) onUpdated();
     } catch (err) {
       toast.error(err.message || 'Error logging batch feed.');
+      throw err;
     } finally {
       setSubmittingBatchId(null);
     }
   };
 
-  // 1-Click Feed Breeder Herd
-  const handleFeedBreeders = async (customKg = null) => {
+  const handleFeedBreeders = async (customKg = null, silent = false) => {
     if (!selectedBreederFeedId) {
       toast.error('Please select a feed supply for the breeder herd.');
       return;
     }
-    const kg = customKg !== null ? parseFloat(customKg) : calculatedBreederKg;
+    const kg = customKg !== null ? parseFloat(customKg) : (customBreederKg !== null ? customBreederKg : calculatedBreederKg);
     if (!kg || kg <= 0) {
       toast.error('Please enter a valid feed amount in kg.');
       return;
@@ -305,7 +374,7 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
         body: JSON.stringify({
           item_id: selectedBreederFeedId,
           amount_kg: kg,
-          head_count: breeder?.total_breeders || 0,
+          head_count: breederHeadCount,
           performed_by: 'Staff',
         }),
       });
@@ -313,54 +382,44 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed to log breeder feed.');
 
-      toast.success(`Fed ${kg} kg to Breeder Herd (${breeder?.total_breeders || 0} heads). Stock deducted.`);
-      setData(prev => {
-        const next = {
-          ...prev,
-          breeder_summary: {
-            ...prev.breeder_summary,
-            breeder_fed_today: true,
-            breeder_fed_today_kg: kg,
-          }
-        };
-        try { sessionStorage.setItem('swinesync_daily_feeding_cache', JSON.stringify(next)); } catch {}
-        return next;
-      });
+      if (!silent) {
+        toast.success(`Fed ${kg} kg to Breeder Herd (${breederHeadCount} heads). Stock deducted.`);
+      }
+
+      await fetchFeedingData();
       setEditingBreeder(false);
       if (onUpdated) onUpdated();
     } catch (err) {
       toast.error(err.message || 'Error logging breeder feed.');
+      throw err;
     } finally {
       setSubmittingBreeder(false);
     }
   };
 
-  // 1-Click Feed All Remaining Batches
-  const handleFeedAllRemaining = async () => {
-    if (unfedBatches.length === 0) return;
+  const handleFeedRemaining = async () => {
+    if (unfedBatches.length === 0 && breederFed) return;
     setBulkFeeding(true);
     try {
       let fedCount = 0;
-      let skippedCount = 0;
-
       for (const b of unfedBatches) {
         const feed = b.current_feed;
-        const suggested = getSuggestedFeed(feed?.task_name);
-        const effectiveItemId = batchFeedItemOverrides[b.batch_id] || feed?.item_id || suggested?.item_id;
+        const effectiveItem = getBatchFeedItem(b);
+        const effectiveItemId = effectiveItem?.item_id || batchFeedItemOverrides[b.batch_id] || feed?.item_id;
+        const customKg = customAmounts[b.batch_id] !== undefined ? customAmounts[b.batch_id] : null;
+
         if (effectiveItemId) {
-          await handleFeedBatch(b, null, effectiveItemId);
+          await handleFeedBatch(b, customKg, effectiveItemId, true);
           fedCount++;
-        } else {
-          skippedCount++;
         }
       }
 
-      if (skippedCount > 0) {
-        toast.warning(`${skippedCount} batch(es) skipped because no feed supply was selected yet.`);
-      } else {
-        toast.success(`All remaining batches fed (${unfedTotalKg} kg deducted).`);
+      if (!breederFed && selectedBreederFeedId) {
+        const bKg = customBreederKg !== null ? customBreederKg : calculatedBreederKg;
+        await handleFeedBreeders(bKg, true);
       }
 
+      toast.success(`Remaining fed (${totalRemainingKg.toFixed(1)} kg deducted).`);
       await fetchFeedingData();
       if (onUpdated) onUpdated();
     } catch (err) {
@@ -370,89 +429,135 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
     }
   };
 
+  const handleUndoFeedBatch = async (batchId) => {
+    setUndoingId(batchId);
+    try {
+      const res = await fetch(`${API_BASE}/api/growth/undo-feed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batch_id: batchId })
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to undo feeding');
+
+      toast.success('Feeding undone. Inventory stock restored.');
+      setCustomAmounts(prev => {
+        const next = { ...prev };
+        delete next[batchId];
+        return next;
+      });
+      await fetchFeedingData();
+      if (onUpdated) onUpdated();
+    } catch (err) {
+      toast.error(err.message || 'Error undoing batch feed.');
+    } finally {
+      setUndoingId(null);
+    }
+  };
+
+  const handleUndoFeedBreeder = async () => {
+    setUndoingBreeder(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/growth/undo-feed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_breeder: true })
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to undo breeder feeding');
+
+      toast.success('Breeder feeding undone. Inventory stock restored.');
+      setCustomBreederKg(null);
+      await fetchFeedingData();
+      if (onUpdated) onUpdated();
+    } catch (err) {
+      toast.error(err.message || 'Error undoing breeder feed.');
+    } finally {
+      setUndoingBreeder(false);
+    }
+  };
+
   const isBanner = variant === 'banner';
 
   if (loading) {
     return (
-      <div className={`bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs ${isBanner ? 'mb-5' : ''}`}>
-        <div className="flex items-center justify-between mb-3">
-          <div className="h-4 w-32 bg-slate-200 rounded animate-pulse" />
-          <div className="h-4 w-16 bg-slate-200 rounded animate-pulse" />
-        </div>
-        <div className="space-y-2">
-          <div className="h-10 w-full bg-slate-100 rounded-xl animate-pulse" />
-          <div className="h-10 w-full bg-slate-100 rounded-xl animate-pulse" />
-        </div>
-      </div>
-    );
-  }
-
-  // Smart Done state: Auto-collapsed into an ultra-slim, clean confirmation strip
-  if (allFed && isPanelCollapsed) {
-    return (
-      <div className={`transition-all duration-300 ease-out ${isBanner ? 'mb-5' : ''}`}>
-        <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3 shadow-2xs hover:border-emerald-300 transition-colors">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-            </div>
-            <div className="flex items-center gap-2 truncate text-xs">
-              <span className="font-semibold text-emerald-950 font-display">
-                All Animals Fed Today
-              </span>
-              <span className="text-emerald-700 font-medium text-[11px] hidden sm:inline">
-                • {totalBatchesCount} {totalBatchesCount === 1 ? 'batch' : 'batches'}
-                {breeder?.total_breeders > 0 ? ` + ${breeder.total_breeders} breeders` : ''}
-                {Number(totalFedTodayKg) > 0 ? ` (${totalFedTodayKg} kg deducted)` : ''}
-              </span>
-            </div>
+      <div className={`bg-white rounded-2xl border border-slate-200/80 shadow-xs animate-pulse p-5 overflow-hidden ${isBanner ? 'mb-5' : ''}`}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 shrink-0" />
+            <div className="h-5 w-32 bg-slate-200 rounded" />
+            <div className="w-24 h-2 bg-slate-100 rounded-full" />
+            <div className="h-4 w-20 bg-slate-100 rounded" />
           </div>
-          <button
-            type="button"
-            onClick={() => setUserCollapsed(false)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 bg-white/90 hover:bg-white rounded-lg border border-emerald-200/90 shadow-2xs transition-all cursor-pointer shrink-0"
-            title="Expand to view details or adjust amounts"
-          >
-            <span>View / Adjust</span>
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
+          <div className="h-8 w-36 bg-slate-200 rounded-xl" />
+        </div>
+        <div className="space-y-3 pt-2">
+          <div className="h-8 bg-slate-100 rounded-lg" />
+          <div className="h-12 bg-slate-50 rounded-lg" />
+          <div className="h-12 bg-slate-50 rounded-lg" />
         </div>
       </div>
     );
   }
 
   return (
-    <div
-      className={`bg-white rounded-2xl border transition-all duration-300 shadow-xs ${isBanner ? 'border-slate-200 mb-5' : 'border-slate-200/80 hover:shadow-sm'
-        }`}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 flex-wrap gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200/60 shadow-2xs">
-            <Wheat className="w-4 h-4 text-amber-600" />
+    <div className={`bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden transition-all duration-300 ${isBanner ? 'mb-5' : ''}`}>
+      {/* Top Header */}
+      <div className="px-5 py-3.5 flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+        {/* Left: Icon, Title, Chevron, Progress Bar, Fed Count, Remaining Summary */}
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
+          {/* Leaf Icon Box matching SwineSync emerald palette */}
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
+            <Leaf className="w-4 h-4 stroke-[2.2]" />
           </div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-display font-bold text-slate-900 leading-tight">{title}</h3>
-            <span
-              className={`text-[10.5px] font-semibold px-2.5 py-0.5 rounded-full border ${allFed
-                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                : 'bg-amber-50 text-amber-900 border-amber-200'
-                }`}
-            >
-              {allFed ? '✓ All Fed Today' : `${fedBatchesCount} of ${totalBatchesCount} Batches Fed`}
-            </span>
+
+          {/* Title */}
+          <h3 className="text-base sm:text-[17px] font-bold text-slate-900 tracking-tight shrink-0 font-display">
+            {title}
+          </h3>
+
+          {/* Collapsible toggle */}
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer transition-colors shrink-0"
+            title={isCollapsed ? 'Expand feeding table' : 'Collapse table'}
+          >
+            {isCollapsed ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronUp className="w-4 h-4" />
+            )}
+          </button>
+
+          {/* Progress Bar Track */}
+          <div className="w-20 sm:w-24 h-2 bg-slate-100 rounded-full overflow-hidden shrink-0 ml-1">
+            <div
+              className="h-full bg-emerald-600 rounded-full transition-all duration-300"
+              style={{ width: `${progressPercent}%` }}
+            />
           </div>
+
+          {/* Fed Count */}
+          <span className="text-xs sm:text-sm font-bold text-slate-800 shrink-0">
+            {fedGroupsCount} of {totalGroupsCount} fed
+          </span>
+
+          {/* Remaining Summary */}
+          <span className="text-xs text-slate-500 font-normal shrink-0 hidden md:inline">
+            {remainingSummaryText}
+          </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          {unfedBatches.length > 1 && !isPanelCollapsed && (
+        {/* Right CTA Button: Feed Remaining (using SwineSync emerald-600 palette) */}
+        <div className="flex items-center gap-2 shrink-0 ml-auto">
+          {totalRemainingKg > 0 ? (
             <button
               type="button"
               disabled={bulkFeeding}
-              onClick={handleFeedAllRemaining}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
-              title="Feed all remaining unfed batches in 1 click"
+              onClick={handleFeedRemaining}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+              title="Feed all remaining groups in 1 click"
             >
               {bulkFeeding ? (
                 <>
@@ -461,335 +566,463 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
                 </>
               ) : (
                 <>
-                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>Feed All ({unfedTotalKg} kg)</span>
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>
+                    Feed Remaining ({totalRemainingKg.toFixed(totalRemainingKg % 1 === 0 ? 0 : 2)} kg)
+                  </span>
                 </>
               )}
             </button>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200/80 rounded-xl text-xs font-semibold">
+              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>All Fed Today</span>
+            </div>
           )}
-
-          {/* Minimize / Expand Toggle with 180deg animated rotation */}
-          <button
-            type="button"
-            onClick={() => setUserCollapsed(!isPanelCollapsed)}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-            title={isPanelCollapsed ? 'Expand feeding queue' : 'Minimize panel'}
-          >
-            <ChevronDown
-              className={`w-4 h-4 transition-transform duration-300 ease-in-out ${isPanelCollapsed ? 'rotate-0' : 'rotate-180'
-                }`}
-            />
-          </button>
         </div>
       </div>
 
-      {/* Animated Collapsible Body Container (Smooth CSS Grid 0fr <-> 1fr Transition) */}
+      {/* Collapsible Content */}
       <div
-        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isPanelCollapsed
-          ? 'grid-rows-[0fr] opacity-0 pointer-events-none'
-          : 'grid-rows-[1fr] opacity-100'
-          }`}
+        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
+          isCollapsed ? 'grid-rows-[0fr] opacity-0 pointer-events-none' : 'grid-rows-[1fr] opacity-100'
+        }`}
       >
         <div className="overflow-hidden">
-          <div className="p-4 space-y-4">
-            {/* Section: Piglet Batches */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-1">
-                <span>Piglet Batches</span>
-              </div>
+          <div className="px-5 pb-5">
+            {/* Scrollable Container for table responsiveness on mobile */}
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse min-w-[760px]">
+                {/* Column Headers */}
+                <thead>
+                  <tr className="border-t border-slate-100 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <th className="text-left py-2.5 px-3 font-semibold w-[22%]">BATCH</th>
+                    <th className="text-left py-2.5 px-3 font-semibold w-[10%]">PEN</th>
+                    <th className="text-center py-2.5 px-3 font-semibold w-[8%]">PIGS</th>
+                    <th className="text-left py-2.5 px-3 font-semibold w-[24%]">FEED</th>
+                    <th className="text-right py-2.5 px-3 font-semibold w-[12%]">RATE</th>
+                    <th className="text-right py-2.5 px-3 font-semibold w-[12%]">AMOUNT</th>
+                    <th className="text-right py-2.5 px-3 font-semibold w-[12%]"></th>
+                  </tr>
+                </thead>
 
-              {batches.length === 0 ? (
-                <p className="text-xs text-slate-400 italic py-2 px-1">
-                  No active piglet batches enrolled in growth programs.
-                </p>
-              ) : (
-                <>
-                  <div className="space-y-1.5">
-                    {paginatedBatches.map(b => {
+                {/* Piglet Batches Body */}
+                <tbody>
+                  {batches.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-4 text-center text-xs text-slate-400 italic">
+                        No active piglet batches enrolled in growth programs.
+                      </td>
+                    </tr>
+                  ) : (
+                    batches.map((b) => {
                       const feed = b.current_feed;
-                      const isSubmitting = submittingBatchId === b.batch_id;
+                      const isFed = !!feed?.fed_today;
                       const isEditing = editingBatchId === b.batch_id;
+                      const isSubmitting = submittingBatchId === b.batch_id;
+                      const isUndoing = undoingId === b.batch_id;
 
-                      const overrideItemId = batchFeedItemOverrides[b.batch_id];
-                      const suggestedFeed = !feed?.item_id && !overrideItemId ? getSuggestedFeed(feed?.task_name) : null;
-                      const effectiveItemId = overrideItemId || feed?.item_id || suggestedFeed?.item_id;
-                      const effectiveFeedItem = feedItems.find(f => f.item_id === effectiveItemId) || feed?.inventory_items;
-                      const hasFeedItem = !!effectiveItemId;
+                      const dailyRate = Number(feed?.daily_consumption_per_head) || 0;
+                      const prescribedKg = Number(feed?.total_daily_feed_kg) || 0;
+                      const fedKg = typeof feed?.fed_today_kg === 'number' && feed?.fed_today_kg > 0
+                        ? feed.fed_today_kg
+                        : (customAmounts[b.batch_id] !== undefined ? customAmounts[b.batch_id] : prescribedKg);
+                      const customKg = customAmounts[b.batch_id];
+                      const displayKg = isFed ? fedKg : (customKg !== undefined ? customKg : prescribedKg);
+
+                      const isAdjusted = isFed
+                        ? (feed?.is_adjusted || Math.abs(fedKg - prescribedKg) > 0.05)
+                        : (customKg !== undefined && Math.abs(customKg - prescribedKg) > 0.05);
+
+                      // Single-day rate calculation: if adjusted, dynamically shows kg/head for today only!
+                      const displayRate = isAdjusted && b.current_count > 0
+                        ? displayKg / b.current_count
+                        : dailyRate;
+
+                      const feedItem = getBatchFeedItem(b);
+                      const feedName = getBatchFeedName(b);
+                      const fedTime = formatFedTime(feed?.fed_time);
+                      const effectiveItemId = feedItem?.item_id || batchFeedItemOverrides[b.batch_id] || feed?.item_id;
 
                       return (
-                        <div
+                        <tr
                           key={b.batch_id}
-                          className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border transition-all ${feed?.fed_today
-                            ? 'bg-emerald-50/30 border-emerald-200/60 text-emerald-950'
-                            : 'bg-white border-slate-200/80 hover:border-amber-300 hover:shadow-2xs'
-                            }`}
+                          className="border-t border-slate-100 hover:bg-slate-50/50 transition-colors"
                         >
-                          {/* Left: Batch Tag, Pen, Pig Count */}
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-bold text-xs text-slate-900 tracking-tight shrink-0">
-                              {b.batch_tag}
-                            </span>
-                            <span className="text-[11px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md shrink-0">
-                              {b.pen_code ? `Pen ${b.pen_code}` : 'No Pen'}
-                            </span>
-                            <span className="text-xs text-slate-500 font-normal shrink-0">
-                              {b.current_count} {b.current_count === 1 ? 'pig' : 'pigs'}
-                            </span>
-                          </div>
+                          {/* BATCH */}
+                          <td className="py-3.5 px-3 text-left">
+                            <div className="flex items-center gap-2">
+                              {isFed ? (
+                                <Check className="w-4 h-4 text-emerald-600 stroke-[2.5] shrink-0" />
+                              ) : (
+                                <span className="w-4 shrink-0" />
+                              )}
+                              <span className="font-bold text-xs text-slate-900 tracking-tight">
+                                {b.batch_tag}
+                              </span>
+                            </div>
+                          </td>
 
-                          {/* Right: Actions */}
-                          <div className="flex items-center justify-end shrink-0 sm:w-48">
-                            {!hasFeedItem ? (
-                              <div className="relative inline-flex items-center h-8 w-full sm:w-48 shrink-0">
-                                <select
-                                  value=""
-                                  onChange={(e) => handleLinkBatchFeed(b, e.target.value)}
-                                  className="w-full h-8 text-xs font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-xl pl-3 pr-7 cursor-pointer transition-all shadow-2xs appearance-none truncate"
-                                  title="Select an inventory supply to feed this batch"
-                                >
-                                  <option value="" disabled>Choose Feed Supply ▾</option>
-                                  {feedItems.map(f => (
-                                    <option key={f.item_id} value={f.item_id}>
-                                      {f.item_name} ({f.current_stock_level} {f.unit_of_measure})
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown className="w-3.5 h-3.5 text-amber-700 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
-                              </div>
-                            ) : feed?.fed_today ? (
-                              <div className="inline-flex items-center justify-center gap-1.5 h-8 w-full sm:w-48 rounded-xl bg-emerald-50 border border-emerald-200/90 text-emerald-800 px-3 text-xs font-semibold shadow-2xs shrink-0">
-                                <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5] shrink-0" />
-                                <span className="truncate">Fed Today ({feed.fed_today_kg} kg)</span>
-                              </div>
-                            ) : isEditing ? (
-                              <div className="inline-flex items-center justify-end h-8 gap-1 bg-amber-50 px-1.5 rounded-xl border border-amber-300 shadow-2xs shrink-0">
-                                <div className="flex items-center gap-1">
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    min="0.1"
-                                    value={editKg}
-                                    onChange={e => setEditKg(e.target.value)}
-                                    className="w-14 h-6 px-1.5 bg-white border border-slate-300 rounded font-semibold text-xs text-slate-800 text-center focus:ring-1 focus:ring-amber-500"
-                                    placeholder="kg"
-                                    autoFocus
-                                  />
-                                  <span className="text-[11px] font-semibold text-slate-600">kg</span>
+                          {/* PEN */}
+                          <td className="py-3.5 px-3 text-left">
+                            {b.pen_code ? (
+                              <span className="inline-block bg-slate-100 text-slate-600 font-medium text-xs px-2.5 py-0.5 rounded-md">
+                                {b.pen_code}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 text-xs">—</span>
+                            )}
+                          </td>
+
+                          {/* PIGS */}
+                          <td className="py-3.5 px-3 text-center">
+                            <span className="text-xs text-slate-700 font-medium">
+                              {b.current_count}
+                            </span>
+                          </td>
+
+                          {/* FEED (from Growth Program Template) */}
+                          <td className="py-3.5 px-3 text-left">
+                            <div className="flex items-center gap-1.5 text-xs text-slate-700 font-medium">
+                              <Leaf className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              {linkingGuidelineId === feed?.guideline_id ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <select
+                                    onChange={(e) => handleLinkGuidelineToInventory(feed.guideline_id, e.target.value, b.batch_tag)}
+                                    defaultValue=""
+                                    className="text-xs bg-white border border-emerald-400 rounded px-1.5 py-0.5 focus:ring-1 focus:ring-emerald-500"
+                                  >
+                                    <option value="" disabled>Connect Inventory Feed...</option>
+                                    {feedItems.map(item => (
+                                      <option key={item.item_id} value={item.item_id}>{item.item_name}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    onClick={() => setLinkingGuidelineId(null)}
+                                    className="p-0.5 text-slate-400 hover:text-slate-600"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
                                 </div>
-                                {b.current_count > 0 && (
-                                  <span className="text-[10px] font-medium text-amber-900 bg-amber-100/70 border border-amber-200 px-1 py-0.5 rounded whitespace-nowrap hidden sm:inline">
-                                    {parseFloat(editKg) > 0 ? `${(parseFloat(editKg) / b.current_count).toFixed(1)}/pig` : '—'}
+                              ) : (
+                                <>
+                                  <span className="truncate" title={`Growth template guideline: ${feed?.task_name || ''}`}>
+                                    {feedName}
                                   </span>
-                                )}
+                                  {!feed?.item_id && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setLinkingGuidelineId(feed?.guideline_id)}
+                                      className="text-[10px] text-amber-600 hover:text-amber-800 font-semibold underline cursor-pointer ml-1"
+                                      title="This template guideline is not linked to an inventory item. Click to connect."
+                                    >
+                                      (Link Feed)
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* RATE (kg/head, dynamically updated when adjusted for the day) */}
+                          <td className="py-3.5 px-3 text-right">
+                            <span className="text-xs text-slate-500 font-normal">
+                              {displayRate.toFixed(2)} kg/hd
+                            </span>
+                          </td>
+
+                          {/* AMOUNT */}
+                          <td className="py-3.5 px-3 text-right">
+                            {isEditing ? (
+                              <div className="inline-flex items-center justify-end gap-1">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0.1"
+                                  value={tempAmount}
+                                  onChange={(e) => setTempAmount(e.target.value)}
+                                  className="w-16 h-6 px-1.5 text-xs font-bold text-slate-900 bg-white border border-emerald-500 rounded text-center focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                  autoFocus
+                                />
                                 <button
                                   type="button"
-                                  disabled={isSubmitting}
-                                  onClick={() => handleFeedBatch(b, editKg, effectiveItemId)}
-                                  className="h-6 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-semibold text-xs rounded transition-all cursor-pointer shadow-2xs"
+                                  onClick={() => handleSaveCustomAmount(b.batch_id)}
+                                  className="p-1 text-emerald-600 hover:text-emerald-800 cursor-pointer"
+                                  title="Save for today"
                                 >
-                                  {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Feed'}
+                                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setEditingBatchId(null)}
-                                  className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer hover:bg-amber-100 transition-colors"
+                                  className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
                                   title="Cancel"
                                 >
                                   <X className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             ) : (
-                              <div className="inline-flex items-center h-8 w-full sm:w-48 rounded-xl bg-amber-600 text-white shadow-2xs overflow-hidden shrink-0">
-                                <button
-                                  type="button"
-                                  disabled={isSubmitting}
-                                  onClick={() => handleFeedBatch(b, null, effectiveItemId)}
-                                  className="flex-1 inline-flex items-center justify-center gap-1.5 h-full px-2 text-xs font-semibold hover:bg-amber-700 active:bg-amber-800 transition-colors cursor-pointer disabled:opacity-50"
-                                >
-                                  {isSubmitting ? (
-                                    <>
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      <span>Feeding...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Wheat className="w-3.5 h-3.5 shrink-0" />
-                                      <span className="truncate">Feed {feed?.total_daily_feed_kg} kg</span>
-                                    </>
-                                  )}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingBatchId(b.batch_id);
-                                    setEditKg(String(feed.total_daily_feed_kg));
-                                  }}
-                                  className="w-8 h-full inline-flex items-center justify-center border-l border-amber-500/80 hover:bg-amber-700 active:bg-amber-800 transition-colors cursor-pointer text-amber-100 hover:text-white shrink-0"
-                                  title="Adjust kg before feeding"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                {isAdjusted && (
+                                  <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-normal">
+                                    Adjusted
+                                  </span>
+                                )}
+                                <span className="text-xs font-bold text-slate-900 whitespace-nowrap">
+                                  {displayKg} kg
+                                </span>
+                                {!isFed && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditBatch(b.batch_id, displayKg)}
+                                    className="p-0.5 text-slate-400 hover:text-slate-700 cursor-pointer transition-colors"
+                                    title="Adjust kg for today before feeding"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                  </button>
+                                )}
                               </div>
                             )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          </td>
 
-                  {/* Batches Pagination */}
-                  {totalPages > 1 && (
-                    <div className="pt-2 flex justify-between items-center text-xs text-slate-500 flex-wrap gap-2">
-                      <span className="text-[11px] text-slate-400 font-medium">
-                        Page {safePage} of {totalPages} ({sortedBatches.length} batches total)
-                      </span>
-                      <Pagination
-                        currentPage={safePage}
-                        totalPages={totalPages}
-                        onPageChange={setCurrentPage}
-                        totalItems={sortedBatches.length}
-                        itemsPerPage={itemsPerPage}
-                        itemName="batches"
-                        showSummary={false}
-                        buttonSize="sm"
-                      />
-                    </div>
+                          {/* ACTION / STATUS */}
+                          <td className="py-3.5 px-3 text-right">
+                            {isFed ? (
+                              <div className="inline-flex items-center justify-end gap-3">
+                                <span className="text-xs text-slate-600 font-medium whitespace-nowrap">
+                                  {fedTime ? `Fed ${fedTime}` : 'Fed Today'}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={isUndoing}
+                                  onClick={() => handleUndoFeedBatch(b.batch_id)}
+                                  className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 cursor-pointer transition-colors disabled:opacity-50"
+                                  title="Undo feeding and restore stock"
+                                >
+                                  {isUndoing ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Undo2 className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>Undo</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={isSubmitting}
+                                onClick={() => handleFeedBatch(b, displayKg, effectiveItemId)}
+                                className="inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white font-semibold text-xs px-4 py-1.5 rounded-xl shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+                              >
+                                {isSubmitting ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    <span>Feeding...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Leaf className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Feed {displayKg} kg</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
-                </>
-              )}
+                </tbody>
+              </table>
             </div>
 
-            {/* Section: Breeder Herd (Sows & Boars) */}
-            {breeder && breeder.total_breeders > 0 && (
-              <div className="pt-3 border-t border-slate-100 space-y-2">
-                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-1">
-                  <span>Breeder Herd</span>
-                </div>
+            {/* Piglet Total Line */}
+            {batches.length > 0 && (
+              <div className="text-right py-2 px-3 text-xs font-bold text-slate-700">
+                Piglet total: {pigletTotalKg.toFixed(pigletTotalKg % 1 === 0 ? 0 : 2)} kg
+              </div>
+            )}
 
-                <div
-                  className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border transition-all ${breeder.breeder_fed_today
-                    ? 'bg-emerald-50/30 border-emerald-200/60 text-emerald-950'
-                    : 'bg-white border-slate-200/80 hover:border-amber-300 hover:shadow-2xs'
-                    }`}
-                >
-                  {/* Left: Breeder Identity, count, and rate */}
-                  <div className="flex items-center gap-2 min-w-0 flex-wrap sm:flex-nowrap">
-                    <span className="font-bold text-xs text-slate-900 tracking-tight shrink-0">
-                      Sows & Boars
-                    </span>
-                    <span className="text-xs text-slate-400 font-normal shrink-0">
-                      ({breeder.total_breeders} total)
-                    </span>
-                    <span className="text-slate-300 hidden sm:inline">•</span>
-                    <div className="inline-flex items-center gap-1 bg-amber-50/80 border border-amber-200/80 px-2 py-0.5 rounded-md text-xs shrink-0" title="Daily feed per head">
-                      <span className="text-slate-500 font-medium text-[11px]">Rate:</span>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0.5"
-                        max="15"
-                        value={breederRatePerHead}
-                        onChange={e => handleUpdateBreederRate(e.target.value)}
-                        className="w-10 px-1 py-0.5 text-xs font-semibold text-amber-950 bg-white border border-amber-300 rounded text-center focus:ring-1 focus:ring-amber-500"
-                      />
-                      <span className="text-slate-500 text-[10px]">kg/hd</span>
-                    </div>
-                    {feedItems.length > 0 && (
-                      <select
-                        value={selectedBreederFeedId}
-                        onChange={e => handleSelectBreederFeed(e.target.value)}
-                        className="text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2 py-0.5 max-w-[140px] truncate cursor-pointer hidden md:inline"
-                        title="Breeder feed supply from inventory"
-                      >
-                        {feedItems.map(f => (
-                          <option key={f.item_id} value={f.item_id}>
-                            {f.item_name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-
-                  {/* Right: Actions */}
-                  <div className="flex items-center justify-end shrink-0 sm:w-48">
-                    {breeder.breeder_fed_today ? (
-                      <div className="inline-flex items-center justify-center gap-1.5 h-8 w-full sm:w-48 rounded-xl bg-emerald-50 border border-emerald-200/90 text-emerald-800 px-3 text-xs font-semibold shadow-2xs shrink-0">
-                        <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5] shrink-0" />
-                        <span className="truncate">Fed Today ({breeder.breeder_fed_today_kg} kg)</span>
-                      </div>
-                    ) : editingBreeder ? (
-                      <div className="inline-flex items-center justify-end h-8 gap-1 bg-amber-50 px-1.5 rounded-xl border border-amber-300 shadow-2xs shrink-0">
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0.5"
-                            value={breederKgInput}
-                            onChange={e => setBreederKgInput(e.target.value)}
-                            className="w-14 h-6 px-1.5 bg-white border border-slate-300 rounded font-semibold text-xs text-slate-800 text-center focus:ring-1 focus:ring-amber-500"
-                            placeholder="kg"
-                            autoFocus
-                          />
-                          <span className="text-[11px] font-semibold text-slate-600">kg</span>
-                        </div>
-                        {breeder.total_breeders > 0 && (
-                          <span className="text-[10px] font-medium text-amber-900 bg-amber-100/70 border border-amber-200 px-1 py-0.5 rounded whitespace-nowrap hidden sm:inline">
-                            {parseFloat(breederKgInput) > 0 ? `${(parseFloat(breederKgInput) / breeder.total_breeders).toFixed(1)}/hd` : '—'}
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          disabled={submittingBreeder}
-                          onClick={() => handleFeedBreeders(breederKgInput)}
-                          className="h-6 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-semibold text-xs rounded transition-all cursor-pointer shadow-2xs"
-                        >
-                          {submittingBreeder ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Feed'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingBreeder(false)}
-                          className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer hover:bg-amber-100 transition-colors"
-                          title="Cancel"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="inline-flex items-center h-8 w-full sm:w-48 rounded-xl bg-amber-600 text-white shadow-2xs overflow-hidden shrink-0">
-                        <button
-                          type="button"
-                          disabled={submittingBreeder || !selectedBreederFeedId}
-                          onClick={() => handleFeedBreeders()}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 h-full px-2 text-xs font-semibold hover:bg-amber-700 active:bg-amber-800 transition-colors cursor-pointer disabled:opacity-50"
-                          title={`Feed ${calculatedBreederKg} kg in 1 click`}
-                        >
-                          {submittingBreeder ? (
-                            <>
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              <span>Feeding...</span>
-                            </>
+            {/* Breeder Herd Section */}
+            {hasBreeder && (
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full border-collapse min-w-[760px]">
+                  <thead>
+                    <tr className="border-t border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      <th className="text-left pt-3 pb-2 px-3 font-semibold w-[22%]">BREEDER HERD</th>
+                      <th className="text-left pt-3 pb-2 px-3 font-semibold w-[10%]"></th>
+                      <th className="text-center pt-3 pb-2 px-3 font-semibold w-[8%]">HEADS</th>
+                      <th className="text-left pt-3 pb-2 px-3 font-semibold w-[24%]">FEED</th>
+                      <th className="text-right pt-3 pb-2 px-3 font-semibold w-[12%]">RATE</th>
+                      <th className="text-right pt-3 pb-2 px-3 font-semibold w-[12%]">AMOUNT</th>
+                      <th className="text-right pt-3 pb-2 px-3 font-semibold w-[12%]"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t border-slate-100 hover:bg-slate-50/50 transition-colors">
+                      {/* BREEDER HERD */}
+                      <td className="py-3.5 px-3 text-left">
+                        <div className="flex items-center gap-2">
+                          {breederFed ? (
+                            <Check className="w-4 h-4 text-emerald-600 stroke-[2.5] shrink-0" />
                           ) : (
-                            <>
-                              <Wheat className="w-3.5 h-3.5 shrink-0" />
-                              <span className="truncate">Feed {calculatedBreederKg} kg</span>
-                            </>
+                            <span className="w-4 shrink-0" />
                           )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingBreeder(true);
-                            setBreederKgInput(String(calculatedBreederKg));
-                          }}
-                          className="w-8 h-full inline-flex items-center justify-center border-l border-amber-500/80 hover:bg-amber-700 active:bg-amber-800 transition-colors cursor-pointer text-amber-100 hover:text-white shrink-0"
-                          title="Adjust kg before feeding"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                          <span className="font-bold text-xs text-slate-900 tracking-tight">
+                            Sows & Boars
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* PEN (Blank) */}
+                      <td className="py-3.5 px-3 text-left"></td>
+
+                      {/* HEADS */}
+                      <td className="py-3.5 px-3 text-center">
+                        <span className="text-xs text-slate-700 font-medium">
+                          {breederHeadCount}
+                        </span>
+                      </td>
+
+                      {/* FEED (Changeable for Breeder Herd since it has no growth template) */}
+                      <td className="py-3.5 px-3 text-left">
+                        {!breederFed ? (
+                          <div className="relative inline-flex items-center">
+                            <Leaf className="w-3.5 h-3.5 text-emerald-600 shrink-0 mr-1.5" />
+                            <select
+                              value={selectedBreederFeedId}
+                              onChange={(e) => handleSelectBreederFeed(e.target.value)}
+                              className="text-xs font-semibold text-slate-800 bg-emerald-50/60 hover:bg-emerald-50 border border-emerald-200/90 rounded-lg pl-2 pr-6 py-1 cursor-pointer transition-colors shadow-2xs appearance-none truncate max-w-[210px] focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              title="Breeder herd does not follow a template. Select inventory feed supply anytime."
+                            >
+                              {feedItems.map(f => (
+                                <option key={f.item_id} value={f.item_id}>
+                                  {f.item_name} ({f.current_stock_level} {f.unit_of_measure})
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown className="w-3.5 h-3.5 text-emerald-700 pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2" />
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-xs text-slate-700 font-medium">
+                            <Leaf className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span className="truncate">{breederFeedName}</span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* RATE (kg/head, dynamically updated when adjusted for the day) */}
+                      <td className="py-3.5 px-3 text-right">
+                        <span className="text-xs text-slate-500 font-normal">
+                          {breederDisplayRate % 1 === 0 ? breederDisplayRate : breederDisplayRate.toFixed(2)} kg/hd
+                        </span>
+                      </td>
+
+                      {/* AMOUNT */}
+                      <td className="py-3.5 px-3 text-right">
+                        {editingBreeder ? (
+                          <div className="inline-flex items-center justify-end gap-1">
+                            <input
+                              type="number"
+                              step="0.5"
+                              min="0.5"
+                              value={tempBreederAmount}
+                              onChange={(e) => setTempBreederAmount(e.target.value)}
+                              className="w-16 h-6 px-1.5 text-xs font-bold text-slate-900 bg-white border border-emerald-500 rounded text-center focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={handleSaveBreederCustomAmount}
+                              className="p-1 text-emerald-600 hover:text-emerald-800 cursor-pointer"
+                              title="Save for today"
+                            >
+                              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingBreeder(false)}
+                              className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                              title="Cancel"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            {breederIsAdjusted && (
+                              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-normal">
+                                Adjusted
+                              </span>
+                            )}
+                            <span className="text-xs font-bold text-slate-900 whitespace-nowrap">
+                              {breederDisplayKg} kg
+                            </span>
+                            {!breederFed && (
+                              <button
+                                type="button"
+                                onClick={handleStartEditBreeder}
+                                className="p-0.5 text-slate-400 hover:text-slate-700 cursor-pointer transition-colors"
+                                title="Adjust kg for today before feeding"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* ACTION / STATUS */}
+                      <td className="py-3.5 px-3 text-right">
+                        {breederFed ? (
+                          <div className="inline-flex items-center justify-end gap-3">
+                            <span className="text-xs text-slate-600 font-medium whitespace-nowrap">
+                              {formatFedTime(breeder.breeder_fed_time) ? `Fed ${formatFedTime(breeder.breeder_fed_time)}` : 'Fed Today'}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={undoingBreeder}
+                              onClick={handleUndoFeedBreeder}
+                              className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 cursor-pointer transition-colors disabled:opacity-50"
+                              title="Undo breeder feeding"
+                            >
+                              {undoingBreeder ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Undo2 className="w-3.5 h-3.5" />
+                              )}
+                              <span>Undo</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={submittingBreeder}
+                            onClick={() => handleFeedBreeders(breederDisplayKg)}
+                            className="inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white font-semibold text-xs px-4 py-1.5 rounded-xl shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+                          >
+                            {submittingBreeder ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span>Feeding...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Leaf className="w-3.5 h-3.5 shrink-0" />
+                                <span>Feed {breederDisplayKg} kg</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {/* Breeder Total Line */}
+                <div className="text-right py-2 px-3 text-xs font-bold text-slate-700">
+                  Breeder total: {breederTotalKg.toFixed(breederTotalKg % 1 === 0 ? 0 : 2)} kg
                 </div>
               </div>
             )}

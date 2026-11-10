@@ -39,6 +39,12 @@ const CATEGORY_UNITS = {
       "ml", "tablets", "capsules", "sachets",
     ]
   },
+  Vaccines: {
+    default: "vials (50 doses)", options: [
+      "vials (50 doses)", "vials (100ml)", "vials (50ml)", "vials (250ml)",
+      "doses", "ml",
+    ]
+  },
 };
 
 const unitLabel = (u) => {
@@ -48,8 +54,8 @@ const unitLabel = (u) => {
   return `${noun} (${meta.size} ${meta.subUnit} each)`;
 };
 
-// Medical and Medication items share the same treatment-focused UI labels
-const isMedicalCategory = (cat) => cat === "Medical" || cat === "Medication";
+// Medical, Medication, and Vaccines items share the same treatment-focused UI labels
+const isMedicalCategory = (cat) => cat === "Medical" || cat === "Medication" || cat === "Vaccines";
 
 const EMPTY_FORM = {
   item_name: "",
@@ -169,7 +175,7 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
     const oldCategoryDefault = CATEGORY_UNITS[form.category]?.default;
     const newDefault = CATEGORY_UNITS[newCategory]?.default || "kg";
     setForm(f => {
-      const isMed = newCategory === "Medication" || newCategory === "Medical";
+      const isMed = newCategory === "Medication" || newCategory === "Medical" || newCategory === "Vaccines";
       const next = {
         ...f,
         category: newCategory,
@@ -282,10 +288,49 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
         if (error) throw error;
         savedRecord = inserted;
 
-        // Automatically log initial stock as RESTOCK transaction if > 0
+        // Automatically log initial stock as RESTOCK transaction if > 0 and record expense
         if (inserted && payload.current_stock_level > 0) {
+          let purchaseId = null;
+          const totalExp = Number((Number(payload.unit_cost || 0) * payload.current_stock_level).toFixed(2));
+          const txCode = `EXP-${Math.floor(10000 + Math.random() * 90000)}`;
+
+          try {
+            const { data: expRow } = await supabase
+              .from("expenses")
+              .insert({
+                category: payload.category || "Supplies",
+                amount: totalExp > 0 ? totalExp : 0,
+                supplier_name: "Initial Inventory Setup",
+                payment_method: "Cash",
+                date_incurred: new Date().toISOString().split("T")[0],
+                description: `Initial stock of ${payload.current_stock_level} ${getShortUnit(payload.unit_of_measure)} for ${payload.item_name}`,
+                receipt_no: txCode,
+              })
+              .select()
+              .single();
+
+            if (expRow?.expense_id) {
+              const { data: purRow } = await supabase
+                .from("inventory_purchases")
+                .insert({
+                  expense_id: expRow.expense_id,
+                  item_id: inserted.item_id,
+                  quantity_bought: payload.current_stock_level,
+                  unit_price: Number(payload.unit_cost) || 0,
+                  subtotal: totalExp,
+                  purchase_date: new Date().toISOString().split("T")[0],
+                })
+                .select()
+                .single();
+              if (purRow?.purchase_id) purchaseId = purRow.purchase_id;
+            }
+          } catch (expErr) {
+            console.warn("Linked expense setup note:", expErr);
+          }
+
           const { error: initErr } = await supabase.from("inventory_transactions").insert({
             item_id: inserted.item_id,
+            purchase_id: purchaseId,
             user_id: staff.id,
             transaction_type: "RESTOCK",
             quantity: payload.current_stock_level,
@@ -439,6 +484,7 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
                   >
                     <option value="Feed">Feed (sacks)</option>
                     <option value="Medication">Medication (vials, ml, tablets…)</option>
+                    <option value="Vaccines">Vaccines (vials, doses, ml…)</option>
                     <option value="Supplements">Supplements (packs, bottles, kg…)</option>
                   </select>
                 </div>

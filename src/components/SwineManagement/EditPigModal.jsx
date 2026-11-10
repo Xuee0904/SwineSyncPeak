@@ -5,7 +5,7 @@ import useModalAnimation from '../../hooks/useModalAnimation';
 import toast from '../../utils/toast';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
-const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant'];
+const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Cull'];
 const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Quarantine'];
 
 const SOURCE_OPTIONS = [
@@ -27,6 +27,7 @@ function toFormState(fullPig) {
       : (isBatch ? 'Suckling' : 'Healthy'),
     parityCount: fullPig.parity_count ?? '',
     totalBornAlive: fullPig.total_born_alive !== undefined && fullPig.total_born_alive !== null ? fullPig.total_born_alive : '',
+    currentCount: fullPig.current_count !== undefined && fullPig.current_count !== null ? fullPig.current_count : (fullPig.total_born_alive ?? ''),
     stillbornCount: fullPig.stillborn_count !== undefined && fullPig.stillborn_count !== null ? fullPig.stillborn_count : 0,
     mummyCount: fullPig.mummy_count !== undefined && fullPig.mummy_count !== null ? fullPig.mummy_count : 0,
     sourceOrigin: fullPig.source_origin || fullPig.sourceOrigin || 'born_in_farm',
@@ -118,6 +119,35 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
           }
         }
       }
+    } else if (field === 'currentCount' || field === 'totalBornAlive') {
+      if (isBatch) {
+        const nextBorn = field === 'totalBornAlive' ? value : form.totalBornAlive;
+        const nextCurrent = field === 'currentCount' ? value : form.currentCount;
+        const bornNum = nextBorn !== '' && nextBorn !== undefined && nextBorn !== null ? Number(nextBorn) : null;
+        const currentNum = nextCurrent !== '' && nextCurrent !== undefined && nextCurrent !== null ? Number(nextCurrent) : null;
+
+        if (currentNum !== null && !isNaN(currentNum)) {
+          if (currentNum < 0) {
+            setErrors(prev => ({ ...prev, currentCount: 'Current headcount cannot be negative' }));
+          } else if (bornNum !== null && !isNaN(bornNum) && currentNum > bornNum) {
+            setErrors(prev => ({ ...prev, currentCount: `Current headcount (${currentNum}) cannot exceed initial count (${bornNum})` }));
+          } else {
+            setErrors(prev => ({ ...prev, currentCount: undefined }));
+          }
+        } else {
+          setErrors(prev => ({ ...prev, currentCount: undefined }));
+        }
+
+        if (field === 'totalBornAlive') {
+          if (bornNum !== null && !isNaN(bornNum) && bornNum <= 0) {
+            setErrors(prev => ({ ...prev, totalBornAlive: 'Enter at least 1 piglet born alive' }));
+          } else {
+            setErrors(prev => ({ ...prev, totalBornAlive: undefined }));
+          }
+        }
+      } else {
+        if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }));
+      }
     } else {
       if (errors[field]) setErrors(prev => ({ ...prev, [field]: undefined }));
     }
@@ -132,6 +162,33 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
   const isPastDob = Boolean(form.dateOfBirth && form.dateOfBirth < minDobStr);
   const isInvalidWeight = Boolean(form.weight !== '' && form.weight !== undefined && form.weight !== null && (isNaN(Number(form.weight)) || Number(form.weight) < 0 || Number(form.weight) > 500));
   const isInvalidBornAlive = Boolean(isBatch && form.totalBornAlive !== '' && form.totalBornAlive !== undefined && form.totalBornAlive !== null && Number(form.totalBornAlive) <= 0);
+
+  const currentCountNum = form.currentCount !== '' && form.currentCount !== undefined && form.currentCount !== null ? Number(form.currentCount) : null;
+  const totalBornNum = form.totalBornAlive !== '' && form.totalBornAlive !== undefined && form.totalBornAlive !== null ? Number(form.totalBornAlive) : null;
+
+  const currentCountExceedsInitial = Boolean(
+    isBatch &&
+    currentCountNum !== null &&
+    totalBornNum !== null &&
+    !isNaN(currentCountNum) &&
+    !isNaN(totalBornNum) &&
+    currentCountNum > totalBornNum
+  );
+
+  const currentCountNegative = Boolean(
+    isBatch &&
+    currentCountNum !== null &&
+    !isNaN(currentCountNum) &&
+    currentCountNum < 0
+  );
+
+  const inlineCurrentCountError = errors.currentCount || (
+    currentCountExceedsInitial
+      ? `Current headcount (${form.currentCount}) cannot exceed initial count (${form.totalBornAlive})`
+      : currentCountNegative
+        ? 'Current headcount cannot be negative'
+        : undefined
+  );
 
   const validate = () => {
     const next = {};
@@ -158,6 +215,14 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
       if (!form.totalBornAlive || Number(form.totalBornAlive) <= 0) {
         next.totalBornAlive = 'Enter at least 1 piglet born alive';
       }
+      if (form.currentCount !== '' && form.currentCount !== undefined && form.currentCount !== null) {
+        const c = Number(form.currentCount);
+        if (isNaN(c) || c < 0) {
+          next.currentCount = 'Current headcount cannot be negative';
+        } else if (c > Number(form.totalBornAlive || Infinity)) {
+          next.currentCount = `Current headcount (${c}) cannot exceed initial count (${form.totalBornAlive})`;
+        }
+      }
       const dob = form.dateOfBirth || pigData?.date_of_birth;
       if (dob) {
         const ageInDays = Math.floor((new Date() - new Date(dob)) / (1000 * 60 * 60 * 24));
@@ -179,7 +244,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
           ? (isBatch ? (pigData?.current_count ?? pigData?.total_born_alive ?? 0) : 1)
           : 0;
         const incomingCount = isBatch
-          ? (parseInt(form.totalBornAlive) || 1)
+          ? (parseInt(form.currentCount ?? form.totalBornAlive) || 1)
           : 1;
         const effectiveRemaining = isSamePen
           ? (typeof selectedPen.remaining === 'number' ? selectedPen.remaining + currentCountInPen : Infinity)
@@ -214,6 +279,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
         averageWeight: form.weight ? Number(form.weight) : null,
         parityCount: pigData.category === 'Sow' ? Number(form.parityCount) : undefined,
         totalBornAlive: isBatch ? Number(form.totalBornAlive) || 0 : undefined,
+        currentCount: isBatch ? (form.currentCount !== '' && form.currentCount !== undefined ? Number(form.currentCount) : Number(form.totalBornAlive) || 0) : undefined,
         stillbornCount: isBatch ? Number(form.stillbornCount) || 0 : undefined,
         mummyCount: isBatch ? Number(form.mummyCount) || 0 : undefined,
         category: pigData.category,
@@ -353,15 +419,27 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
           </div>
 
           <div className="pt-2 border-t border-slate-100 space-y-4">
-            <Field label="Initial Head Count" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet' : undefined)} icon={<Baby />}>
-              <input
-                type="number"
-                min="1"
-                value={form.totalBornAlive ?? ''}
-                onChange={handleChange('totalBornAlive')}
-                className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`}
-              />
-            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Initial Head Count" error={errors.totalBornAlive || (isInvalidBornAlive ? 'Enter at least 1 piglet' : undefined)} icon={<Baby />}>
+                <input
+                  type="number"
+                  min="1"
+                  value={form.totalBornAlive ?? ''}
+                  onChange={handleChange('totalBornAlive')}
+                  className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`}
+                />
+              </Field>
+
+              <Field label="Current Head Count" error={inlineCurrentCountError} icon={<Users />}>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.currentCount ?? ''}
+                  onChange={handleChange('currentCount')}
+                  className={`${inputBase} ${inlineCurrentCountError ? inputErr : inputOk}`}
+                />
+              </Field>
+            </div>
 
             {/* Source Origin */}
             <div className="pt-2">

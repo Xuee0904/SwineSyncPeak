@@ -24,7 +24,7 @@ function getCreatorDetails(creator) {
   return { name, email, initials };
 }
 
-const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Inactive'];
+const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Inactive', 'Cull'];
 
 // GET /api/pigs/breeding-logs – legacy alias forwarding to breeding_logs
 router.get('/api/pigs/breeding-logs', async (req, res) => {
@@ -77,21 +77,34 @@ router.get('/api/pigs/breeding-logs', async (req, res) => {
 // GET /api/pigs/stats – aggregate counts for summary cards
 router.get('/api/pigs/stats', async (req, res) => {
   try {
+    const db = supabaseAdmin || supabase;
     const [pigsRes, sickRes, quarRes, batchesRes] = await Promise.all([
-      supabase.from('pigs').select('*').eq('is_archived', false),
-      supabase.from('pigs').select('*', { count: 'exact' }).eq('status', 'sick').eq('is_archived', false),
-      supabase.from('pigs').select('*', { count: 'exact' }).eq('status', 'quarantine').eq('is_archived', false),
-      supabase.from('piglet_batches').select('*').eq('is_archived', false),
+      db.from('pigs').select('*').eq('is_archived', false),
+      db.from('pigs').select('*', { count: 'exact' }).eq('status', 'sick').eq('is_archived', false),
+      db.from('pigs').select('*', { count: 'exact' }).eq('status', 'quarantine').eq('is_archived', false),
+      db.from('piglet_batches').select('*').eq('is_archived', false),
     ]);
 
     const pigsList = pigsRes.data || [];
     const batchesList = batchesRes.data || [];
     const pigsCount = pigsList.length;
     const batchesCount = batchesList.length;
-    const sickCount = sickRes.count ?? 0;
-    const quarCount = quarRes.count ?? 0;
-    const pigletCount = batchesList.reduce((sum, b) => sum + (b.current_count ?? b.total_born_alive ?? 0), 0);
 
+    const getBatchHeads = (b) =>
+      b.current_count !== null && b.current_count !== undefined
+        ? Number(b.current_count)
+        : Number(b.total_born_alive || 0);
+
+    const pigletCount = batchesList.reduce((sum, b) => sum + getBatchHeads(b), 0);
+    const sickBatchHeads = batchesList
+      .filter(b => (b.status || '').toLowerCase() === 'sick')
+      .reduce((sum, b) => sum + getBatchHeads(b), 0);
+    const quarBatchHeads = batchesList
+      .filter(b => (b.status || '').toLowerCase() === 'quarantine')
+      .reduce((sum, b) => sum + getBatchHeads(b), 0);
+
+    const sickCount = (sickRes.count ?? 0) + sickBatchHeads;
+    const quarCount = (quarRes.count ?? 0) + quarBatchHeads;
     const totalCount = pigsCount + pigletCount;
     const femalePigs = pigsList.filter(p => {
       const g = (p.gender || '').toLowerCase();
@@ -380,6 +393,27 @@ router.get('/api/pigs/:id', async (req, res) => {
       sowTag = sowData?.pig_tag || null;
     }
 
+    let soldCount = 0;
+    try {
+      const db = supabaseAdmin || supabase;
+      const { data: soldRows } = await db
+        .from('sold_swine')
+        .select('quantity_sold')
+        .eq('batch_id', batchData.batch_id);
+      if (soldRows && soldRows.length > 0) {
+        soldCount = soldRows.reduce((sum, r) => sum + (Number(r.quantity_sold) || 0), 0);
+      } else {
+        const { data: saleLogs } = await db
+          .from('batch_activity_logs')
+          .select('amount_given')
+          .eq('batch_id', batchData.batch_id)
+          .eq('activity_type', 'SALE');
+        if (saleLogs && saleLogs.length > 0) {
+          soldCount = saleLogs.reduce((sum, r) => sum + (Number(r.amount_given) || 0), 0);
+        }
+      }
+    } catch (_) {}
+
     return res.json({
       data: {
         id: batchData.batch_id,
@@ -400,6 +434,7 @@ router.get('/api/pigs/:id', async (req, res) => {
         arrival_date: batchData.arrival_date || null,
         total_born_alive: batchData.total_born_alive,
         current_count: batchData.current_count,
+        sold_count: soldCount,
         stillborn_count: batchData.stillborn_count,
         mummy_count: batchData.mummy_count,
         category: 'Piglet Batch',
@@ -757,7 +792,15 @@ router.put('/api/pigs/:id', async (req, res) => {
       if (weight !== undefined && weight !== null && weight !== '') {
         updatePayload.average_weight = parseFloat(weight);
       }
-      if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
+      if (req.body.currentCount !== undefined && req.body.currentCount !== null && req.body.currentCount !== '') {
+        const newCurrent = Math.max(0, parseInt(req.body.currentCount) || 0);
+        updatePayload.current_count = newCurrent;
+        if (newCurrent === 0) {
+          updatePayload.is_archived = true;
+          updatePayload.archived_at = new Date().toISOString();
+          updatePayload.archive_reasoning = 'Mortality - Total Batch Loss';
+        }
+      } else if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
         const newBornAlive = parseInt(totalBornAlive) || 0;
         updatePayload.total_born_alive = newBornAlive;
         const prevBornAlive = Number(existingBatchRecord?.total_born_alive ?? newBornAlive);
@@ -1202,7 +1245,15 @@ router.put('/api/pigs/batch/:id', async (req, res) => {
     if (resolvedWeight !== undefined && resolvedWeight !== null && resolvedWeight !== '') {
       updatePayload.average_weight = parseFloat(resolvedWeight);
     }
-    if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
+    if (req.body.currentCount !== undefined && req.body.currentCount !== null && req.body.currentCount !== '') {
+      const newCurrent = Math.max(0, parseInt(req.body.currentCount) || 0);
+      updatePayload.current_count = newCurrent;
+      if (newCurrent === 0) {
+        updatePayload.is_archived = true;
+        updatePayload.archived_at = new Date().toISOString();
+        updatePayload.archive_reasoning = 'Mortality - Total Batch Loss';
+      }
+    } else if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
       updatePayload.total_born_alive = parseInt(totalBornAlive) || 0;
     }
     if (stillbornCount !== undefined && stillbornCount !== null && stillbornCount !== '') {

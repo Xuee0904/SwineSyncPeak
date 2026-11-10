@@ -188,7 +188,52 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
 
       if (updateError) throw updateError;
 
-      // 2. Log transaction in inventory_transactions ledger
+      // 2. Link financial expense if this is a Purchase/Delivery restock
+      let purchaseId = null;
+      if (form.type === "in" && form.reason === "Purchase/Delivery") {
+        try {
+          const unitCost = Number(item.unit_cost) || 0;
+          const totalExp = Number((unitCost * qty).toFixed(2));
+          const txCode = `EXP-${Math.floor(10000 + Math.random() * 90000)}`;
+
+          const { data: expRow } = await supabase
+            .from("expenses")
+            .insert({
+              category: item.category || "Supplies",
+              amount: totalExp > 0 ? totalExp : 0,
+              supplier_name: "Inventory Delivery",
+              payment_method: "Cash",
+              date_incurred: new Date().toISOString().split("T")[0],
+              description: `Restocked ${qtyLabel} of ${item.item_name}`,
+              receipt_no: txCode,
+            })
+            .select()
+            .single();
+
+          if (expRow?.expense_id) {
+            const { data: purRow } = await supabase
+              .from("inventory_purchases")
+              .insert({
+                expense_id: expRow.expense_id,
+                item_id: item.item_id,
+                quantity_bought: qty,
+                unit_price: unitCost,
+                subtotal: totalExp,
+                purchase_date: new Date().toISOString().split("T")[0],
+              })
+              .select()
+              .single();
+
+            if (purRow?.purchase_id) {
+              purchaseId = purRow.purchase_id;
+            }
+          }
+        } catch (expErr) {
+          console.warn("Failed to record linked expense for restock:", expErr);
+        }
+      }
+
+      // 3. Log transaction in inventory_transactions ledger
       const staff = getStaffDetails(loggedInUser);
 
       let feedTargetDesc = "";
@@ -223,6 +268,7 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
         .from("inventory_transactions")
         .insert({
           item_id: item.item_id,
+          purchase_id: purchaseId,
           user_id: staff.id,
           transaction_type: txType,
           quantity: qty,

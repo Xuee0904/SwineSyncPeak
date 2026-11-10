@@ -13,6 +13,8 @@ export default function StatusBadge({ status }) {
     suckling:    'bg-sky-100 text-sky-700 border-sky-200',
     weaned:      'bg-indigo-100 text-indigo-700 border-indigo-200',
     transferred: 'bg-slate-100 text-slate-700 border-slate-200',
+    cull:        'bg-purple-100 text-purple-700 border-purple-200',
+    culled:      'bg-purple-100 text-purple-700 border-purple-200',
   };
   const cls = map[s] || 'bg-slate-100 text-slate-600 border-slate-200';
   return (

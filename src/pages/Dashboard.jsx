@@ -25,6 +25,8 @@ import {
   Bell, ChevronLeft, Settings, Menu,
 } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 const HEALTH_ALERTS = [
   { tag: 'Sow #402', pen: 'Pen A2', status: 'High Fever', severity: 'high' },
   { tag: 'Batch #12', pen: 'Pen 4', status: 'Atypical Coughing', severity: 'medium' },
@@ -100,7 +102,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   const [dashboardInventory, setDashboardInventory] = useState([]);
   const [inventoryLoading, setInventoryLoading] = useState(true);
 
-  useEffect(() => {
+  const loadPigStats = () => {
     fetch('/api/pigs/stats')
       .then(r => r.ok ? r.json() : null)
       .then(d => {
@@ -113,12 +115,12 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         });
       })
       .catch(() => { });
-  }, []);
+  };
 
   const loadDashboardInventory = async () => {
     setInventoryLoading(true);
     try {
-      const [itemsRes, txRes] = await Promise.all([
+      const [itemsRes, txRes, activeBatchesRes] = await Promise.all([
         supabase
           .from('inventory_items')
           .select('*')
@@ -128,11 +130,14 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
           .from('inventory_transactions')
           .select('*')
           .order('created_at', { ascending: false }),
+        fetch(`${API_BASE}/api/growth/active-feed-batches`).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
 
       const activeItems = itemsRes.data || [];
       const txs = txRes.data || [];
-      const metricsMap = computeInventoryMetrics(activeItems, txs);
+      const batches = activeBatchesRes?.batches || [];
+      const breeder = activeBatchesRes?.breeder_summary || null;
+      const metricsMap = computeInventoryMetrics(activeItems, txs, 14, batches, breeder);
 
       const priorityOrder = {
         out_of_stock: 0,
@@ -146,7 +151,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         .map(item => {
           const m = metricsMap[item.item_id] || {};
           const percent = getStockPercent(item.current_stock_level, item.ideal_stock_level);
-          const status = getStockStatus(item.current_stock_level, item.low_stock_threshold, m.daysUntilLow);
+          const status = getStockStatus(item.current_stock_level, item.low_stock_threshold, m.daysUntilLow, m);
           return {
             id: item.item_id,
             name: item.item_name,
@@ -158,6 +163,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             percent,
             status,
             dailyBurnRate: m.dailyBurnRate || 0,
+            burnRateSource: m.burnRateSource || 'none',
             daysUntilLow: m.daysUntilLow,
             daysUntilEmpty: m.daysUntilEmpty,
             color: status.barColor,
@@ -179,9 +185,10 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
     }
   };
 
-  // Load live inventory items & 14-day burn-rate forecasts whenever Dashboard tab is viewed
+  // Load live pig stats, inventory items & 14-day burn-rate forecasts whenever Dashboard tab is viewed
   useEffect(() => {
     if (activeTab === 'dashboard') {
+      loadPigStats();
       loadDashboardInventory();
     }
   }, [activeTab]);

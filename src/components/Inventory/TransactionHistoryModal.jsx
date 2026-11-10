@@ -264,7 +264,7 @@ export default function TransactionHistoryModal({
                 <Package className="w-5 h-5" />
               </div>
               <p className="text-xs font-semibold text-slate-500">
-                No transactions recorded for this filter.
+                No stock movements recorded for this filter.
               </p>
               <p className="text-[11px] text-slate-400">
                 Adjust stock to log incoming deliveries, daily usage, or corrections.
