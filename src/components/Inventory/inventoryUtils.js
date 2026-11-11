@@ -302,11 +302,16 @@ export function parseDosePerHead(dosageInstructions, unitOfMeasure) {
 }
 
 /**
- * Evaluate stock status using static thresholds, burn rate, and upcoming milestone demand.
+ * Evaluate stock status using static thresholds and 10% max capacity rule.
+ * - Out of Stock: stock <= 0 (Critical red).
+ * - Critical: stock <= 10% of max capacity (Critical red).
+ * - Low Stock: stock <= low stock threshold (Amber).
+ * - Healthy: stock > low stock threshold (Emerald green).
  */
 export function getStockStatus(current, threshold, daysUntilLow = null, extra = null) {
   const cur = Number(current) || 0;
   const thr = Number(threshold) || 0;
+  const ideal = Number(extra?.ideal_stock_level ?? extra?.ideal ?? 0);
 
   if (cur <= 0) {
     return {
@@ -317,11 +322,13 @@ export function getStockStatus(current, threshold, daysUntilLow = null, extra = 
     };
   }
 
-  // 1. Critical if severely below threshold OR severely short for scheduled upcoming milestones
+  // 1. Critical when stock hits <= 10% of max capacity
   const isSevereMilestoneShortfall =
-    extra?.hasUpcomingShortfall && cur <= (Number(extra?.upcomingDemandUnits) || 0) * 0.25;
+    extra?.hasUpcomingShortfall && cur <= (Number(extra?.upcomingDemandUnits) || 0) * 0.10;
 
-  if (cur <= thr * 0.25 || isSevereMilestoneShortfall) {
+  const isTenPercentCapacity = ideal > 0 ? cur <= ideal * 0.10 : cur <= thr * 0.25;
+
+  if (isTenPercentCapacity || isSevereMilestoneShortfall) {
     return {
       label: "Critical",
       key: "critical",
@@ -330,31 +337,13 @@ export function getStockStatus(current, threshold, daysUntilLow = null, extra = 
     };
   }
 
-  // 2. Low Stock if at or below threshold
-  if (cur <= thr) {
+  // 2. Low Stock when supply reaches or falls below the threshold (or upcoming milestone shortfall)
+  if (cur <= thr || extra?.hasUpcomingShortfall || extra?.willFallBelowThreshold) {
     return {
       label: "Low Stock",
       key: "low_stock",
       cls: "bg-amber-50 text-amber-700 ring-amber-200",
       barColor: "#f59e0b",
-    };
-  }
-
-  // 3. At Risk if:
-  // - Daily burn projects stockout in <= 7 days, OR
-  // - Scheduled upcoming milestone demand exceeds current stock, OR
-  // - Scheduled upcoming milestone demand will drop remaining stock below threshold
-  if (
-    (daysUntilLow !== null && daysUntilLow <= 7) ||
-    extra?.hasUpcomingShortfall ||
-    extra?.willFallBelowThreshold
-  ) {
-    return {
-      label: "At Risk",
-      key: "at_risk",
-      cls: "bg-amber-50/80 text-amber-700 ring-amber-200",
-      barColor: "#f59e0b",
-      isMilestoneRisk: Boolean(extra?.hasUpcomingShortfall || extra?.willFallBelowThreshold),
     };
   }
 
@@ -374,7 +363,7 @@ export function getStockPercent(current, ideal) {
 }
 
 export function getBarColor(pct) {
-  if (pct <= 20) return "bg-rose-500";
+  if (pct <= 10) return "bg-rose-500";
   if (pct <= 40) return "bg-amber-400";
   return "bg-emerald-500";
 }
@@ -621,6 +610,9 @@ export function computeInventoryMetrics(
       upcomingMilestonesList.length > 0 ? Math.min(...upcomingMilestonesList.map((m) => m.days_until_due)) : null;
 
     itemMetrics[item.item_id] = {
+      ideal_stock_level: Number(item.ideal_stock_level) || 0,
+      low_stock_threshold: Number(item.low_stock_threshold) || 0,
+      current_stock_level: current,
       total_in: Number(entry.total_in.toFixed(2)),
       total_out: Number(entry.total_out.toFixed(2)),
       window_used: Number(entry.window_used.toFixed(2)),

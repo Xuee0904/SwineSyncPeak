@@ -155,7 +155,7 @@ const card = "rounded-2xl bg-white shadow-sm ring-1 ring-slate-900/5";
 
 const EXPORT_COLUMNS = [
   { header: "Transaction ID", accessor: "id" },
-  { header: "Date", accessor: "date" },
+  { header: "Date & Time", accessor: (r) => (r.time ? `${r.date} ${r.time}` : r.date) },
   { header: "Type", accessor: "type" },
   { header: "Client / Supplier", accessor: "party" },
   { header: "Category", accessor: "category" },
@@ -431,7 +431,7 @@ function TransactionsCard({
           <thead>
             <tr className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
               <th className="px-6 py-3">Transaction</th>
-              <th className="px-3 py-3">Date</th>
+              <th className="px-3 py-3">Date & Time</th>
               <th className="px-3 py-3">Type</th>
               <th className="px-3 py-3">Client / Supplier</th>
               <th className="px-3 py-3">Category</th>
@@ -450,9 +450,16 @@ function TransactionsCard({
                   className={`cursor-pointer transition-colors ${active ? "bg-emerald-50/60" : "hover:bg-slate-50"}`}
                 >
                   <td className={`px-6 py-4 font-bold text-emerald-600 ${active ? "shadow-[inset_3px_0_0_#059669]" : ""}`}>
-                    #{t.id}
+                    {t.id?.startsWith("#") ? t.id : `#${t.id}`}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-4 text-slate-500">{t.date}</td>
+                  <td className="whitespace-nowrap px-3 py-4">
+                    <div className="font-semibold text-slate-800">{t.date}</div>
+                    {(t.time || t.createdAt) && (
+                      <div className="text-[11px] text-slate-400 font-normal">
+                        {t.time || (t.createdAt ? new Date(t.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) : "")}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-3 py-4">
                     <Pill className={TYPE_STYLES[t.type] || TYPE_STYLES.Expense}>{t.type}</Pill>
                   </td>
@@ -578,8 +585,13 @@ function DetailPanel({ tx, onClose, onStatusUpdated, loggedInUser }) {
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-6">
           <div>
-            <p className="text-sm font-bold text-emerald-600">#{tx.id}</p>
-            <p className="mt-0.5 text-xs text-slate-500">{tx.date}</p>
+            <p className="text-sm font-bold text-emerald-600">{tx.id?.startsWith("#") ? tx.id : `#${tx.id}`}</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {tx.date}
+              {(tx.time || tx.createdAt) && (
+                <span className="text-slate-400"> • {tx.time || (tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) : "")}</span>
+              )}
+            </p>
           </div>
           <button
             onClick={onClose}

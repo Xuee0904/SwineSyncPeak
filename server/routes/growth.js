@@ -5,6 +5,23 @@ import { deductInventoryStock } from '../helpers/inventoryDeduction.js';
 const router = express.Router();
 const db = supabaseAdmin;
 
+// Helper to compute deterministic start of "Today" in the farm's timezone (Asia/Manila, UTC+8)
+function getStartOfTodayIso() {
+  const manilaDateStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  return new Date(`${manilaDateStr}T00:00:00+08:00`).toISOString();
+}
+
+// Helper to identify feeding transaction notes
+function isFeedingTransactionNote(notes) {
+  if (!notes) return false;
+  return /(Used in Feeding|Program Feeding|Daily Feed)/i.test(notes);
+}
+
 // Helper to match batch tags within transaction notes without false positives on prefix substrings (e.g. BTC-20261107 matching BTC-20261107-3)
 function matchesBatchTag(notes, batchTag) {
   if (!notes || !batchTag) return false;
@@ -35,8 +52,7 @@ router.get('/api/growth/programs', async (req, res) => {
     if (error) throw error;
 
     const today = new Date();
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodayIso = getStartOfTodayIso();
 
     // Fetch today's feeding logs for all active batches across these programs
     const allActiveBatchIds = [];
@@ -56,7 +72,7 @@ router.get('/api/growth/programs', async (req, res) => {
           .select('batch_id')
           .in('batch_id', allActiveBatchIds)
           .eq('activity_type', 'FEED')
-          .gte('recorded_at', startOfToday.toISOString());
+          .gte('recorded_at', startOfTodayIso);
         if (bLogs) {
           bLogs.forEach(l => todayFeedBatchIds.add(l.batch_id));
         }
@@ -72,7 +88,7 @@ router.get('/api/growth/programs', async (req, res) => {
           .in('batch_id', allActiveBatchIds)
           .eq('activity_type', 'FEED')
           .eq('status', 'completed')
-          .gte('completed_at', startOfToday.toISOString());
+          .gte('completed_at', startOfTodayIso);
         if (gTasks) {
           gTasks.forEach(t => todayFeedBatchIds.add(t.batch_id));
         }
@@ -85,15 +101,17 @@ router.get('/api/growth/programs', async (req, res) => {
         const { data: txs } = await db
           .from('inventory_transactions')
           .select('notes')
-          .gte('recorded_at', startOfToday.toISOString());
+          .gte('created_at', startOfTodayIso);
         if (txs) {
           const allActiveBatches = programs.flatMap(p => p.enrolled_batches || []).filter(b => !b.is_archived && b.status !== 'Archived');
           txs.forEach(tx => {
-            allActiveBatches.forEach(b => {
-              if (b.batch_tag && tx.notes && matchesBatchTag(tx.notes, b.batch_tag)) {
-                todayFeedBatchIds.add(b.batch_id);
-              }
-            });
+            if (tx.notes && isFeedingTransactionNote(tx.notes)) {
+              allActiveBatches.forEach(b => {
+                if (b.batch_tag && matchesBatchTag(tx.notes, b.batch_tag)) {
+                  todayFeedBatchIds.add(b.batch_id);
+                }
+              });
+            }
           });
         }
       } catch (txErr) {
@@ -565,6 +583,7 @@ router.patch('/api/growth/guidelines/link-inventory', async (req, res) => {
       await tQuery;
     }
 
+    invalidateActiveFeedBatchesCache();
     res.json({ success: true });
   } catch (error) {
     console.error('Error linking guideline to inventory:', error.message);
@@ -682,8 +701,7 @@ router.get('/api/growth/programs/:id/batches', async (req, res) => {
     if (error) throw error;
 
     const today = new Date();
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodayIso = getStartOfTodayIso();
 
     const batchIds = batches.map(b => b.batch_id);
     let todayLogs = [];
@@ -694,7 +712,7 @@ router.get('/api/growth/programs/:id/batches', async (req, res) => {
           .select('batch_id, amount_given, recorded_at')
           .in('batch_id', batchIds)
           .eq('activity_type', 'FEED')
-          .gte('recorded_at', startOfToday.toISOString());
+          .gte('recorded_at', startOfTodayIso);
         if (bLogs && bLogs.length > 0) todayLogs.push(...bLogs);
       } catch (err) {
         console.warn('[Growth Batches] batch_activity_logs note:', err.message);
@@ -708,7 +726,7 @@ router.get('/api/growth/programs/:id/batches', async (req, res) => {
           .in('batch_id', batchIds)
           .eq('activity_type', 'FEED')
           .eq('status', 'completed')
-          .gte('completed_at', startOfToday.toISOString());
+          .gte('completed_at', startOfTodayIso);
         (gTasks || []).forEach(t => {
           if (!todayLogs.some(l => l.batch_id === t.batch_id)) {
             todayLogs.push({ batch_id: t.batch_id, amount_given: 0, created_at: t.completed_at });
@@ -723,17 +741,19 @@ router.get('/api/growth/programs/:id/batches', async (req, res) => {
         const { data: txs } = await db
           .from('inventory_transactions')
           .select('notes, quantity, created_at')
-          .gte('recorded_at', startOfToday.toISOString());
+          .gte('created_at', startOfTodayIso);
         (txs || []).forEach(tx => {
-          batches.forEach(b => {
-            if (b.batch_tag && tx.notes && matchesBatchTag(tx.notes, b.batch_tag)) {
-              if (!todayLogs.some(l => l.batch_id === b.batch_id)) {
-                const matchKg = tx.notes.match(/\((\d+(?:\.\d+)?)\s*kg\s*fed\)/i);
-                const kgFed = matchKg ? parseFloat(matchKg[1]) : (Number(tx.quantity) || 0);
-                todayLogs.push({ batch_id: b.batch_id, amount_given: kgFed, created_at: tx.created_at });
+          if (tx.notes && isFeedingTransactionNote(tx.notes)) {
+            batches.forEach(b => {
+              if (b.batch_tag && matchesBatchTag(tx.notes, b.batch_tag)) {
+                if (!todayLogs.some(l => l.batch_id === b.batch_id)) {
+                  const matchKg = tx.notes.match(/\((\d+(?:\.\d+)?)\s*kg\s*fed\)/i);
+                  const kgFed = matchKg ? parseFloat(matchKg[1]) : (Number(tx.quantity) || 0);
+                  todayLogs.push({ batch_id: b.batch_id, amount_given: kgFed, created_at: tx.created_at });
+                }
               }
-            }
-          });
+            });
+          }
         });
       } catch (txErr) {
         // ignore
@@ -835,9 +855,7 @@ router.get('/api/growth/active-feed-batches', async (req, res) => {
     }
 
     const today = new Date();
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const startOfTodayIso = startOfToday.toISOString();
+    const startOfTodayIso = getStartOfTodayIso();
 
     // Parallelize all independent database queries simultaneously
     const [
@@ -949,7 +967,7 @@ router.get('/api/growth/active-feed-batches', async (req, res) => {
 
     // Check inventory transactions for batch feed notes
     txs.forEach(tx => {
-      if (!tx.notes) return;
+      if (!tx.notes || !isFeedingTransactionNote(tx.notes)) return;
       activeBatches.forEach(b => {
         if (b.batch_tag && matchesBatchTag(tx.notes, b.batch_tag)) {
           const matchKg = tx.notes.match(/\((\d+(?:\.\d+)?)\s*kg\s*fed\)/i);
@@ -1295,9 +1313,7 @@ router.get('/api/growth/batches', async (req, res) => {
 router.post('/api/growth/undo-feed', async (req, res) => {
   try {
     const { batch_id, is_breeder } = req.body;
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const startOfTodayIso = startOfToday.toISOString();
+    const startOfTodayIso = getStartOfTodayIso();
 
     if (is_breeder) {
       // Find today's breeder inventory transactions
@@ -1320,7 +1336,7 @@ router.post('/api/growth/undo-feed', async (req, res) => {
           await db.from('inventory_transactions').delete().eq('transaction_id', tx.transaction_id);
         }
       }
-      activeFeedBatchesCache.timestamp = 0;
+      invalidateActiveFeedBatchesCache();
       return res.json({ success: true, message: 'Breeder feeding undone' });
     }
 
@@ -1353,7 +1369,7 @@ router.post('/api/growth/undo-feed', async (req, res) => {
         .gte('created_at', startOfTodayIso)
         .ilike('notes', `%${bRow.batch_tag}%`);
 
-      const txs = (rawTxs || []).filter(tx => matchesBatchTag(tx.notes, bRow.batch_tag));
+      const txs = (rawTxs || []).filter(tx => isFeedingTransactionNote(tx.notes) && matchesBatchTag(tx.notes, bRow.batch_tag));
 
       if (txs && txs.length > 0) {
         for (const tx of txs) {
@@ -1370,7 +1386,7 @@ router.post('/api/growth/undo-feed', async (req, res) => {
       }
     }
 
-    activeFeedBatchesCache.timestamp = 0;
+    invalidateActiveFeedBatchesCache();
     return res.json({ success: true, message: 'Feeding undone' });
   } catch (err) {
     console.error('[undo-feed] error:', err);
@@ -1554,8 +1570,7 @@ router.post('/api/growth/programs/:id/log-daily-feed', async (req, res) => {
     }
 
     // 3. Find which batches have already been fed today
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodayIso = getStartOfTodayIso();
     const batchIds = batches.map(b => b.batch_id);
     const fedBatchIds = new Set();
 
@@ -1565,7 +1580,7 @@ router.post('/api/growth/programs/:id/log-daily-feed', async (req, res) => {
         .select('batch_id')
         .in('batch_id', batchIds)
         .eq('activity_type', 'FEED')
-        .gte('recorded_at', startOfToday.toISOString());
+        .gte('recorded_at', startOfTodayIso);
       (todayLogs || []).forEach(l => fedBatchIds.add(l.batch_id));
     } catch (err) {
       console.warn('[Bulk Feed] batch_activity_logs lookup note:', err.message);
@@ -1578,7 +1593,7 @@ router.post('/api/growth/programs/:id/log-daily-feed', async (req, res) => {
         .in('batch_id', batchIds)
         .eq('activity_type', 'FEED')
         .eq('status', 'completed')
-        .gte('completed_at', startOfToday.toISOString());
+        .gte('completed_at', startOfTodayIso);
       (gTasks || []).forEach(t => fedBatchIds.add(t.batch_id));
     } catch (tErr) {
       // ignore
@@ -1588,13 +1603,15 @@ router.post('/api/growth/programs/:id/log-daily-feed', async (req, res) => {
       const { data: txs } = await db
         .from('inventory_transactions')
         .select('notes')
-        .gte('recorded_at', startOfToday.toISOString());
+        .gte('created_at', startOfTodayIso);
       (txs || []).forEach(tx => {
-        batches.forEach(b => {
-          if (b.batch_tag && tx.notes && matchesBatchTag(tx.notes, b.batch_tag)) {
-            fedBatchIds.add(b.batch_id);
-          }
-        });
+        if (tx.notes && isFeedingTransactionNote(tx.notes)) {
+          batches.forEach(b => {
+            if (b.batch_tag && matchesBatchTag(tx.notes, b.batch_tag)) {
+              fedBatchIds.add(b.batch_id);
+            }
+          });
+        }
       });
     } catch (txErr) {
       // ignore

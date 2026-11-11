@@ -12,6 +12,7 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
   const [feedItems, setFeedItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [hasManuallyToggled, setHasManuallyToggled] = useState(false);
 
   const [submittingBatchId, setSubmittingBatchId] = useState(null);
   const [submittingBreeder, setSubmittingBreeder] = useState(false);
@@ -103,6 +104,15 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
 
   useEffect(() => {
     fetchFeedingData();
+
+    const handleFeedUpdateEvent = () => {
+      fetchFeedingData();
+    };
+
+    window.addEventListener('swinesync_feeding_updated', handleFeedUpdateEvent);
+    return () => {
+      window.removeEventListener('swinesync_feeding_updated', handleFeedUpdateEvent);
+    };
   }, []);
 
   const handleSelectBreederFeed = (newFeedId) => {
@@ -278,6 +288,15 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
     remainingSummaryText = `Remaining: ${unfedBatches.length} ${unfedBatches.length === 1 ? 'batch' : 'batches'} + Breeder • ${totalRemainingKg.toFixed(1)} kg`;
   }
 
+  // Smart Adaptive Default Behavior:
+  // Auto-collapse when all animals are fed today; stay expanded when work remains (unless manually toggled)
+  useEffect(() => {
+    if (!loading && !hasManuallyToggled && totalGroupsCount > 0) {
+      const isAllFed = totalRemainingKg === 0;
+      setIsCollapsed(isAllFed);
+    }
+  }, [loading, totalRemainingKg, totalGroupsCount, hasManuallyToggled]);
+
   // --- Actions ---
 
   const handleStartEditBatch = (batchId, currentKg) => {
@@ -342,13 +361,13 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
 
       if (!silent) {
         toast.success(`Fed ${kg} kg to batch ${batch.batch_tag}. Stock deducted.`);
+        await fetchFeedingData();
+        setEditingBatchId(null);
+        window.dispatchEvent(new CustomEvent('swinesync_feeding_updated'));
+        if (onUpdated) onUpdated();
       }
-
-      await fetchFeedingData();
-      setEditingBatchId(null);
-      if (onUpdated) onUpdated();
     } catch (err) {
-      toast.error(err.message || 'Error logging batch feed.');
+      if (!silent) toast.error(err.message || 'Error logging batch feed.');
       throw err;
     } finally {
       setSubmittingBatchId(null);
@@ -357,12 +376,12 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
 
   const handleFeedBreeders = async (customKg = null, silent = false) => {
     if (!selectedBreederFeedId) {
-      toast.error('Please select a feed supply for the breeder herd.');
+      if (!silent) toast.error('Please select a feed supply for the breeder herd.');
       return;
     }
     const kg = customKg !== null ? parseFloat(customKg) : (customBreederKg !== null ? customBreederKg : calculatedBreederKg);
     if (!kg || kg <= 0) {
-      toast.error('Please enter a valid feed amount in kg.');
+      if (!silent) toast.error('Please enter a valid feed amount in kg.');
       return;
     }
 
@@ -384,13 +403,13 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
 
       if (!silent) {
         toast.success(`Fed ${kg} kg to Breeder Herd (${breederHeadCount} heads). Stock deducted.`);
+        await fetchFeedingData();
+        setEditingBreeder(false);
+        window.dispatchEvent(new CustomEvent('swinesync_feeding_updated'));
+        if (onUpdated) onUpdated();
       }
-
-      await fetchFeedingData();
-      setEditingBreeder(false);
-      if (onUpdated) onUpdated();
     } catch (err) {
-      toast.error(err.message || 'Error logging breeder feed.');
+      if (!silent) toast.error(err.message || 'Error logging breeder feed.');
       throw err;
     } finally {
       setSubmittingBreeder(false);
@@ -421,6 +440,8 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
 
       toast.success(`Remaining fed (${totalRemainingKg.toFixed(1)} kg deducted).`);
       await fetchFeedingData();
+      setIsCollapsed(true);
+      window.dispatchEvent(new CustomEvent('swinesync_feeding_updated'));
       if (onUpdated) onUpdated();
     } catch (err) {
       toast.error(err.message || 'Error executing bulk feed.');
@@ -447,6 +468,8 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
         return next;
       });
       await fetchFeedingData();
+      setIsCollapsed(false);
+      window.dispatchEvent(new CustomEvent('swinesync_feeding_updated'));
       if (onUpdated) onUpdated();
     } catch (err) {
       toast.error(err.message || 'Error undoing batch feed.');
@@ -469,6 +492,8 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
       toast.success('Breeder feeding undone. Inventory stock restored.');
       setCustomBreederKg(null);
       await fetchFeedingData();
+      setIsCollapsed(false);
+      window.dispatchEvent(new CustomEvent('swinesync_feeding_updated'));
       if (onUpdated) onUpdated();
     } catch (err) {
       toast.error(err.message || 'Error undoing breeder feed.');
@@ -519,7 +544,10 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
           {/* Collapsible toggle */}
           <button
             type="button"
-            onClick={() => setIsCollapsed(!isCollapsed)}
+            onClick={() => {
+              setHasManuallyToggled(true);
+              setIsCollapsed(!isCollapsed);
+            }}
             className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer transition-colors shrink-0"
             title={isCollapsed ? 'Expand feeding table' : 'Collapse table'}
           >

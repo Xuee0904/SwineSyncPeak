@@ -4,7 +4,7 @@ import useModalAnimation from "../hooks/useModalAnimation";
 import {
   Plus, ClipboardList, Wheat, Syringe, FlaskConical, Scissors,
   ArrowRight, Activity, AlertTriangle, AlertCircle, X, Trash2,
-  ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink, Target, Pill, Package, Baby
+  ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink, Target, Pill, Package, PiggyBank
 } from "lucide-react";
 import { toast } from "../utils/toast";
 import { supabase } from "../supabaseClient";
@@ -940,6 +940,7 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to feed program batches');
       toast.success(data.message || `Fed all batches in ${program.name}`);
+      window.dispatchEvent(new CustomEvent('swinesync_feeding_updated'));
       if (onProgramFed) onProgramFed();
     } catch (err) {
       toast.error(err.message || 'Error feeding program batches');
@@ -1872,7 +1873,7 @@ export default function GrowthProgramManagement() {
             loading={loading}
           />
           <StatCard
-            icon={<Baby className="w-6 h-6 text-amber-600" />}
+            icon={<PiggyBank className="w-6 h-6 text-amber-600" />}
             label="Market Ready Weaners"
             value={`${totalReadyWeanersHeads} heads`}
             badge={totalReadyWeanersHeads > 0 ? `${totalReadyWeanersBatches} BATCH${totalReadyWeanersBatches === 1 ? '' : 'ES'}` : "NONE"}

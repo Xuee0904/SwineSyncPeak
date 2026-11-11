@@ -6,7 +6,7 @@ import {
   CalendarClock,
   Heart,
   AlertTriangle,
-  Baby,
+  Dna,
   Activity,
   LayoutGrid,
   List,
@@ -48,6 +48,45 @@ const STATUS_META = {
   farrowed: { label: "Farrowed", color: "var(--pine)", tint: "var(--pine-tint)" },
   archived: { label: "Archived", color: "var(--ink-soft)", tint: "var(--border)" },
 };
+
+function getBreedingMethodMeta(method, boarTag) {
+  if (!method) return null;
+  const raw = String(method).toLowerCase().replace(/[\s_-]+/g, "");
+  const isAI = raw.includes("artific") || raw === "ai";
+  const isNatural = raw.includes("natur") || raw === "nm";
+
+  if (isAI) {
+    return {
+      type: "artificial_insemination",
+      label: "Artificial Insemination",
+      shortLabel: "AI",
+      Icon: Dna,
+      badgeClass: "bg-sky-50 text-sky-700 border-sky-200/80 hover:bg-sky-100/60",
+      description: "Artificial Insemination (AI)",
+    };
+  }
+
+  if (isNatural) {
+    return {
+      type: "natural_mating",
+      label: "Natural Mating",
+      shortLabel: "Natural Mating",
+      subLabel: boarTag ? `Boar #${boarTag}` : null,
+      Icon: Heart,
+      badgeClass: "bg-rose-50 text-rose-700 border-rose-200/80 hover:bg-rose-100/60",
+      description: boarTag ? `Natural Mating (Boar #${boarTag})` : "Natural Mating",
+    };
+  }
+
+  return {
+    type: "other",
+    label: method,
+    shortLabel: method,
+    Icon: Dna,
+    badgeClass: "bg-slate-50 text-slate-700 border-slate-200",
+    description: method,
+  };
+}
 
 // MatingDate is dynamically pulled from the backend using the pig's creation date (fallback).
 
@@ -228,7 +267,12 @@ export default function BreedingLogs({ loggedInUser }) {
   const filtered = sows.filter((s) => {
     const matchesFilter = filter === "ALL" || s.status === filter;
     const q = query.trim().toLowerCase();
-    const matchesQuery = q === "" || s.id.toLowerCase().includes(q) || s.breed.toLowerCase().includes(q);
+    const matchesQuery =
+      q === "" ||
+      s.id.toLowerCase().includes(q) ||
+      s.breed.toLowerCase().includes(q) ||
+      (s.breeding_method && s.breeding_method.toLowerCase().includes(q)) ||
+      (s.boarTag && s.boarTag.toLowerCase().includes(q));
     return matchesFilter && matchesQuery;
   });
 
@@ -494,6 +538,7 @@ export default function BreedingLogs({ loggedInUser }) {
                 ) : (
                   filtered.map((sow, idx) => {
                     const meta = STATUS_META[sow.status];
+                    const methodMeta = getBreedingMethodMeta(sow.breeding_method, sow.boarTag);
                     const overdue = sow.day > GESTATION_DAYS;
                     const fillPct = Math.min(100, (sow.day / GESTATION_DAYS) * 100);
                     const isNearBottom = idx >= filtered.length - 2;
@@ -501,7 +546,21 @@ export default function BreedingLogs({ loggedInUser }) {
                     return (
                       <tr key={sow.breeding_id || sow.id}>
                         <td>
-                          <p className="brl-table-sow">Sow #{sow.id}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="brl-table-sow">Sow #{sow.id}</p>
+                            {methodMeta && (
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${methodMeta.badgeClass}`}
+                                title={methodMeta.description}
+                              >
+                                <methodMeta.Icon className="w-2.5 h-2.5 shrink-0" />
+                                <span>{methodMeta.label}</span>
+                                {methodMeta.subLabel && (
+                                  <span className="opacity-75 font-medium text-[9.5px]">· {methodMeta.subLabel}</span>
+                                )}
+                              </span>
+                            )}
+                          </div>
                           <p className="brl-table-sub">Parity: {sow.parity} • {sow.breed}</p>
                         </td>
                         <td>
@@ -595,6 +654,7 @@ export default function BreedingLogs({ loggedInUser }) {
           ) : (
             filtered.map((sow) => {
               const meta = STATUS_META[sow.status];
+              const methodMeta = getBreedingMethodMeta(sow.breeding_method, sow.boarTag);
               const stageIdx = activeStageIndex(sow.day);
               const overdue = sow.day > GESTATION_DAYS;
               const fillPct = Math.min(100, (sow.day / GESTATION_DAYS) * 100);
@@ -606,7 +666,21 @@ export default function BreedingLogs({ loggedInUser }) {
                   <div className="brl-card-main">
                     <div className="brl-card-head">
                       <div>
-                        <p className="brl-sow-name">Sow #{sow.id}</p>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <p className="brl-sow-name">Sow #{sow.id}</p>
+                          {methodMeta && (
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${methodMeta.badgeClass}`}
+                              title={methodMeta.description}
+                            >
+                              <methodMeta.Icon className="w-3 h-3 shrink-0" />
+                              <span>{methodMeta.label}</span>
+                              {methodMeta.subLabel && (
+                                <span className="opacity-75 font-medium text-[10.5px]">· {methodMeta.subLabel}</span>
+                              )}
+                            </span>
+                          )}
+                        </div>
                         <p className="brl-sow-sub">{sow.parity === 1 ? "1st" : sow.parity === 2 ? "2nd" : sow.parity === 3 ? "3rd" : `${sow.parity}th`} parity · {sow.breed}</p>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

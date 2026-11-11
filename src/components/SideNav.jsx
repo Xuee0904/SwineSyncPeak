@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import {
   LayoutDashboard, Users, TrendingUp,
-  Baby, ClipboardList, Receipt, Settings, LogOut, X, ChevronRight,
-  Grid3X3, HeartPulse,
+  ClipboardList, Receipt, Settings, LogOut, X, ChevronRight,
+  Grid3X3, HeartPulse, Dna,
 } from 'lucide-react';
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -16,7 +16,7 @@ export const NAV_ITEMS = [
   },
   { id: 'growth', label: 'Growth Management', icon: TrendingUp },
   { id: 'health_management', label: 'Health Management', icon: HeartPulse },
-  { id: 'breeding_logs', label: 'Breeding Logs', icon: Baby },
+  { id: 'breeding_logs', label: 'Breeding Logs', icon: Dna },
   { id: 'inventory', label: 'Inventory', icon: ClipboardList },
   { id: 'transactions', label: 'Transaction Records', icon: Receipt },
   { id: 'admin', label: 'Admin Settings', icon: Settings },

@@ -39,6 +39,23 @@ function formatDateDisplay(d) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// Format time into "3:45 PM"
+function formatTimeDisplay(ts) {
+  if (!ts) return '';
+  const date = new Date(ts);
+  if (isNaN(date.getTime())) return '';
+  try {
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Manila',
+    });
+  } catch {
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  }
+}
+
 // ─── GET /api/transactions/options ──────────────────────────────────────────
 // Returns live active pigs, batches, and inventory supplies for sale & restock modals
 router.get('/api/transactions/options', async (req, res) => {
@@ -140,7 +157,7 @@ router.get('/api/transactions', async (req, res) => {
           inventory_items (item_name, unit_of_measure)
         )
       `)
-      .order('date_incurred', { ascending: false });
+      .order('created_at', { ascending: false });
 
     // 2. Fetch Sales + sold_swine (with safe fallback if table not yet migrated)
     let salesQuery = db
@@ -169,7 +186,7 @@ router.get('/api/transactions', async (req, res) => {
           piglet_batches (batch_tag)
         )
       `)
-      .order('transaction_date', { ascending: false });
+      .order('created_at', { ascending: false });
 
     const [expRes, salesRes] = await Promise.all([
       Promise.resolve(expQuery).catch((e) => ({ data: null, error: e })),
@@ -200,6 +217,8 @@ router.get('/api/transactions', async (req, res) => {
         id: exp.receipt_no || `EXP-${exp.expense_id.substring(0, 5).toUpperCase()}`,
         rawId: exp.expense_id,
         date: formatDateDisplay(exp.date_incurred || exp.created_at),
+        time: formatTimeDisplay(exp.created_at),
+        createdAt: exp.created_at,
         rawDate: exp.date_incurred || exp.created_at,
         type: 'Expense',
         party: exp.supplier_name || 'General Farm Supplier',
@@ -240,6 +259,8 @@ router.get('/api/transactions', async (req, res) => {
         id: sale.receipt_no || `TX-${sale.sale_id.substring(0, 5).toUpperCase()}`,
         rawId: sale.sale_id,
         date: formatDateDisplay(sale.transaction_date || sale.created_at),
+        time: formatTimeDisplay(sale.created_at),
+        createdAt: sale.created_at,
         rawDate: sale.transaction_date || sale.created_at,
         type: 'Sale',
         party: sale.buyer_name || 'Buyer',
@@ -301,8 +322,13 @@ router.get('/api/transactions', async (req, res) => {
       );
     }
 
-    // Sort newest first
-    merged.sort((a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime());
+    // Sort newly added records at the very top (by created_at / rawDate desc)
+    merged.sort((a, b) => {
+      const timeA = new Date(a.createdAt || a.rawDate).getTime();
+      const timeB = new Date(b.createdAt || b.rawDate).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
 
     res.json({
       data: merged,
@@ -722,6 +748,8 @@ router.post('/api/transactions/sale', async (req, res) => {
       id: resolvedReceipt,
       rawId: createdSaleId || `temp-${Date.now()}`,
       date: formatDateDisplay(resolvedDate),
+      time: formatTimeDisplay(new Date()),
+      createdAt: new Date().toISOString(),
       rawDate: resolvedDate,
       type: 'Sale',
       party: buyerName.trim(),

@@ -210,21 +210,22 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory }) {
 
   // Unified Threshold System
   const thresholdRatio = item.low_stock_threshold && capacity > 0
-    ? Math.min(Math.max(item.low_stock_threshold / capacity, 0.1), 0.5)
-    : 0.35;
-  const criticalRatio = thresholdRatio * 0.6; // e.g. 21%
+    ? item.low_stock_threshold / capacity
+    : 0.25;
+  const criticalRatio = 0.10; // Exactly 10% of max capacity
 
-  // Single source of truth evaluation (3 tiers: Critical, Low/Below threshold, Healthy buffer)
+  // Single source of truth evaluation (3 tiers: Critical, Low Stock, Healthy buffer)
   let statusKey = "healthy";
   if (
+    current <= 0 ||
     level <= criticalRatio ||
-    pct <= 20 ||
-    (metrics?.hasUpcomingShortfall && current <= (metrics?.upcomingDemandUnits || 0) * 0.25)
+    pct <= 10 ||
+    (metrics?.hasUpcomingShortfall && current <= (metrics?.upcomingDemandUnits || 0) * 0.10)
   ) {
     statusKey = "critical";
   } else if (
+    current <= item.low_stock_threshold ||
     level <= thresholdRatio ||
-    pct <= 35 ||
     metrics?.hasUpcomingShortfall ||
     metrics?.willFallBelowThreshold
   ) {
@@ -243,7 +244,7 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory }) {
       buttonLabel: "Adjust / Restock",
     },
     low: {
-      label: metrics?.hasUpcomingShortfall ? "Upcoming Shortfall" : "Below threshold",
+      label: metrics?.hasUpcomingShortfall ? "Upcoming Shortfall" : "Low Stock",
       barClass: "bg-amber-500",
       badgeClass: "bg-amber-50 text-amber-700 ring-amber-200 border border-amber-200",
       textClass: "text-amber-600 font-bold",
@@ -608,14 +609,13 @@ export default function InventoryManagement({ loggedInUser }) {
     return unlinkedGuidelines.slice(start, start + UNREG_PER_PAGE);
   }, [unlinkedGuidelines, safeUnregPage]);
 
-  // Derived stats for active inventory (including burn-rate and milestone "At Risk" items)
+  // Derived stats for active inventory
   const lowOrAtRiskItems = useMemo(
     () =>
       activeItems.filter((i) => {
         const m = itemMetrics[i.item_id];
         return (
           i.current_stock_level <= i.low_stock_threshold ||
-          (m?.daysUntilLow != null && m.daysUntilLow <= 7) ||
           m?.hasUpcomingShortfall ||
           m?.willFallBelowThreshold
         );
@@ -626,9 +626,13 @@ export default function InventoryManagement({ loggedInUser }) {
     () =>
       activeItems.filter((i) => {
         const m = itemMetrics[i.item_id];
+        const cur = Number(i.current_stock_level) || 0;
+        const capacity = Number(i.ideal_stock_level) || 0;
+        const isTenPercent = capacity > 0 ? cur <= capacity * 0.10 : cur <= (Number(i.low_stock_threshold) || 0) * 0.25;
         return (
-          i.current_stock_level <= i.low_stock_threshold * 0.25 ||
-          (m?.hasUpcomingShortfall && i.current_stock_level <= (m?.upcomingDemandUnits || 0) * 0.25)
+          cur <= 0 ||
+          isTenPercent ||
+          (m?.hasUpcomingShortfall && cur <= (m?.upcomingDemandUnits || 0) * 0.10)
         );
       }),
     [activeItems, itemMetrics]
@@ -639,7 +643,6 @@ export default function InventoryManagement({ loggedInUser }) {
         const m = itemMetrics[i.item_id];
         return (
           i.current_stock_level > i.low_stock_threshold &&
-          (m?.daysUntilLow == null || m.daysUntilLow > 7) &&
           !m?.hasUpcomingShortfall &&
           !m?.willFallBelowThreshold
         );
@@ -669,8 +672,7 @@ export default function InventoryManagement({ loggedInUser }) {
             out_of_stock: 0,
             critical: 1,
             low_stock: 2,
-            at_risk: 3,
-            healthy: 4,
+            healthy: 3,
           };
           if (priority[stA.key] !== priority[stB.key]) {
             return priority[stA.key] - priority[stB.key];
@@ -732,8 +734,7 @@ export default function InventoryManagement({ loggedInUser }) {
       out_of_stock: 0,
       critical: 1,
       low_stock: 2,
-      at_risk: 3,
-      healthy: 4,
+      healthy: 3,
     };
 
     return filteredItems.sort((a, b) => {
