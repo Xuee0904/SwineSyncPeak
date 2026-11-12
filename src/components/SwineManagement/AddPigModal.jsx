@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, ChevronLeft, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle, Bookmark, CheckCircle2, Syringe, Trash2, Plus } from 'lucide-react';
+import { X, ChevronLeft, ChevronDown, Venus, Mars, Users, Loader2, Tag, Calendar, Weight, Home, Activity, Ruler, AlertCircle, PlusCircle, Bookmark, CheckCircle2, Sparkles, ShoppingBag, ArrowRightLeft, Dna, Check } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import useSmoothStepTransition from '../../hooks/useSmoothStepTransition';
 import useFormDraft, { fetchDraftPayload } from '../../hooks/useFormDraft';
@@ -13,20 +13,8 @@ import { supabase } from '../../supabaseClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Cull'];
-
-const COMMON_VACCINES = [
-  'FMD Vaccine',
-  'CSF Vaccine (Hog Cholera)',
-  'PRRS Vaccine',
-  'PCV2 Vaccine (Circovirus)',
-  'Mycoplasma hyopneumoniae',
-  'Parvovirus / Erysipelas / Lepto (PLE)',
-  'E. coli / Clostridium (Scours)',
-  'Swine Influenza (SIV)',
-  'APP Vaccine',
-  'Iron Dextran (Piglets)',
-];
+const SOW_STATUS_OPTIONS = ['Healthy', 'Quarantine', 'Sick', 'Pregnant'];
+const BOAR_STATUS_OPTIONS = ['Healthy', 'Quarantine', 'Sick'];
 
 const SOURCE_OPTIONS = [
   { value: 'born_in_farm', label: 'Born in Farm' },
@@ -85,16 +73,9 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
   const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState(null);
-  const [vaccinationError, setVaccinationError] = useState(null);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [autoRestoreBatch, setAutoRestoreBatch] = useState(false);
   const [batchDraftInfo, setBatchDraftInfo] = useState(null);
-  const [savedPigId, setSavedPigId] = useState(null);
-  const [savedBatchId, setSavedBatchId] = useState(null);
-  const [vaccineMinDate, setVaccineMinDate] = useState(null);
-  const [vaccinations, setVaccinations] = useState([{ id: Date.now(), vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
-  const [isSavingVaccinations, setIsSavingVaccinations] = useState(false);
-  const [openVaccineIdx, setOpenVaccineIdx] = useState(null);
   const [animationParent] = useAutoAnimate();
 
   // Direct DOM opacity fade between steps (bypasses React batching)
@@ -138,6 +119,7 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
   const [isLoadingData, setIsLoadingData] = useState(false);
 
   const [breedOpen, setBreedOpen] = useState(false);
+  const [isSearchingBreed, setIsSearchingBreed] = useState(false);
   const breedWrapRef = useRef(null);
 
   useEffect(() => {
@@ -303,13 +285,15 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
       next.dateOfBirth = 'Date of birth is too far in the past (max 15 years)';
     }
     if (!form.breed.trim()) next.breed = 'Breed is required';
-    const w = Number(form.weight);
-    if (form.weight === '' || form.weight === undefined || form.weight === null || isNaN(w)) {
-      next.weight = 'Enter valid weight';
-    } else if (w < 0) {
-      next.weight = 'Weight cannot be negative';
-    } else if (w > 500) {
-      next.weight = 'Weight cannot exceed 500 kg';
+    if (form.weight !== '' && form.weight !== undefined && form.weight !== null) {
+      const w = Number(form.weight);
+      if (isNaN(w)) {
+        next.weight = 'Enter valid weight';
+      } else if (w < 0) {
+        next.weight = 'Weight cannot be negative';
+      } else if (w > 500) {
+        next.weight = 'Weight cannot exceed 500 kg';
+      }
     }
     if (!form.penId) next.penId = 'Select a pen code';
     setErrors(next);
@@ -317,34 +301,28 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     if (!validate()) return;
 
     setIsSaving(true);
     setSubmitError(null);
     try {
       const breedToSave = form.breed.trim();
-      const result = await onSave?.({
+      await onSave?.({
         ...form,
         breed: breedToSave,
-        weight: Number(form.weight),
+        weight: (form.weight !== '' && form.weight !== undefined && form.weight !== null && !isNaN(Number(form.weight))) ? Number(form.weight) : null,
         parityCount: gender === 'Female' && form.parityCount ? Number(form.parityCount) : undefined,
         gender,
         type: gender === 'Female' ? 'Sow' : 'Boar',
       });
       clearDraft();
-      // Store the new pig's ID so we can attach vaccinations, then go to vaccination step
-      setSavedPigId(result?.id || result?.pig_id || result?.data?.id || null);
-      setSavedBatchId(null);
-      setVaccineMinDate(form.dateOfBirth || null);
       setSuccessInfo({
         type: gender === 'Female' ? 'Sow' : 'Boar',
         tag: form.tagNumber.trim(),
-        message: `${gender === 'Female' ? 'Sow' : 'Boar'} #${form.tagNumber.trim()} added to your swine inventory.`
+        message: 'Successfully registered to your active swine inventory.'
       });
-      setVaccinationError(null);
-      setVaccinations([{ id: Date.now(), vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
-      setStep('vaccinations');
+      setStep('success');
     } catch (err) {
       if (isOffline || err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network')) {
         saveDraft(form, { step, gender });
@@ -361,44 +339,6 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
     }
   };
 
-  const handleSaveVaccinations = async () => {
-    // Filter out completely empty rows
-    const filledRows = vaccinations.filter(v => (v.vaccine_name && v.vaccine_name !== 'Other...') || (v.vaccine_name === 'Other...' && v.custom_name.trim()));
-    if (filledRows.length === 0) {
-      setStep('success');
-      return;
-    }
-    setIsSavingVaccinations(true);
-    try {
-      await Promise.all(
-        filledRows.map(v =>
-          fetch(`${API_BASE}/api/vaccination-records`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              // Use batch_id for batch records, pig_id for individual pigs
-              ...(savedBatchId ? { batch_id: savedBatchId } : { pig_id: savedPigId }),
-              vaccine_name: v.vaccine_name === 'Other...' ? v.custom_name.trim() : v.vaccine_name.trim(),
-              administered_date: v.administered_date,
-              dosage: v.dosage.trim() || undefined,
-              administered_by: loggedInUser?.name || loggedInUser || 'Admin',
-            }),
-          }).then(async r => {
-            if (!r.ok) {
-              const errData = await r.json().catch(() => ({}));
-              throw new Error(errData.error || 'Failed to save a vaccination record');
-            }
-          })
-        )
-      );
-      setStep('success');
-    } catch (err) {
-      setVaccinationError(err.message || 'Failed to save vaccinations.');
-    } finally {
-      setIsSavingVaccinations(false);
-    }
-  };
-
   const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs pl-10 pr-4";
   const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
   const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 text-rose-955 bg-rose-50/10";
@@ -412,27 +352,37 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
   const isInvalidWeight = Boolean(form.weight !== '' && form.weight !== undefined && form.weight !== null && (isNaN(Number(form.weight)) || Number(form.weight) < 0 || Number(form.weight) > 500));
 
   const isSickOrQuarantine = form.status?.toLowerCase() === 'sick' || form.status?.toLowerCase() === 'quarantine';
-  const availablePensForGender = pens.filter(p => {
-    const isQPen = p.section === 'Q' || p.section === 'QUARANTINE';
-    if (!isSickOrQuarantine && isQPen) return false;
-    if (isSickOrQuarantine && !isQPen) return false;
+  const availablePensForGender = pens
+    .filter(p => {
+      const isQPen = p.section === 'Q' || p.section === 'QUARANTINE';
+      if (!isSickOrQuarantine && isQPen) return false;
+      if (isSickOrQuarantine && !isQPen) return false;
 
-    if (gender === 'Female') {
-      if (!isQPen && p.section !== 'S' && p.section !== 'SOW') return false;
-      if ((p.section === 'S' || p.section === 'SOW') && (p.hasSow || p.sowCount >= 1 || p.pigCount >= 1)) return false;
-    }
-    if (gender === 'Male') {
-      if (p.section !== 'B' && p.section !== 'BOAR') return false;
-      if (p.hasBoar || p.boarCount >= 1 || p.pigCount >= 1) return false;
-    }
-    return typeof p.remaining === 'number' ? p.remaining > 0 : true;
-  });
+      if (gender === 'Female') {
+        if (!isQPen && p.section !== 'S' && p.section !== 'SOW') return false;
+        if ((p.section === 'S' || p.section === 'SOW') && (p.hasSow || p.sowCount >= 1 || p.pigCount >= 1)) return false;
+      }
+      if (gender === 'Male') {
+        if (p.section !== 'B' && p.section !== 'BOAR') return false;
+        if (p.hasBoar || p.boarCount >= 1 || p.pigCount >= 1) return false;
+      }
+      return typeof p.remaining === 'number' ? p.remaining > 0 : true;
+    })
+    .sort((a, b) => {
+      const aName = a.name || a.pen_number || '';
+      const bName = b.name || b.pen_number || '';
+      const aIsM = aName.startsWith('M');
+      const bIsM = bName.startsWith('M');
+      if (aIsM && !bIsM) return -1;
+      if (!aIsM && bIsM) return 1;
+      return aName.localeCompare(bName, undefined, { numeric: true });
+    });
 
   return createPortal(
     <>
       {shouldRender && (
         <div
-          className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
+          className={`fixed inset-0 lg:left-64 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) resetAndClose();
           }}
@@ -440,15 +390,15 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
           <div
             ref={containerRef}
             style={stepTransitionStyle}
-            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[86vh] transition-[max-width] duration-300 ease-in-out ${step === 'select' || step === 'success' ? 'max-w-md' : step === 'vaccinations' ? 'max-w-3xl' : 'max-w-2xl'
+            className={`w-full overflow-hidden bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[86vh] transition-[max-width] duration-300 ease-in-out ${step === 'select' || step === 'success' ? 'max-w-md' : 'max-w-2xl'
               } ${panelClassName}`}
           >
             {/* Header */}
-            {step !== 'batch' && step !== 'success' && step !== 'vaccinations' && (
+            {step !== 'batch' && step !== 'success' && (
               <div className="px-8 pt-8 pb-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   {step === 'form' ? (
-                    <button type="button" onClick={() => setStep('select')} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+                    <button type="button" onClick={() => setStep('select')} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors cursor-pointer" title="Back to selection">
                       <ChevronLeft size={18} />
                     </button>
                   ) : (
@@ -456,19 +406,29 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                       <PlusCircle size={20} />
                     </div>
                   )}
-                  <div>
+                  <div className="flex items-center gap-2.5">
                     <h3 className="text-lg font-bold text-slate-900">
                       {step === 'form' ? (gender === 'Female' ? 'Add New Sow' : 'Add New Boar') : 'Add New Swine'}
                     </h3>
+                    {step === 'form' && (
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                        gender === 'Female'
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200/70'
+                          : 'bg-sky-50 text-sky-700 border border-sky-200/70'
+                      }`}>
+                        {gender === 'Female' ? <Venus size={12} className="stroke-[2.5]" /> : <Mars size={12} className="stroke-[2.5]" />}
+                        {gender}
+                      </span>
+                    )}
                   </div>
                 </div>
-                <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors">
+                <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer">
                   <X size={18} />
                 </button>
               </div>
             )}
 
-            {step !== 'batch' && step !== 'success' && step !== 'vaccinations' && (
+            {step !== 'batch' && step !== 'success' && (
               <div className="px-8 pt-2 space-y-2">
                 <DraftBanner
                   hasDraft={hasDraft && (step === 'select' || (step === 'form' && (!draftInfo?.extraMeta?.gender || draftInfo.extraMeta.gender === gender)))}
@@ -515,19 +475,22 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
               )}
 
               {step === 'form' && (
-                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                  <div className="flex-1 min-h-0 overflow-y-auto p-8 pt-2 space-y-4 text-left">
-                    <div className="p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center gap-2">
-                      {gender === 'Female' ? <Venus size={14} /> : <Mars size={14} />}
-                      <span>Gender is automatically recorded as {gender}</span>
-                    </div>
-
-                    {submitError && (
-                      <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
-                        <AlertCircle size={14} className="text-rose-500" />
-                        <span>{submitError}</span>
+                <form onSubmit={(e) => handleSubmit(e, 'finish')} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                  <div className="flex-1 min-h-[440px] max-h-[68vh] overflow-y-auto px-8 py-4 space-y-4 text-left">
+                    <div
+                      className={`grid transition-[grid-template-rows,opacity,margin] duration-250 ease-out ${
+                        submitError
+                          ? 'grid-rows-[1fr] opacity-100 mb-2'
+                          : 'grid-rows-[0fr] opacity-0 mb-0 pointer-events-none'
+                      }`}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
+                          <AlertCircle size={14} className="text-rose-500 shrink-0" />
+                          <span>{submitError}</span>
+                        </div>
                       </div>
-                    )}
+                    </div>
 
                     {/* DOB and Tag */}
                     <div className="grid grid-cols-2 gap-4">
@@ -542,35 +505,109 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                     {/* Breed and Weight */}
                     <div className="grid grid-cols-2 gap-4">
                       <div className="relative" ref={breedWrapRef}>
-                        <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
+                        <Field label="Breed" error={errors.breed} icon={<Dna />}>
                           <input
                             type="text"
                             value={form.breed}
-                            onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
+                            onChange={(e) => {
+                              handleChange('breed')(e);
+                              setIsSearchingBreed(true);
+                              setBreedOpen(true);
+                            }}
                             onFocus={() => setBreedOpen(true)}
                             placeholder={isLoadingData ? 'Loading...' : 'Select or type'}
                             disabled={isLoadingData}
-                            className={`${inputBase} ${errors.breed ? inputErr : inputOk}`}
+                            className={`${inputBase} pr-9 ${errors.breed ? inputErr : inputOk}`}
                             autoComplete="off"
                           />
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            onClick={() => {
+                              setIsSearchingBreed(false);
+                              setBreedOpen(prev => !prev);
+                            }}
+                            className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                            title="Toggle breed list"
+                          >
+                            <ChevronDown size={14} className={`transition-transform duration-200 ${breedOpen ? 'rotate-180' : ''}`} />
+                          </button>
                         </Field>
-                        {breedOpen && !isLoadingData && (
-                          <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                            {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
-                              <li key={b.breed_id} onClick={() => { setForm(p => ({ ...p, breed: b.name })); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
-                            ))}
-                          </ul>
-                        )}
+                        {breedOpen && !isLoadingData && (() => {
+                          const isExactMatch = breeds.some(b => b.name.toLowerCase() === (form.breed || '').trim().toLowerCase());
+                          const listToRender = (isSearchingBreed && form.breed && !isExactMatch)
+                            ? breeds.filter(b => b.name.toLowerCase().includes(form.breed.toLowerCase()))
+                            : breeds;
+                          const sortedList = [...listToRender].sort((a, b) => {
+                            if (a.name === 'Crossbreed') return -1;
+                            if (b.name === 'Crossbreed') return 1;
+                            return a.name.localeCompare(b.name);
+                          });
+
+                          return (
+                            <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg animate-in fade-in slide-in-from-top-1 duration-150">
+                              {sortedList.length > 0 ? (
+                                sortedList.map(b => {
+                                  const isSelected = form.breed && b.name.toLowerCase() === form.breed.trim().toLowerCase();
+                                  return (
+                                    <li
+                                      key={b.breed_id}
+                                      onClick={() => {
+                                        setForm(p => ({ ...p, breed: b.name }));
+                                        setIsSearchingBreed(false);
+                                        setBreedOpen(false);
+                                      }}
+                                      className={`cursor-pointer px-4 py-2 text-xs transition-colors flex items-center justify-between ${
+                                        isSelected
+                                          ? 'bg-emerald-50 text-emerald-800 font-bold'
+                                          : 'text-slate-700 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      <span>{b.name}</span>
+                                      {isSelected && <Check size={13} className="text-emerald-600 shrink-0" />}
+                                    </li>
+                                  );
+                                })
+                              ) : (
+                                <li className="px-4 py-2.5 text-xs text-slate-400 italic">
+                                  Press next to use custom &ldquo;{form.breed}&rdquo;
+                                </li>
+                              )}
+                            </ul>
+                          );
+                        })()}
                       </div>
-                      <Field label="Weight (kg)" error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
-                        <input type="number" step="0.1" min="0" max="500" value={form.weight} onChange={handleChange('weight')} placeholder="0.0" className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`} />
+                      <Field
+                        label={
+                          <span>
+                            Weight (kg) <span className="font-normal text-slate-400 lowercase">(optional)</span>
+                          </span>
+                        }
+                        error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)}
+                        icon={<Weight />}
+                      >
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="500"
+                          value={form.weight}
+                          onChange={handleChange('weight')}
+                          placeholder="Leave blank or e.g. 120.0"
+                          className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`}
+                        />
                       </Field>
                     </div>
 
                     {/* Pen and Status */}
                     <div className="grid grid-cols-2 gap-4">
                       <Field label="Pen Code" error={errors.penId} icon={<Home />}>
-                        <select value={form.penId} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`} disabled={isLoadingData}>
+                        <select
+                          value={form.penId}
+                          onChange={handleChange('penId')}
+                          className={`${inputBase} pr-9 ${errors.penId ? inputErr : inputOk} appearance-none cursor-pointer`}
+                          disabled={isLoadingData}
+                        >
                           <option value="">{isLoadingData ? 'Loading...' : availablePensForGender.length === 0 ? `No available pens for ${gender}` : 'Select Pen'}</option>
                           {availablePensForGender.map(p => (
                             <option key={p.id} value={p.id}>
@@ -578,30 +615,69 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                             </option>
                           ))}
                         </select>
+                        <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+                          <ChevronDown size={14} />
+                        </span>
                       </Field>
                       <Field label="Status" icon={<Activity />}>
-                        <select value={form.status} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
-                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                        <select
+                          value={form.status}
+                          onChange={handleChange('status')}
+                          className={`${inputBase} pr-9 ${inputOk} appearance-none cursor-pointer`}
+                        >
+                          {(gender === 'Female' ? SOW_STATUS_OPTIONS : BOAR_STATUS_OPTIONS).map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
+                        <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+                          <ChevronDown size={14} />
+                        </span>
                       </Field>
                     </div>
 
                     {gender === 'Female' && (
-                      <Field label="Parity Count" icon={<Ruler />}>
-                        <input type="number" value={form.parityCount} onChange={handleChange('parityCount')} placeholder="0" className={`${inputBase} ${inputOk}`} />
-                      </Field>
+                      <div className="grid grid-cols-2 gap-4 items-start">
+                        <Field
+                          label={
+                            <span>
+                              Parity Count <span className="font-normal text-slate-400 lowercase">(0 for maiden gilts)</span>
+                            </span>
+                          }
+                          icon={<Ruler />}
+                        >
+                          <input
+                            type="number"
+                            min="0"
+                            value={form.parityCount}
+                            onChange={handleChange('parityCount')}
+                            placeholder="0"
+                            className={`${inputBase} ${inputOk}`}
+                          />
+                        </Field>
+                      </div>
                     )}
 
                     {/* Source Origin */}
-                    <div className="pt-2">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
+                    <div className="pt-1">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Source Origin</p>
                       <div className="grid grid-cols-3 gap-2.5">
-                        {SOURCE_OPTIONS.map(opt => (
-                          <label key={opt.value} className={`flex items-center gap-2.5 cursor-pointer rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 text-emerald-800 shadow-xs' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
-                            <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
-                            {opt.label}
-                          </label>
-                        ))}
+                        {SOURCE_OPTIONS.map(opt => {
+                          const isSelected = form.sourceOrigin === opt.value;
+                          const IconComp = opt.value === 'born_in_farm' ? Sparkles : opt.value === 'purchased' ? ShoppingBag : ArrowRightLeft;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setForm(p => ({ ...p, sourceOrigin: opt.value }))}
+                              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-xs ring-1 ring-emerald-500/20'
+                                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              <IconComp size={14} className={isSelected ? 'text-emerald-600' : 'text-slate-400'} />
+                              <span>{opt.label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -626,159 +702,28 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
 
                   </div>
 
-                  <div className="px-8 py-4 border-t border-slate-100 bg-white flex gap-2 shrink-0">
-                    <button type="button" onClick={resetAndClose} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
+                  <div className="px-8 py-4 border-t border-slate-100 bg-white flex items-center justify-between shrink-0">
+                    <button
+                      type="button"
+                      onClick={resetAndClose}
+                      className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition-colors cursor-pointer"
+                    >
                       Cancel
                     </button>
                     <button
-                      type="button"
-                      onClick={() => {
-                        saveDraft(form, { step, gender });
-                        resetAndClose();
-                      }}
-                      className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                      title="Save current inputs as a draft and close"
+                      type="submit"
+                      disabled={isSaving || isLoadingData}
+                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                     >
-                      <Bookmark size={15} className="text-emerald-600" />
-                      Save Draft
-                    </button>
-                    <button type="submit" disabled={isSaving || isLoadingData} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50">
-                      {isSaving && <Loader2 size={16} className="animate-spin" />}
-                      Next: Add Vaccinations
+                      {isSaving ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <Check size={14} className="stroke-[2.5]" />
+                      )}
+                      <span>{gender === 'Female' ? 'Save Sow' : 'Save Boar'}</span>
                     </button>
                   </div>
                 </form>
-              )}
-
-              {step === 'vaccinations' && (
-                <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                  {/* Vaccination Step Header */}
-                  <div className="px-8 pt-8 pb-4 flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-                        <Syringe size={20} />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-bold text-slate-900">Log Vaccinations</h3>
-                        <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Optional — you can skip this</p>
-                      </div>
-                    </div>
-                    <button type="button" onClick={resetAndClose} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors">
-                      <X size={18} />
-                    </button>
-                  </div>
-
-                  {/* Info banner */}
-                  <div className="mx-8 mb-4 p-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl flex items-start gap-2 shrink-0">
-                    <Syringe size={14} className="shrink-0 mt-0.5" />
-                    <span>{successInfo?.type} <strong>#{successInfo?.tag}</strong> has been saved. Add any vaccinations this animal has received, or skip to finish.</span>
-                  </div>
-
-                  {/* Vaccine rows */}
-                  <div className="flex flex-col flex-1 min-h-0 overflow-y-auto px-8 pb-4 gap-3" ref={animationParent} style={{ scrollbarGutter: 'stable' }}>
-                    {vaccinations.map((vac, idx) => (
-                      <div key={vac.id} className="grid grid-cols-[4fr_3fr_3fr_auto] gap-3 items-start pb-5">
-                        <div className="space-y-1.5 flex flex-col justify-end h-full">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                            {idx === 0 ? 'Vaccine Name *' : 'Vaccine Name *'}
-                          </label>
-                          <select
-                            value={vac.vaccine_name}
-                            onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, vaccine_name: e.target.value } : v))}
-                            className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 transition-all appearance-none"
-                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1em' }}
-                          >
-                            <option value="" disabled>Select Vaccine...</option>
-                            {COMMON_VACCINES.map(b => <option key={b} value={b}>{b}</option>)}
-                            <option value="Other...">Other (Specify)</option>
-                          </select>
-                          {vac.vaccine_name === 'Other...' && (
-                            <input
-                              type="text"
-                              value={vac.custom_name}
-                              onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, custom_name: e.target.value } : v))}
-                              placeholder="Type custom vaccine..."
-                              className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 mt-1.5 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400 transition-all animate-in fade-in slide-in-from-top-1"
-                            />
-                          )}
-                        </div>
-                        <div className="space-y-1.5 flex flex-col justify-end h-full relative">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Date Given *</label>
-                          <input
-                            type="date"
-                            value={vac.administered_date}
-                            min={vaccineMinDate || undefined}
-                            max={new Date().toISOString().split('T')[0]}
-                            onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, administered_date: e.target.value } : v))}
-                            className={`w-full bg-white border rounded-xl py-2.5 outline-none text-xs px-3 focus:ring-2 transition-all ${vaccineMinDate && vac.administered_date && vac.administered_date < vaccineMinDate ? 'border-rose-300 focus:border-rose-500 focus:ring-rose-500/20 text-rose-800' : 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500/20 text-slate-900'}`}
-                          />
-                          {vaccineMinDate && vac.administered_date && vac.administered_date < vaccineMinDate && (
-                            <p className="absolute -bottom-5 left-0 w-max text-[10px] font-bold text-rose-600 flex items-center gap-1 animate-in fade-in slide-in-from-top-1">
-                              <AlertCircle size={10} className="shrink-0" /> Cannot be before birthdate ({new Date(vaccineMinDate).toLocaleDateString()})
-                            </p>
-                          )}
-                        </div>
-                        <div className="space-y-1.5 flex flex-col justify-end h-full">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dosage</label>
-                          <input
-                            type="text"
-                            value={vac.dosage}
-                            onChange={e => setVaccinations(prev => prev.map((v, i) => i === idx ? { ...v, dosage: e.target.value } : v))}
-                            placeholder="e.g. 2ml"
-                            className="w-full bg-white border border-slate-200 rounded-xl py-2.5 outline-none text-xs px-3 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400 transition-all"
-                          />
-                        </div>
-                        <div className="flex flex-col justify-end h-full pb-0.5">
-                          <button
-                            type="button"
-                            onClick={() => setVaccinations(prev => prev.filter((_, i) => i !== idx))}
-                            disabled={vaccinations.length === 1}
-                            className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Remove row"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setVaccinations(prev => [...prev, { id: Date.now() + Math.random(), vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }])}
-                      className="flex items-center gap-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700 mt-1 transition-colors"
-                    >
-                      <Plus size={14} /> Add Another Vaccine
-                    </button>
-                  </div>
-
-                  {/* Footer */}
-                  <div className="px-8 py-4 border-t border-slate-100 bg-white flex flex-col gap-3 shrink-0">
-                    {/* Vaccination API Error Inline */}
-                    {vaccinationError && (
-                      <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 animate-in fade-in">
-                        <AlertCircle size={14} className="text-rose-500 shrink-0" />
-                        <span>{vaccinationError}</span>
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setStep('success')}
-                        className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-                      >
-                        Skip &amp; Finish
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSaveVaccinations}
-                        disabled={isSavingVaccinations || !vaccinations.some(v => v.vaccine_name.trim()) || vaccinations.some(v => vaccineMinDate && v.administered_date && v.administered_date < vaccineMinDate)}
-                        className="flex-2 flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                      >
-                        {isSavingVaccinations && <Loader2 size={16} className="animate-spin" />}
-                        Save &amp; Finish
-                      </button>
-                    </div>
-                  </div>
-                </div>
               )}
 
               {step === 'batch' && (
@@ -792,15 +737,10 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                   }}
                   onClose={resetAndClose}
                   onSave={onSaveBatch}
-                  onSuccess={(info, batchResult) => {
+                  onSuccess={(info) => {
                     setAutoRestoreBatch(false);
                     setSuccessInfo(info);
-                    // Capture batch ID and clear pig ID so vaccination uses batch_id
-                    setSavedBatchId(batchResult?.batch_id || batchResult?.id || null);
-                    setSavedPigId(null);
-                    setVaccineMinDate(batchResult?.date_of_birth || batchResult?.dateOfBirth || null);
-                    setVaccinations([{ vaccine_name: '', custom_name: '', administered_date: new Date().toISOString().split('T')[0], dosage: '' }]);
-                    setStep('vaccinations');
+                    setStep('success');
                   }}
                   pens={pens}
                   breeds={breeds}
@@ -828,8 +768,13 @@ export default function AddPigModal({ isOpen, onClose, onSave, onSaveBatch, logg
                         if (successInfo?.type === 'Piglet Batch') {
                           setStep('batch');
                         } else {
-                          setGender(successInfo?.type === 'Sow' ? 'Female' : 'Male');
-                          setStep('pig');
+                          const nextGender = successInfo?.type === 'Sow' ? 'Female' : 'Male';
+                          setGender(nextGender);
+                          resetForm(EMPTY_FORM);
+                          setIsTagManuallyEdited(false);
+                          setErrors({});
+                          setSubmitError(null);
+                          setStep('form');
                         }
                       }}
                       className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
@@ -895,21 +840,51 @@ function TypeCard({ icon, label, onClick, hasDraftBadge }) {
   );
 }
 
-function Field({ label, error, icon, children }) {
+function Field({ label, error, hint, icon, children, className = '' }) {
+  const [displayedError, setDisplayedError] = useState(error);
+
+  useEffect(() => {
+    if (error) {
+      setDisplayedError(error);
+    }
+  }, [error]);
+
+  const hasError = Boolean(error);
+
   return (
-    <div className="space-y-1.5">
-      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{label}</label>
+    <div className={`space-y-1.5 ${className}`}>
+      {label && (
+        <div className="flex items-center justify-between gap-1">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">
+            {label}
+          </label>
+          {hint && (
+            <span className="text-[10px] text-slate-400 font-medium shrink-0">
+              {hint}
+            </span>
+          )}
+        </div>
+      )}
       <div className="relative">
         <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
           {icon && React.cloneElement(icon, { size: 14 })}
         </span>
         {children}
       </div>
-      {error && (
-        <p className="flex items-center gap-1 text-[10px] text-rose-600 font-semibold mt-1">
-          <AlertCircle size={10} /> {error}
-        </p>
-      )}
+      <div
+        className={`grid transition-[grid-template-rows,opacity,margin] duration-250 ease-out ${
+          hasError
+            ? 'grid-rows-[1fr] opacity-100 mt-1'
+            : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+        }`}
+      >
+        <div className="overflow-hidden">
+          <p className="flex items-center gap-1 text-[10px] text-rose-600 font-semibold leading-tight pt-0.5">
+            <AlertCircle size={10} className="shrink-0 text-rose-500" />
+            <span>{displayedError}</span>
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

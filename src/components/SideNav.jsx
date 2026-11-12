@@ -4,12 +4,13 @@ import {
   ClipboardList, Receipt, Settings, LogOut, X, ChevronRight,
   Grid3X3, HeartPulse, Dna,
 } from 'lucide-react';
+import PigSnout from './common/PigSnout';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   {
-    id: 'swine_management', label: 'Swine Management', icon: Users, sub: true,
+    id: 'swine_management', label: 'Swine Management', icon: PigSnout, sub: true,
     children: [
       { id: 'pen_management', label: 'Pen Management', icon: Grid3X3 },
     ]

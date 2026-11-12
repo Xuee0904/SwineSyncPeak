@@ -22,18 +22,15 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
 
   const reasonOptions = isBatch
     ? [
-      'Sold Out - Batch Fully Liquidated',
+      'Sold Out',
       'Transitioned to Breeding Herd (Gilts/Boars)',
-      'Merged with Another Batch',
-      'Mortality - Total Batch Loss',
+      'Mortality',
       'Other (Specify below)',
     ]
     : [
       'Sold / Marketed',
-      'Culled - Age & Productivity',
-      'Culled - Health & Injury',
-      'Mortality - Natural / Medical',
-      'Transferred to Another Facility',
+      'Culled',
+      'Mortality',
       'Other (Specify below)',
     ];
 
@@ -101,7 +98,7 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
+      className={`fixed inset-0 lg:left-64 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
       onClick={(e) => {
         if (e.target === e.currentTarget && !loading) requestClose();
       }}

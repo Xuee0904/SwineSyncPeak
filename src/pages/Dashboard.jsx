@@ -9,6 +9,7 @@ import HealthManagement from './HealthManagement';
 import InventoryManagement from './InventoryManagement';
 import TransactionRecords from './TransactionRecords';
 import DailyFeedingPanel from '../components/Feeding/DailyFeedingPanel';
+import PigSnout from '../components/common/PigSnout';
 import { supabase } from '../supabaseClient';
 import { toast } from '../utils/toast';
 import {
@@ -879,7 +880,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Herd</span>
                     <div className="w-8 h-8 rounded-xl bg-slate-50 group-hover:bg-emerald-50 text-slate-500 group-hover:text-emerald-600 flex items-center justify-center transition-colors">
-                      <Users className="w-4 h-4" />
+                      <PigSnout className="w-4 h-4" />
                     </div>
                   </div>
                   <div className="flex items-baseline gap-1.5">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, cloneElement } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Tag, Calendar, Weight, Home, Activity, Ruler, Loader2, AlertCircle, PlusCircle, Baby, Hash, Shuffle, CheckCircle2, ArrowLeft, Users } from 'lucide-react';
+import { X, Tag, Calendar, Weight, Home, Activity, Ruler, Loader2, AlertCircle, PlusCircle, Baby, Hash, Shuffle, CheckCircle2, ArrowLeft, Users, ChevronDown, Dna, Check, Sparkles, ShoppingBag, ArrowRightLeft } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import toast from '../../utils/toast';
 
@@ -45,6 +45,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
   const [submitError, setSubmitError] = useState(null);
 
   const [breedOpen, setBreedOpen] = useState(false);
+  const [isSearchingBreed, setIsSearchingBreed] = useState(false);
   const breedWrapRef = useRef(null);
 
   useEffect(() => {
@@ -288,9 +289,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
       const updatedInfo = {
         type: isBatch ? 'Piglet Batch' : pigData.category || 'Swine',
         tag: form.tagNumber || pigData.pig_tag || pigData.batch_tag || pigData.id,
-        message: isBatch
-          ? `Piglet Batch #${form.tagNumber} has been successfully updated.`
-          : `Swine #${form.tagNumber} has been successfully updated.`
+        message: 'Successfully updated in your active swine inventory.'
       };
       toast.success(isBatch ? `Batch #${form.tagNumber} updated successfully!` : `Swine #${form.tagNumber} updated successfully!`);
       if (typeof onSuccess === 'function') onSuccess(savedRecord || { ...pigData, ...form }, updatedInfo);
@@ -302,6 +301,16 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
   };
 
   const currentStatus = form.status?.toLowerCase() || pigData?.status?.toLowerCase() || '';
+  const sortPens = (a, b) => {
+    const aName = a.name || a.pen_number || '';
+    const bName = b.name || b.pen_number || '';
+    const aIsM = aName.startsWith('M');
+    const bIsM = bName.startsWith('M');
+    if (aIsM && !bIsM) return -1;
+    if (!aIsM && bIsM) return 1;
+    return aName.localeCompare(bName, undefined, { numeric: true });
+  };
+
   const isSickOrQuarantine = currentStatus === 'sick' || currentStatus === 'quarantine';
   const availablePensForPig = pens.filter(p => {
     if (String(p.id) === String(pigData?.pen_id || form.penId)) return true;
@@ -318,7 +327,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
       if (p.hasBoar || p.boarCount >= 1 || p.pigCount >= 1) return false;
     }
     return typeof p.remaining === 'number' ? p.remaining > 0 : true;
-  });
+  }).sort(sortPens);
   const availablePensForBatch = pens.filter(p => {
     if (p.section === 'B' || p.section === 'BOAR') return false;
 
@@ -342,7 +351,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
 
     if (String(p.id) === String(pigData?.pen_id || form.penId)) return true;
     return typeof p.remaining === 'number' ? p.remaining > 0 : true;
-  });
+  }).sort(sortPens);
 
   const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs pl-10 pr-4";
   const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
@@ -377,32 +386,101 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
 
           <div className="grid grid-cols-2 gap-4">
             <div className="relative" ref={breedWrapRef}>
-              <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
+              <Field label="Breed" error={errors.breed} icon={<Dna />}>
                 <input
                   type="text"
                   value={form.breed ?? ''}
-                  onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
+                  onChange={(e) => {
+                    handleChange('breed')(e);
+                    setIsSearchingBreed(true);
+                    setBreedOpen(true);
+                  }}
                   onFocus={() => setBreedOpen(true)}
-                  className={`${inputBase} ${errors.breed ? inputErr : inputOk}`}
+                  className={`${inputBase} pr-9 ${errors.breed ? inputErr : inputOk}`}
                   autoComplete="off"
                 />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => {
+                    setIsSearchingBreed(false);
+                    setBreedOpen(prev => !prev);
+                  }}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  title="Toggle breed list"
+                >
+                  <ChevronDown size={14} className={`transition-transform duration-200 ${breedOpen ? 'rotate-180' : ''}`} />
+                </button>
               </Field>
-              {breedOpen && !isLoadingData && (
-                <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                  {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
-                    <li key={b.breed_id} onClick={() => { setForm(p => ({ ...p, breed: b.name })); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
-                  ))}
-                </ul>
-              )}
+              {breedOpen && !isLoadingData && (() => {
+                const isExactMatch = breeds.some(b => b.name.toLowerCase() === (form.breed || '').trim().toLowerCase());
+                const listToRender = (isSearchingBreed && form.breed && !isExactMatch)
+                  ? breeds.filter(b => b.name.toLowerCase().includes(form.breed.toLowerCase()))
+                  : breeds;
+                const sortedList = [...listToRender].sort((a, b) => {
+                  if (a.name === 'Crossbreed') return -1;
+                  if (b.name === 'Crossbreed') return 1;
+                  return a.name.localeCompare(b.name);
+                });
+
+                return (
+                  <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg animate-in fade-in slide-in-from-top-1 duration-150">
+                    {sortedList.length > 0 ? (
+                      sortedList.map(b => {
+                        const isSelected = form.breed && b.name.toLowerCase() === form.breed.trim().toLowerCase();
+                        return (
+                          <li
+                            key={b.breed_id}
+                            onClick={() => {
+                              setForm(p => ({ ...p, breed: b.name }));
+                              setIsSearchingBreed(false);
+                              setBreedOpen(false);
+                            }}
+                            className={`cursor-pointer px-4 py-2 text-xs transition-colors flex items-center justify-between ${
+                              isSelected
+                                ? 'bg-emerald-50 text-emerald-800 font-bold'
+                                : 'text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span>{b.name}</span>
+                            {isSelected && <Check size={13} className="text-emerald-600 shrink-0" />}
+                          </li>
+                        );
+                      })
+                    ) : (
+                      <li className="px-4 py-2.5 text-xs text-slate-400 italic">
+                        Press save to use custom &ldquo;{form.breed}&rdquo;
+                      </li>
+                    )}
+                  </ul>
+                );
+              })()}
             </div>
-            <Field label="Average Weight (kg)" error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
-              <input type="number" step="0.1" min="0" max="500" value={form.weight ?? ''} onChange={handleChange('weight')} className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`} />
+            <Field
+              label={
+                <span>
+                  Average Weight (kg) <span className="font-normal text-slate-400 lowercase">(optional)</span>
+                </span>
+              }
+              error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)}
+              icon={<Weight />}
+            >
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="500"
+                value={form.weight ?? ''}
+                onChange={handleChange('weight')}
+                placeholder="Leave blank or e.g. 1.5"
+                className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`}
+              />
             </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Pen Code" error={errors.penId} icon={<Home />}>
-              <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
+              <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} pr-9 ${errors.penId ? inputErr : inputOk} appearance-none cursor-pointer`}>
                 <option value="">{availablePensForBatch.length === 0 ? 'No available pens' : 'Select Pen'}</option>
                 {availablePensForBatch.map(p => (
                   <option key={p.id} value={p.id}>
@@ -410,11 +488,17 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
                   </option>
                 ))}
               </select>
+              <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+                <ChevronDown size={14} />
+              </span>
             </Field>
             <Field label="Status" error={errors.status} icon={<Activity />}>
-              <select value={form.status ?? 'Suckling'} onChange={handleChange('status')} className={`${inputBase} ${errors.status ? inputErr : inputOk} appearance-none`}>
+              <select value={form.status ?? 'Suckling'} onChange={handleChange('status')} className={`${inputBase} pr-9 ${errors.status ? inputErr : inputOk} appearance-none cursor-pointer`}>
                 {BATCH_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+              <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+                <ChevronDown size={14} />
+              </span>
             </Field>
           </div>
 
@@ -445,12 +529,25 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
             <div className="pt-2">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
               <div className="grid grid-cols-3 gap-2.5">
-                {SOURCE_OPTIONS.map(opt => (
-                  <label key={opt.value} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 text-slate-900 shadow-xs' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
-                    <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
-                    {opt.label}
-                  </label>
-                ))}
+                {SOURCE_OPTIONS.map(opt => {
+                  const isSelected = form.sourceOrigin === opt.value;
+                  const IconComp = opt.value === 'born_in_farm' ? Sparkles : opt.value === 'purchased' ? ShoppingBag : ArrowRightLeft;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setForm(p => ({ ...p, sourceOrigin: opt.value }))}
+                      className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-xs ring-1 ring-emerald-500/20'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <IconComp size={14} className={isSelected ? 'text-emerald-600' : 'text-slate-400'} />
+                      <span>{opt.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -513,32 +610,101 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
 
           <div className="grid grid-cols-2 gap-4">
             <div className="relative" ref={breedWrapRef}>
-              <Field label="Breed" error={errors.breed} icon={<PlusCircle />}>
+              <Field label="Breed" error={errors.breed} icon={<Dna />}>
                 <input
                   type="text"
                   value={form.breed ?? ''}
-                  onChange={(e) => { handleChange('breed')(e); setBreedOpen(true); }}
+                  onChange={(e) => {
+                    handleChange('breed')(e);
+                    setIsSearchingBreed(true);
+                    setBreedOpen(true);
+                  }}
                   onFocus={() => setBreedOpen(true)}
-                  className={`${inputBase} ${errors.breed ? inputErr : inputOk}`}
+                  className={`${inputBase} pr-9 ${errors.breed ? inputErr : inputOk}`}
                   autoComplete="off"
                 />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => {
+                    setIsSearchingBreed(false);
+                    setBreedOpen(prev => !prev);
+                  }}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  title="Toggle breed list"
+                >
+                  <ChevronDown size={14} className={`transition-transform duration-200 ${breedOpen ? 'rotate-180' : ''}`} />
+                </button>
               </Field>
-              {breedOpen && !isLoadingData && (
-                <ul className="absolute z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                  {breeds.filter(b => b.name.toLowerCase().includes((form.breed || '').toLowerCase())).map(b => (
-                    <li key={b.breed_id} onClick={() => { setForm(p => ({ ...p, breed: b.name })); setBreedOpen(false); }} className="cursor-pointer px-4 py-2 text-xs hover:bg-emerald-50">{b.name}</li>
-                  ))}
-                </ul>
-              )}
+              {breedOpen && !isLoadingData && (() => {
+                const isExactMatch = breeds.some(b => b.name.toLowerCase() === (form.breed || '').trim().toLowerCase());
+                const listToRender = (isSearchingBreed && form.breed && !isExactMatch)
+                  ? breeds.filter(b => b.name.toLowerCase().includes(form.breed.toLowerCase()))
+                  : breeds;
+                const sortedList = [...listToRender].sort((a, b) => {
+                  if (a.name === 'Crossbreed') return -1;
+                  if (b.name === 'Crossbreed') return 1;
+                  return a.name.localeCompare(b.name);
+                });
+
+                return (
+                  <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg animate-in fade-in slide-in-from-top-1 duration-150">
+                    {sortedList.length > 0 ? (
+                      sortedList.map(b => {
+                        const isSelected = form.breed && b.name.toLowerCase() === form.breed.trim().toLowerCase();
+                        return (
+                          <li
+                            key={b.breed_id}
+                            onClick={() => {
+                              setForm(p => ({ ...p, breed: b.name }));
+                              setIsSearchingBreed(false);
+                              setBreedOpen(false);
+                            }}
+                            className={`cursor-pointer px-4 py-2 text-xs transition-colors flex items-center justify-between ${
+                              isSelected
+                                ? 'bg-emerald-50 text-emerald-800 font-bold'
+                                : 'text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span>{b.name}</span>
+                            {isSelected && <Check size={13} className="text-emerald-600 shrink-0" />}
+                          </li>
+                        );
+                      })
+                    ) : (
+                      <li className="px-4 py-2.5 text-xs text-slate-400 italic">
+                        Press save to use custom &ldquo;{form.breed}&rdquo;
+                      </li>
+                    )}
+                  </ul>
+                );
+              })()}
             </div>
-            <Field label="Weight (kg)" error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)} icon={<Weight />}>
-              <input type="number" step="0.1" min="0" max="500" value={form.weight ?? ''} onChange={handleChange('weight')} className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`} />
+            <Field
+              label={
+                <span>
+                  Weight (kg) <span className="font-normal text-slate-400 lowercase">(optional)</span>
+                </span>
+              }
+              error={errors.weight || (isInvalidWeight ? (Number(form.weight) < 0 ? 'Weight cannot be negative' : 'Weight cannot exceed 500 kg') : undefined)}
+              icon={<Weight />}
+            >
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="500"
+                value={form.weight ?? ''}
+                onChange={handleChange('weight')}
+                placeholder="Leave blank or e.g. 120.0"
+                className={`${inputBase} ${errors.weight || isInvalidWeight ? inputErr : inputOk}`}
+              />
             </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Pen Code" error={errors.penId} icon={<Home />}>
-              <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} ${errors.penId ? inputErr : inputOk} appearance-none`}>
+              <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} pr-9 ${errors.penId ? inputErr : inputOk} appearance-none cursor-pointer`}>
                 <option value="">{availablePensForPig.length === 0 ? 'No available pens' : 'Select Pen'}</option>
                 {availablePensForPig.map(p => (
                   <option key={p.id} value={p.id}>
@@ -546,30 +712,58 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
                   </option>
                 ))}
               </select>
+              <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+                <ChevronDown size={14} />
+              </span>
             </Field>
             <Field label="Status" icon={<Activity />}>
-              <select value={form.status ?? 'Healthy'} onChange={handleChange('status')} className={`${inputBase} ${inputOk} appearance-none`}>
+              <select value={form.status ?? 'Healthy'} onChange={handleChange('status')} className={`${inputBase} pr-9 ${inputOk} appearance-none cursor-pointer`}>
                 {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+              <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+                <ChevronDown size={14} />
+              </span>
             </Field>
           </div>
 
           {pigData?.category === 'Sow' && (
-            <Field label="Parity Count" icon={<Ruler />}>
-              <input type="number" value={form.parityCount ?? ''} onChange={handleChange('parityCount')} className={`${inputBase} ${inputOk}`} />
-            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field
+                label={
+                  <span>
+                    Parity Count <span className="font-normal text-slate-400 lowercase">(0 for maiden gilts)</span>
+                  </span>
+                }
+                icon={<Ruler />}
+              >
+                <input type="number" min="0" value={form.parityCount ?? ''} onChange={handleChange('parityCount')} className={`${inputBase} ${inputOk}`} />
+              </Field>
+            </div>
           )}
 
           {/* Source Origin */}
           <div className="pt-2">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Source Origin</p>
             <div className="grid grid-cols-3 gap-2.5">
-              {SOURCE_OPTIONS.map(opt => (
-                <label key={opt.value} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${form.sourceOrigin === opt.value ? 'border-emerald-400 bg-emerald-50/80 text-slate-900 shadow-xs' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
-                  <input type="radio" name="sourceOrigin" value={opt.value} checked={form.sourceOrigin === opt.value} onChange={handleChange('sourceOrigin')} className="accent-emerald-600" />
-                  {opt.label}
-                </label>
-              ))}
+              {SOURCE_OPTIONS.map(opt => {
+                const isSelected = form.sourceOrigin === opt.value;
+                const IconComp = opt.value === 'born_in_farm' ? Sparkles : opt.value === 'purchased' ? ShoppingBag : ArrowRightLeft;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setForm(p => ({ ...p, sourceOrigin: opt.value }))}
+                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      isSelected
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-xs ring-1 ring-emerald-500/20'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <IconComp size={14} className={isSelected ? 'text-emerald-600' : 'text-slate-400'} />
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -824,7 +1018,7 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md transition-opacity duration-300 ${overlayClassName}`}
+      className={`fixed inset-0 lg:left-64 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md transition-opacity duration-300 ${overlayClassName}`}
       onMouseDown={(e) => e.target === e.currentTarget && requestClose()}
     >
       <div
@@ -844,21 +1038,51 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
   );
 }
 
-function Field({ label, error, icon, children }) {
+function Field({ label, error, hint, icon, children, className = '' }) {
+  const [displayedError, setDisplayedError] = useState(error);
+
+  useEffect(() => {
+    if (error) {
+      setDisplayedError(error);
+    }
+  }, [error]);
+
+  const hasError = Boolean(error);
+
   return (
-    <div className="space-y-1.5">
-      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{label}</label>
+    <div className={`space-y-1.5 ${className}`}>
+      {label && (
+        <div className="flex items-center justify-between gap-1">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block truncate">
+            {label}
+          </label>
+          {hint && (
+            <span className="text-[10px] text-slate-400 font-medium shrink-0">
+              {hint}
+            </span>
+          )}
+        </div>
+      )}
       <div className="relative">
         <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
           {icon && React.cloneElement(icon, { size: 14 })}
         </span>
         {children}
       </div>
-      {error && (
-        <p className="flex items-center gap-1 text-[10px] text-rose-600 font-semibold mt-1">
-          <AlertCircle size={10} /> {error}
-        </p>
-      )}
+      <div
+        className={`grid transition-[grid-template-rows,opacity,margin] duration-250 ease-out ${
+          hasError
+            ? 'grid-rows-[1fr] opacity-100 mt-1'
+            : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+        }`}
+      >
+        <div className="overflow-hidden">
+          <p className="flex items-center gap-1 text-[10px] text-rose-600 font-semibold leading-tight pt-0.5">
+            <AlertCircle size={10} className="shrink-0 text-rose-500" />
+            <span>{displayedError}</span>
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

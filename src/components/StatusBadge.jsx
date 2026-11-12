@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function StatusBadge({ status }) {
+export default function StatusBadge({ status, className = '' }) {
   const s = (status || '').toLowerCase();
   const map = {
     healthy:     'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -15,10 +15,15 @@ export default function StatusBadge({ status }) {
     transferred: 'bg-slate-100 text-slate-700 border-slate-200',
     cull:        'bg-purple-100 text-purple-700 border-purple-200',
     culled:      'bg-purple-100 text-purple-700 border-purple-200',
+    sold:        'bg-amber-100 text-amber-800 border-amber-200',
+    'sold out':  'bg-amber-100 text-amber-800 border-amber-200',
+    archived:    'bg-amber-100 text-amber-800 border-amber-200',
+    mortality:   'bg-rose-100 text-rose-700 border-rose-200',
+    deceased:    'bg-rose-100 text-rose-700 border-rose-200',
   };
   const cls = map[s] || 'bg-slate-100 text-slate-600 border-slate-200';
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wide ${cls}`}>
+    <span className={`inline-flex items-center justify-center min-w-[78px] px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wide text-center shrink-0 ${cls} ${className}`}>
       {status || '—'}
     </span>
   );

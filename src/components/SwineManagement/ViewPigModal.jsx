@@ -6,7 +6,7 @@ import {
   AlertCircle, ChevronRight, CheckCircle2,
   PlusCircle, Home, Weight, Baby, Hash, Shuffle, Ruler, ArrowLeft,
   Syringe, ShieldCheck, Stethoscope, Pill, FileText, Clock, User, AlertTriangle, RotateCcw,
-  Heart, XCircle, Baby as BabyIcon, Target, Download, ChevronDown
+  Heart, XCircle, Baby as BabyIcon, Target, ChevronDown, Loader2
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import StatusBadge from '../../components/StatusBadge';
@@ -14,7 +14,7 @@ import toast from '../../utils/toast';
 import { PigEditView } from './EditPigModal';
 import AddHealthLogModal from '../HealthManagement/AddHealthLogModal';
 import VaccinationFormModal from '../HealthManagement/VaccinationFormModal';
-import { exportSwineProfile } from '../../utils/exportUtils';
+import PigSnout from '../common/PigSnout';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Cull'];
@@ -60,24 +60,10 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
   const [error, setError] = useState(null);
   const [showAddHealth, setShowAddHealth] = useState(false);
   const [showAddVaccine, setShowAddVaccine] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const exportMenuRef = useRef(null);
 
   // Animated content height
   const tabContentRef = useRef(null);
   const [panelHeight, setPanelHeight] = useState(null);
-
-  // Close export menu when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
-        setShowExportMenu(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Reset mode when modal opens/closes
   useEffect(() => {
@@ -216,7 +202,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-40 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 transition-opacity duration-300 ${overlayClassName}`}
+      className={`fixed inset-0 lg:left-64 z-40 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 transition-opacity duration-300 ${overlayClassName}`}
       onClick={(e) => { if (e.target === e.currentTarget) requestClose(); }}
     >
       <div
@@ -244,40 +230,42 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
             /* ──── VIEW MODE ──── */
           ) : (
             <>
-              {/* View Header */}
-              <div className="relative px-6 pt-5 pb-5 bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white flex items-center justify-between gap-4 overflow-hidden rounded-t-3xl border-b border-slate-800 shadow-inner">
-                {/* Subtle highlight ring */}
-                <div className="absolute inset-0 border-t border-white/10 rounded-t-3xl pointer-events-none" />
-
-                <div className="flex items-center gap-4 relative z-10">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg shrink-0 ${isBatch
-                    ? 'bg-gradient-to-br from-amber-500 to-orange-600 shadow-orange-500/20 ring-1 ring-orange-500/50'
-                    : 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-500/20 ring-1 ring-emerald-500/50'
+              {/* View Header — Clean Solid Color (Zero Gradients) */}
+              <div className="px-6 py-5 bg-slate-900 text-white flex items-center justify-between gap-4 rounded-t-3xl border-b border-slate-800">
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${isBatch
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-emerald-600 text-white'
                     }`}>
-                    {isBatch ? <Layers className="w-6 h-6 text-white drop-shadow-md" /> : <PiggyBank className="w-6 h-6 text-white drop-shadow-md" />}
+                    {isBatch ? <Layers className="w-5 h-5 text-white" /> : <PigSnout className="w-6 h-6 text-white" />}
                   </div>
                   <div className="flex flex-col justify-center">
-                    <div className="flex items-center gap-2.5 flex-wrap mb-1">
-                      <h2 className="text-2xl font-black tracking-tight text-white drop-shadow-sm leading-none mr-1">#{tag}</h2>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white leading-none mr-1">#{tag}</h2>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-200 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">
                         {isBatch ? 'Piglet Batch' : (data.category || 'Swine Record')}
                       </span>
                       <StatusBadge status={status} />
                       {data.is_archived && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30 flex items-center gap-1.5">
-                          <Archive className="w-3 h-3" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 bg-amber-950/60 px-2.5 py-0.5 rounded-full border border-amber-800 flex items-center gap-1.5">
+                          <Archive className="w-3 h-3 text-amber-400" />
                           <span>{data.archive_reasoning || 'Archived'}</span>
                         </span>
                       )}
                     </div>
                     {dob && (
                       <p className="text-xs text-slate-400 flex items-center gap-1.5 font-medium mt-0.5">
-                        <Calendar className="w-3.5 h-3.5 text-emerald-400/80" /> Born <span className="font-bold text-slate-200">{dob}</span> <span className="mx-0.5 text-slate-600">•</span> <span className="text-slate-300">{ageWeeks}</span>
+                        <Calendar className="w-3.5 h-3.5 text-slate-400" /> Born <span className="font-bold text-slate-200">{dob}</span> <span className="mx-0.5 text-slate-600">•</span> <span className="text-slate-300">{ageWeeks}</span>
                       </p>
                     )}
                   </div>
                 </div>
-                <button onClick={requestClose} className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all cursor-pointer shrink-0" title="Close modal">
+                <button
+                  type="button"
+                  onClick={requestClose}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                  title="Close modal"
+                >
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -305,42 +293,40 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                         ))}
                       </div>
 
-                      {/* Section label */}
-                      <div className="skeleton h-3 w-32 rounded-md" />
-
-                      {/* 4 core spec cards */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {[1, 2, 3, 4].map(i => (
-                          <div key={i} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm space-y-2">
-                            <div className="skeleton h-3 w-14 rounded" />
-                            <div className="skeleton h-5 w-20 rounded" />
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* 2 info tiles */}
-                      <div className="grid grid-cols-2 gap-3">
-                        {[1, 2].map(i => (
-                          <div key={i} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm space-y-2">
-                            <div className="skeleton h-3 w-12 rounded" />
-                            <div className="skeleton h-5 w-32 rounded" />
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* 2 snapshot cards */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {[1, 2].map(i => (
-                          <div key={i} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm space-y-3">
-                            <div className="flex justify-between">
-                              <div className="skeleton h-3 w-28 rounded" />
-                              <div className="skeleton h-3 w-10 rounded" />
+                      {/* Core specs card skeleton */}
+                      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4">
+                        <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                          <div className="skeleton h-3.5 w-36 rounded" />
+                          <div className="skeleton h-3 w-20 rounded" />
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                          {[1, 2, 3, 4, 5, 6].map(i => (
+                            <div key={i} className="space-y-1.5">
+                              <div className="skeleton h-3 w-16 rounded" />
+                              <div className="skeleton h-5 w-28 rounded" />
                             </div>
-                            <div className="skeleton h-4 w-full rounded" />
-                            <div className="skeleton h-3 w-3/4 rounded" />
-                            <div className="skeleton h-8 w-full rounded-xl mt-1" />
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Care summary skeleton */}
+                      <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-4">
+                        <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+                          <div className="skeleton h-3.5 w-48 rounded" />
+                          <div className="skeleton h-3 w-24 rounded" />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100 gap-y-4 md:gap-y-0">
+                          <div className="md:pr-6 space-y-2.5">
+                            <div className="skeleton h-3.5 w-28 rounded" />
+                            <div className="skeleton h-4 w-3/4 rounded" />
+                            <div className="skeleton h-3 w-1/2 rounded" />
                           </div>
-                        ))}
+                          <div className="pt-4 md:pt-0 md:pl-6 space-y-2.5">
+                            <div className="skeleton h-3.5 w-28 rounded" />
+                            <div className="skeleton h-4 w-3/4 rounded" />
+                            <div className="skeleton h-3 w-1/2 rounded" />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -422,10 +408,10 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                             : 'text-slate-500 hover:text-slate-800 hover:bg-white/60'
                             }`}
                         >
-                          <Syringe className={`w-3.5 h-3.5 ${activeTab === 'vaccinations' ? 'text-indigo-600' : 'text-slate-400'}`} />
+                          <Syringe className={`w-3.5 h-3.5 ${activeTab === 'vaccinations' ? 'text-emerald-600' : 'text-slate-400'}`} />
                           <span>Vaccines</span>
                           {vaccinations.length > 0 && (
-                            <span className={`px-1.5 py-px rounded-full text-[10px] font-black leading-none ${activeTab === 'vaccinations' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-300/80 text-slate-600'}`}>
+                            <span className={`px-1.5 py-px rounded-full text-[10px] font-black leading-none ${activeTab === 'vaccinations' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-300/80 text-slate-600'}`}>
                               {vaccinations.length}
                             </span>
                           )}
@@ -433,14 +419,15 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                         {/* Growth Program Tab (Batches Only) */}
                         {isBatch && (
                           <button
+                            type="button"
                             onClick={() => setActiveTab('growth')}
                             className={`flex-1 py-2 px-3 rounded-lg text-[11px] font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${activeTab === 'growth'
-                              ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-400/30 shadow-[0_2px_10px_-3px_rgba(251,191,36,0.3)]'
+                              ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5'
                               : 'text-slate-500 hover:text-slate-800 hover:bg-white/60'
                               }`}
                           >
                             <Target className={`w-3.5 h-3.5 ${activeTab === 'growth' ? 'text-amber-600' : 'text-slate-400'}`} />
-                            GROWTH
+                            <span>Growth</span>
                           </button>
                         )}
                       </div>
@@ -448,111 +435,61 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                       {/* TAB 1: OVERVIEW */}
                       {activeTab === 'overview' && (
                         <div className="space-y-4 tab-enter-stagger">
-                          <div>
-                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
-                              <Activity className="w-3.5 h-3.5 text-emerald-600" /> Core Specifications
-                            </h3>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col">
-                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mb-1"><Tag className="w-3.5 h-3.5 text-indigo-500" /> Breed</span>
-                                <span className="text-base font-extrabold text-slate-800 truncate" title={breed}>{breed}</span>
-                              </div>
-                              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col">
-                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mb-1"><Scale className="w-3.5 h-3.5 text-amber-500" /> {isBatch ? 'Avg Weight' : 'Weight'}</span>
-                                <span className={weight != null ? 'text-base font-extrabold text-slate-800' : 'text-sm font-bold text-slate-400'}>
-                                  {weight != null ? `${Number(weight).toFixed(1)} kg` : 'Not weighed'}
-                                </span>
-                              </div>
-                              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col">
-                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mb-1"><MapPin className="w-3.5 h-3.5 text-rose-500" /> Pen Location</span>
-                                <span className="text-base font-extrabold text-slate-800">{penCode ? penCode : 'Unassigned'}</span>
-                              </div>
-                              {isBatch ? (
-                                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col">
-                                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mb-1"><Home className="w-3.5 h-3.5 text-emerald-500" /> Origin</span>
-                                  <span className="text-base font-extrabold text-slate-800 truncate" title={
-                                    sourceOrigin === 'born_in_farm' ? (data.sow_tag ? `Born in Farm · Sow #${data.sow_tag}` : 'Born in Farm')
-                                      : sourceOrigin === 'purchased' ? `Purchased${supplierName ? ` · ${supplierName}` : ''}`
-                                        : `Transferred${supplierName ? ` · ${supplierName}` : ''}`
-                                  }>
-                                    {sourceOrigin === 'born_in_farm' ? 'Born in Farm'
-                                      : sourceOrigin === 'purchased' ? `Purchased${supplierName ? ` · ${supplierName}` : ''}`
-                                        : `Transferred${supplierName ? ` · ${supplierName}` : ''}`}
-                                  </span>
-                                  {sourceOrigin === 'born_in_farm' && data.sow_tag && (
-                                    <span className="text-[10px] text-emerald-600 font-bold mt-0.5 truncate">Mother: #{data.sow_tag}</span>
-                                  )}
-                                  {sourceOrigin !== 'born_in_farm' && arrivalDate && (
-                                    <span className="text-[10px] text-slate-400 font-medium mt-0.5">Arrived {arrivalDate}</span>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col">
-                                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1 mb-1"><Calendar className="w-3.5 h-3.5 text-emerald-500" /> Age</span>
-                                  <span className="text-base font-extrabold text-slate-800">{ageWeeks}</span>
-                                </div>
-                              )}
+                          {/* SECTION 1: CORE SPECIFICATIONS (Semantic 3-Column Layout) */}
+                          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
+                            <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-slate-100">
+                              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                <Activity className="w-3.5 h-3.5 text-emerald-600" /> Core Specifications
+                              </h3>
+                              <span className="text-[11px] font-semibold text-slate-400">
+                                {isBatch ? 'Batch Profile' : `${data.category || 'Swine'} Record`}
+                              </span>
                             </div>
-                          </div>
 
-                          {isBatch ? (
-                            <div className="bg-gradient-to-br from-white to-amber-50/30 rounded-2xl p-5 border border-amber-200/60 shadow-sm space-y-4">
-                              <div className="flex items-center justify-between">
-                                <h3 className="text-xs font-black uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
-                                  <HeartPulse className="w-4 h-4 text-amber-600" /> Batch Vitals & Survivability Snapshot
-                                </h3>
-                                {survivability && (
-                                  <span className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${Number(survivability) >= 90 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                    : Number(survivability) >= 80 ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                      : 'bg-rose-50 text-rose-700 border-rose-200'
-                                    }`}>{survivability}% Survivability</span>
-                                )}
-                              </div>
-                              <div className={`grid gap-3 pt-1 ${soldCount > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'}`}>
-                                <div className="bg-white rounded-xl p-3.5 border border-amber-100/80 shadow-2xs text-center">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Initial Heads</span>
-                                  <span className="text-lg font-black text-slate-700 mt-0.5 block">{totalBornAlive}</span>
-                                </div>
-                                <div className="bg-white rounded-xl p-3.5 border border-amber-100/80 shadow-2xs text-center">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Current Heads</span>
-                                  <span className="text-lg font-black text-indigo-600 mt-0.5 block">{currentCount}</span>
-                                </div>
-                                {soldCount > 0 && (
-                                  <div className="bg-white rounded-xl p-3.5 border border-emerald-100/80 shadow-2xs text-center">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 block">Sold / Marketed</span>
-                                    <span className="text-lg font-black text-emerald-600 mt-0.5 block">{soldCount}</span>
-                                  </div>
-                                )}
-                                <div className="bg-white rounded-xl p-3.5 border border-amber-100/80 shadow-2xs text-center">
-                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Mortality / Loss</span>
-                                  <span className={`text-lg font-black mt-0.5 block ${mortalityLoss > 0 ? 'text-rose-600' : 'text-slate-700'}`}>{mortalityLoss}</span>
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            /* Compact 2-col info strip for individual pigs */
-                            <div className="grid grid-cols-2 gap-3">
-                              {/* Parity tile */}
-                              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col gap-0.5">
-                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
-                                  <Award className="w-3.5 h-3.5 text-indigo-500" />
-                                  {data.category === 'Sow' ? 'Parity' : 'Role'}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-4 gap-x-6">
+                              {/* Row 1 / Col 1: Breed (Identity) */}
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 mb-1">
+                                  <Tag className="w-3.5 h-3.5 text-slate-400" /> Breed
                                 </span>
-                                <span className="text-base font-extrabold text-slate-800">
-                                  {data.category === 'Sow'
-                                    ? (Number(data.parity_count ?? 0) === 0
-                                      ? '0 — not yet farrowed'
-                                      : `#${data.parity_count} — ${data.parity_count === 1 ? '1 litter' : `${data.parity_count} litters`} farrowed`)
-                                    : 'Active Boar'}
+                                <span className="text-sm sm:text-base font-extrabold text-slate-800 truncate" title={breed}>{breed}</span>
+                              </div>
+
+                              {/* Row 1 / Col 2: Pen Location (Housing) */}
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 mb-1">
+                                  <MapPin className="w-3.5 h-3.5 text-slate-400" /> Pen Location
+                                </span>
+                                <span className="text-sm sm:text-base font-extrabold text-slate-800">
+                                  {penCode ? (
+                                    <span className="inline-flex items-center gap-1">
+                                      <span className="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-800 font-mono text-xs font-bold border border-slate-200">
+                                        {penCode}
+                                      </span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 font-medium">Unassigned</span>
+                                  )}
                                 </span>
                               </div>
 
-                              {/* Origin tile */}
-                              <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col gap-0.5">
-                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
-                                  <Home className="w-3.5 h-3.5 text-emerald-500" /> Origin
+                              {/* Row 1 / Col 3: Age & Date of Birth (Life Stage) */}
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 mb-1">
+                                  <Calendar className="w-3.5 h-3.5 text-slate-400" /> Age
                                 </span>
-                                <span className="text-base font-extrabold text-slate-800 truncate" title={
+                                <span className="text-sm sm:text-base font-extrabold text-slate-800">
+                                  {ageWeeks}
+                                </span>
+                                {dob && <span className="text-xs font-medium text-slate-400 mt-0.5">Born {dob}</span>}
+                              </div>
+
+                              {/* Row 2 / Col 1: Origin (Source Lineage) */}
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 mb-1">
+                                  <Home className="w-3.5 h-3.5 text-slate-400" /> Origin
+                                </span>
+                                <span className="text-sm sm:text-base font-extrabold text-slate-800 truncate" title={
                                   sourceOrigin === 'born_in_farm' ? 'Born in Farm'
                                     : sourceOrigin === 'purchased' ? `Purchased${supplierName ? ` · ${supplierName}` : ''}`
                                       : `Transferred${supplierName ? ` · ${supplierName}` : ''}`
@@ -562,126 +499,196 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                       : `Transferred${supplierName ? ` · ${supplierName}` : ''}`}
                                 </span>
                                 {arrivalDate && (
-                                  <span className="text-[11px] text-slate-400 font-medium">Arrived {arrivalDate}</span>
+                                  <span className="text-xs text-slate-400 font-medium mt-0.5">Arrived {arrivalDate}</span>
                                 )}
+                              </div>
+
+                              {/* Row 2 / Col 2: Weight (Physical Vitals) */}
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 mb-1">
+                                  <Scale className="w-3.5 h-3.5 text-slate-400" /> {isBatch ? 'Average Weight' : 'Weight'}
+                                </span>
+                                <span className={weight != null ? 'text-sm sm:text-base font-extrabold text-slate-800' : 'text-sm font-semibold text-slate-400'}>
+                                  {weight != null ? `${Number(weight).toFixed(1)} kg` : 'Not weighed'}
+                                </span>
+                              </div>
+
+                              {/* Row 2 / Col 3: Parity / Role / Mother Sow (Reproduction / Status) */}
+                              {isBatch ? (
+                                <div className="flex flex-col">
+                                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 mb-1">
+                                    <Award className="w-3.5 h-3.5 text-slate-400" /> Mother Sow
+                                  </span>
+                                  <span className="text-sm sm:text-base font-extrabold text-slate-800 truncate">
+                                    {data.sow_tag ? `#${data.sow_tag}` : <span className="text-slate-400 font-medium">None / Unknown</span>}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col">
+                                  <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 mb-1">
+                                    <Award className="w-3.5 h-3.5 text-slate-400" />
+                                    {data.category === 'Sow' ? 'Parity' : 'Role'}
+                                  </span>
+                                  <span className="text-sm sm:text-base font-extrabold text-slate-800">
+                                    {data.category === 'Sow'
+                                      ? (Number(data.parity_count ?? 0) === 0
+                                        ? '0 (Gilt — Not yet farrowed)'
+                                        : `#${data.parity_count} (${data.parity_count === 1 ? '1 litter' : `${data.parity_count} litters`} farrowed)`)
+                                      : 'Active Breeding Boar'}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* BATCH VITALS & SURVIVABILITY (Batches Only) */}
+                          {isBatch && (
+                            <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs space-y-3.5">
+                              <div className="flex items-center justify-between">
+                                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                  <HeartPulse className="w-3.5 h-3.5 text-amber-600" /> Batch Vitals & Survivability
+                                </h3>
+                                {survivability && (
+                                  <span className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${Number(survivability) >= 90 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : Number(survivability) >= 80 ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                                    }`}>{survivability}% Survivability</span>
+                                )}
+                              </div>
+                              <div className={`grid gap-3 ${soldCount > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'}`}>
+                                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Initial Heads</span>
+                                  <span className="text-base font-black text-slate-800 mt-0.5 block">{totalBornAlive}</span>
+                                </div>
+                                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Current Heads</span>
+                                  <span className="text-base font-black text-emerald-600 mt-0.5 block">{currentCount}</span>
+                                </div>
+                                {soldCount > 0 && (
+                                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Sold / Marketed</span>
+                                    <span className="text-base font-black text-blue-600 mt-0.5 block">{soldCount}</span>
+                                  </div>
+                                )}
+                                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Mortality Loss</span>
+                                  <span className={`text-base font-black mt-0.5 block ${mortalityLoss > 0 ? 'text-rose-600' : 'text-slate-800'}`}>{mortalityLoss}</span>
+                                </div>
                               </div>
                             </div>
                           )}
 
-                          {/* Quick Medical & Vaccine Snapshot */}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                            {/* Health Summary Card */}
-                            <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col justify-between">
-                              <div>
-                                <div className="flex items-center justify-between mb-2.5">
-                                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                                    <Stethoscope className="w-3.5 h-3.5 text-emerald-600" /> Latest Health Check
-                                  </span>
-                                  <span className="text-[10px] font-bold text-slate-400">
-                                    {healthLogs.length} total
-                                  </span>
-                                </div>
-                                {healthLogs.length > 0 ? (
-                                  <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-sm font-extrabold text-slate-900 truncate">
-                                        {healthLogs[0].diagnosis || 'General Checkup'}
-                                      </span>
-                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${['sick', 'quarantine'].includes(healthLogs[0].status?.toLowerCase())
-                                        ? 'bg-rose-100 text-rose-800'
-                                        : 'bg-emerald-100 text-emerald-800'
-                                        }`}>
-                                        {healthLogs[0].status || 'healthy'}
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-slate-600 line-clamp-2">
-                                      {healthLogs[0].symptoms && healthLogs[0].symptoms !== 'None observed'
-                                        ? `Symptoms: ${healthLogs[0].symptoms}`
-                                        : healthLogs[0].treatment || 'Routine observation.'}
-                                    </p>
-                                    <p className="text-[10px] text-slate-400 pt-1 flex items-center gap-1">
-                                      <Clock className="w-3 h-3" /> {formatLogDate(healthLogs[0].log_date)} • {healthLogs[0].recorded_by || 'Caretaker'}
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <p className="text-xs text-slate-400 italic py-3">No health logs recorded yet.</p>
-                                )}
-                              </div>
-                              <div className="mt-3.5 flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveTab('health')}
-                                  className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                                >
-                                  View All <ChevronRight className="w-3.5 h-3.5" />
-                                </button>
-                                {!isArchived && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowAddHealth(true)}
-                                    className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                                  >
-                                    <PlusCircle className="w-3.5 h-3.5" /> Add Log
-                                  </button>
-                                )}
-                              </div>
+                          {/* SECTION 2: HEALTH & IMMUNIZATION CARE SUMMARY (Clean Open Split Layout) */}
+                          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
+                            <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-slate-100">
+                              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                <Stethoscope className="w-3.5 h-3.5 text-emerald-600" /> Recent Care & Medical Summary
+                              </h3>
+                              <span className="text-[11px] font-semibold text-slate-400">Latest activity</span>
                             </div>
 
-                            {/* Vaccine Summary Card */}
-                            <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col justify-between">
-                              <div>
-                                <div className="flex items-center justify-between mb-2.5">
-                                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                                    <Syringe className="w-3.5 h-3.5 text-indigo-600" /> Latest Vaccination
-                                  </span>
-                                  <span className="text-[10px] font-bold text-slate-400">
-                                    {vaccinations.length} total
-                                  </span>
-                                </div>
-                                {vaccinations.length > 0 ? (
-                                  <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-sm font-extrabold text-slate-900 truncate">
-                                        {vaccinations[0].vaccine_name}
-                                      </span>
-                                      {vaccinations[0].dosage && (
-                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
-                                          {vaccinations[0].dosage}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className="text-xs text-slate-600">
-                                      Administered on <span className="font-semibold">{formatLogDate(vaccinations[0].administered_date)}</span>
-                                      {vaccinations[0].lot_number && ` (Lot: ${vaccinations[0].lot_number})`}
-                                    </p>
-                                    {vaccinations[0].booster_due_date && (
-                                      <p className={`text-[10px] font-bold pt-1 flex items-center gap-1 ${new Date(vaccinations[0].booster_due_date) < new Date() ? 'text-rose-600' : 'text-emerald-600'
-                                        }`}>
-                                        <Calendar className="w-3 h-3" /> Booster: {formatLogDate(vaccinations[0].booster_due_date)}
-                                      </p>
-                                    )}
+                            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100 gap-y-5 md:gap-y-0">
+                              {/* Health Status Column */}
+                              <div className="flex flex-col justify-between md:pr-6 min-h-[110px]">
+                                <div>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                      <HeartPulse className="w-3.5 h-3.5 text-emerald-600" /> Health Inspection
+                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-400">
+                                      {healthLogs.length} total {healthLogs.length === 1 ? 'log' : 'logs'}
+                                    </span>
                                   </div>
-                                ) : (
-                                  <p className="text-xs text-slate-400 italic py-3">No vaccinations recorded yet.</p>
-                                )}
-                              </div>
-                              <div className="mt-3.5 flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveTab('vaccinations')}
-                                  className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-                                >
-                                  View All <ChevronRight className="w-3.5 h-3.5" />
-                                </button>
-                                {!isArchived && (
+
+                                  {healthLogs.length > 0 ? (
+                                    <div className="space-y-1">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-sm font-extrabold text-slate-900 truncate">
+                                          {healthLogs[0].diagnosis || 'Routine Checkup'}
+                                        </span>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize shrink-0 ${['sick', 'quarantine'].includes(healthLogs[0].status?.toLowerCase())
+                                          ? 'bg-rose-100 text-rose-800'
+                                          : 'bg-emerald-100 text-emerald-800'
+                                        }`}>
+                                          {healthLogs[0].status || 'Healthy'}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-slate-500 line-clamp-1">
+                                        {healthLogs[0].treatment || healthLogs[0].symptoms || 'Normal condition observed.'}
+                                      </p>
+                                      <p className="text-[11px] text-slate-400 pt-1 flex items-center gap-1">
+                                        <Clock className="w-3 h-3" /> {formatLogDate(healthLogs[0].log_date)}
+                                      </p>
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-slate-400 italic py-1 leading-relaxed">
+                                      No health logs recorded yet. {isBatch ? 'Batch' : 'Swine'} is marked as <strong className="font-semibold text-slate-600 capitalize">{status}</strong>.
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="pt-3">
                                   <button
                                     type="button"
-                                    onClick={() => setShowAddVaccine(true)}
-                                    className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                    onClick={() => setActiveTab('health')}
+                                    className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 self-start transition-colors cursor-pointer group"
                                   >
-                                    <PlusCircle className="w-3.5 h-3.5" /> Add Vaccine
+                                    <span>View health history</span>
+                                    <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
                                   </button>
-                                )}
+                                </div>
+                              </div>
+
+                              {/* Vaccination Status Column */}
+                              <div className="flex flex-col justify-between pt-4 md:pt-0 md:pl-6 min-h-[110px]">
+                                <div>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                      <Syringe className="w-3.5 h-3.5 text-emerald-600" /> Immunization
+                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-400">
+                                      {vaccinations.length} total {vaccinations.length === 1 ? 'dose' : 'doses'}
+                                    </span>
+                                  </div>
+
+                                  {vaccinations.length > 0 ? (
+                                    <div className="space-y-1">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-sm font-extrabold text-slate-900 truncate">
+                                          {vaccinations[0].vaccine_name}
+                                        </span>
+                                        {vaccinations[0].dosage && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+                                            {vaccinations[0].dosage}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-slate-500">
+                                        Administered on {formatLogDate(vaccinations[0].administered_date)}
+                                      </p>
+                                      {vaccinations[0].booster_due_date && (
+                                        <p className={`text-[11px] font-bold pt-1 flex items-center gap-1 ${new Date(vaccinations[0].booster_due_date) < new Date() ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                          <Calendar className="w-3 h-3" /> Booster: {formatLogDate(vaccinations[0].booster_due_date)}
+                                        </p>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-slate-400 italic py-1 leading-relaxed">
+                                      No vaccination doses recorded yet. Up to date on farm protocols.
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="pt-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveTab('vaccinations')}
+                                    className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 self-start transition-colors cursor-pointer group"
+                                  >
+                                    <span>View immunization passport</span>
+                                    <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -950,7 +957,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                               <div className="max-w-sm">
                                 <h4 className="text-base font-extrabold text-slate-900">No Health Logs Recorded</h4>
                                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                  This swine profile does not have any recorded medical checkups, illness diagnoses, or treatments yet.
+                                  This {isBatch ? 'piglet batch' : 'swine profile'} does not have any recorded medical checkups, illness diagnoses, or treatments yet.
                                 </p>
                               </div>
                             </div>
@@ -964,18 +971,18 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                           <div className="flex items-center justify-between">
                             <div>
                               <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                                <Syringe className="w-4 h-4 text-indigo-600" /> Vaccination & Immunization Passport
+                                <Syringe className="w-4 h-4 text-emerald-600" /> Vaccination & Immunization History
                               </h3>
                             </div>
                             <div className="flex items-center gap-3">
-                              <span className="text-xs font-bold px-3 py-1 bg-indigo-50 text-indigo-800 rounded-xl border border-indigo-100 hidden sm:inline-block">
+                              <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-700 rounded-xl border border-slate-200 hidden sm:inline-block">
                                 {vaccinations.length} {vaccinations.length === 1 ? 'Dose' : 'Doses'}
                               </span>
                               {!isArchived && (
                                 <button
                                   type="button"
                                   onClick={() => setShowAddVaccine(true)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-sm"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-sm shadow-emerald-600/20"
                                 >
                                   <PlusCircle className="w-3.5 h-3.5" />
                                   Add Vaccine
@@ -986,7 +993,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
 
                           {isLoadingLogs ? (
                             <div className="py-12 flex flex-col items-center justify-center gap-2">
-                              <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
+                              <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" />
                               <span className="text-xs font-bold text-slate-500">Loading immunization records...</span>
                             </div>
                           ) : vaccinations.length > 0 ? (
@@ -995,11 +1002,10 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                 const isBoosterOverdue = vacc.booster_due_date && new Date(vacc.booster_due_date) < new Date();
                                 return (
                                   <div key={vacc.vaccination_id || idx} className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-all relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-indigo-50 to-transparent rounded-bl-full -z-0 opacity-80 pointer-events-none" />
                                     <div className="relative z-10 space-y-3.5">
                                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                                         <div className="flex items-center gap-3">
-                                          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                                          <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
                                             <ShieldCheck className="w-5 h-5" />
                                           </div>
                                           <div>
@@ -1062,179 +1068,223 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                             </div>
                           ) : (
                             <div className="bg-white rounded-3xl p-12 border border-slate-200/80 shadow-sm text-center flex flex-col items-center justify-center space-y-3.5">
-                              <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-inner">
+                              <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-inner">
                                 <Syringe className="w-8 h-8" />
                               </div>
                               <div className="max-w-sm">
                                 <h4 className="text-base font-extrabold text-slate-900">No Vaccinations Recorded</h4>
                                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                  This swine profile has no logged vaccinations or scheduled booster records in the immunization registry.
+                                  This {isBatch ? 'piglet batch' : 'swine profile'} has no logged vaccinations or scheduled booster records in the immunization registry.
                                 </p>
                               </div>
+                              {!isArchived && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddVaccine(true)}
+                                  className="mt-2 flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-sm shadow-emerald-600/20"
+                                >
+                                  <PlusCircle className="w-3.5 h-3.5" /> Record First Vaccine
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
                       )}
 
                       {/* Growth Program Content (Batches Only) */}
-                      {activeTab === 'growth' && isBatch && (
-                        <div className="space-y-4 animate-in fade-in duration-300">
-                          <div className="flex items-center justify-between">
-                            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                              <Target className="w-4 h-4 text-amber-500" />
-                              Program Progress
-                            </h3>
-                          </div>
+                      {activeTab === 'growth' && isBatch && (() => {
+                        const totalTasks = growthTasks.length;
+                        const completedTasks = growthTasks.filter(t => t.status === 'completed').length;
+                        const overdueTasks = growthTasks.filter(t => t.status !== 'completed' && new Date(t.due_date) < new Date()).length;
+                        const pendingTasks = totalTasks - completedTasks;
+                        const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                        const programName = growthTasks[0]?.growth_programs?.name || data.program_name || 'Assigned Growth Program';
 
-                          {growthTasks.length === 0 ? (
-                            <div className="p-10 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 flex flex-col items-center">
-                              <Layers className="w-8 h-8 text-slate-300 mb-3" />
-                              <p className="text-sm font-semibold text-slate-700">No Growth Program</p>
-                              <p className="text-xs text-slate-500 mt-1 max-w-[200px]">This batch has not been assigned to a Growth Program yet.</p>
-                            </div>
-                          ) : (
-                            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-                              <div className="relative pl-6 space-y-6">
-                                <div className="absolute top-2 bottom-2 left-[11px] w-[2px] bg-slate-100 rounded-full" />
-
-                                {growthTasks.map((task, idx) => {
-                                  const isDone = task.status === 'completed';
-                                  const isOverdue = !isDone && new Date(task.due_date) < new Date();
-
-                                  return (
-                                    <div key={task.task_id} className="relative">
-                                      <div className={`absolute -left-[30px] top-1 w-4 h-4 rounded-full border-2 bg-white flex items-center justify-center z-10
-                                        ${isDone ? 'border-emerald-500' : isOverdue ? 'border-rose-500' : 'border-slate-300'}`}
-                                      >
-                                        {isDone && <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />}
+                        return (
+                          <div className="space-y-4 animate-in fade-in duration-300">
+                            {totalTasks === 0 ? (
+                              <div className="bg-white rounded-3xl p-12 border border-slate-200/80 shadow-sm text-center flex flex-col items-center justify-center space-y-3.5">
+                                <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shadow-inner">
+                                  <Layers className="w-8 h-8" />
+                                </div>
+                                <div className="max-w-sm">
+                                  <h4 className="text-base font-extrabold text-slate-900">No Growth Program Assigned</h4>
+                                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                    This batch has not been assigned to a growth schedule or feeding & immunization protocol yet.
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                {/* Program Progress Summary Card */}
+                                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3.5">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                                        <Target className="w-4 h-4" />
                                       </div>
-
-                                      <div className={`flex flex-col ${isDone ? 'opacity-70' : ''}`}>
-                                        <div className="flex items-center justify-between">
-                                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                                            {task.activity_type}
-                                          </span>
-                                          <span className={`text-[11px] font-bold ${isDone ? 'text-emerald-600' : isOverdue ? 'text-rose-600' : 'text-slate-400'}`}>
-                                            {isDone ? 'Completed' : isOverdue ? 'Overdue' : 'Due ' + new Date(task.due_date).toLocaleDateString()}
-                                          </span>
-                                        </div>
-                                        <p className={`text-sm font-bold ${isDone ? 'text-slate-600 line-through decoration-slate-300' : 'text-slate-900'}`}>
-                                          {task.task_name}
-                                        </p>
+                                      <div>
+                                        <h3 className="text-sm font-black text-slate-900">{programName}</h3>
+                                        <p className="text-[11px] text-slate-400 font-medium">Batch Protocol & Milestone Timeline</p>
                                       </div>
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-black text-slate-700 bg-slate-100 px-3 py-1 rounded-lg border border-slate-200">
+                                        {completedTasks} / {totalTasks} Completed ({progressPct}%)
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Progress Bar & Sub-stats */}
+                                  <div className="space-y-1.5">
+                                    <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                                        style={{ width: `${progressPct}%` }}
+                                      />
+                                    </div>
+                                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 pt-0.5">
+                                      <span className="text-emerald-700 font-bold">{completedTasks} Completed</span>
+                                      {overdueTasks > 0 && <span className="text-rose-600 font-bold">{overdueTasks} Overdue</span>}
+                                      <span className="text-slate-600 font-medium">{pendingTasks} Pending</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Milestone Tasks List */}
+                                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3">
+                                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">Milestone Schedule</h4>
+                                    <span className="text-[11px] font-semibold text-slate-400">{totalTasks} scheduled milestones</span>
+                                  </div>
+
+                                  <div className="max-h-[46vh] overflow-y-auto pr-1 space-y-2">
+                                    {growthTasks.map((task, idx) => {
+                                      const isDone = task.status === 'completed';
+                                      const isOverdue = !isDone && new Date(task.due_date) < new Date();
+                                      const formattedDueDate = formatLogDate(task.due_date);
+
+                                      const typeLower = (task.activity_type || '').toLowerCase();
+                                      const typeBadge = typeLower === 'feed'
+                                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                        : typeLower === 'medication'
+                                          ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                          : typeLower === 'procedure'
+                                            ? 'bg-slate-100 text-slate-800 border-slate-200'
+                                            : 'bg-emerald-50 text-emerald-800 border-emerald-200';
+
+                                      return (
+                                        <div
+                                          key={task.task_id || idx}
+                                          className={`flex items-center justify-between gap-3 p-3 rounded-xl transition-all ${
+                                            isDone
+                                              ? 'bg-emerald-50/30 border border-emerald-100/70'
+                                              : isOverdue
+                                                ? 'bg-rose-50/30 border border-rose-100/80'
+                                                : 'bg-slate-50/80 border border-slate-100'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-3 min-w-0">
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
+                                              isDone
+                                                ? 'bg-emerald-100 border-emerald-200 text-emerald-700'
+                                                : isOverdue
+                                                  ? 'bg-rose-100 border-rose-200 text-rose-600'
+                                                  : 'bg-white border-slate-200 text-slate-400'
+                                            }`}>
+                                              {isDone ? (
+                                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                              ) : (
+                                                <Clock className="w-4 h-4" />
+                                              )}
+                                            </div>
+
+                                            <div className="min-w-0">
+                                              <div className="flex items-center gap-2 mb-0.5">
+                                                <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${typeBadge}`}>
+                                                  {task.activity_type || 'Task'}
+                                                </span>
+                                                <span className="text-xs text-slate-400 font-medium">
+                                                  Due {formattedDueDate}
+                                                </span>
+                                              </div>
+                                              <h5 className={`text-xs font-black text-slate-800 truncate ${isDone ? 'line-through text-slate-400' : ''}`}>
+                                                {task.task_name}
+                                              </h5>
+                                            </div>
+                                          </div>
+
+                                          <div className="shrink-0 flex items-center gap-2">
+                                            {isDone ? (
+                                              <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-[10px] uppercase tracking-wider border border-emerald-200 flex items-center gap-1">
+                                                <CheckCircle2 className="w-3 h-3" /> Done
+                                              </span>
+                                            ) : isOverdue ? (
+                                              <span className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 font-bold text-[10px] uppercase tracking-wider border border-rose-200 flex items-center gap-1">
+                                                <AlertCircle className="w-3 h-3" /> Overdue
+                                              </span>
+                                            ) : (
+                                              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold text-[10px] uppercase tracking-wider border border-slate-200">
+                                                Pending
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </>
                   )}
                 </div>{/* end tabContentRef inner */}
               </div>{/* end animated height shell */}
 
-              {/* View Footer */}
-              <div className="px-5 py-3 bg-white border-t border-slate-100 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={requestClose} className="px-5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-200 transition-all cursor-pointer">Close</button>
-
-                  {/* Export Profile Dropdown */}
-                  <div className="relative" ref={exportMenuRef}>
-                    <button
-                      type="button"
-                      onClick={() => setShowExportMenu(v => !v)}
-                      disabled={isExporting}
-                      className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all cursor-pointer shadow-sm"
-                    >
-                      <Download className="w-3.5 h-3.5 text-emerald-600" />
-                      {isExporting ? 'Exporting…' : 'Export Profile'}
-                      <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {showExportMenu && (
-                      <div className="absolute left-0 bottom-full mb-2 w-64 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                        <div className="px-3 py-2 border-b border-slate-50">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Export as PDF</p>
-                        </div>
-                        <div className="p-1">
-                          {/* Full profile */}
-                          <button
-                            onClick={() => {
-                              setShowExportMenu(false);
-                              setIsExporting(true);
-                              try {
-                                exportSwineProfile(data, healthLogs, vaccinations, breedingHistory, { includeHealth: true, includeVaccinations: true, includeBreeding: true });
-                              } finally { setIsExporting(false); }
-                            }}
-                            className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer group"
-                          >
-                            <FileText className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-                            <div>
-                              <p className="text-xs font-bold text-slate-700 group-hover:text-emerald-700">Full Profile</p>
-                            </div>
-                          </button>
-                          {/* Health passport only */}
-                          <button
-                            onClick={() => {
-                              setShowExportMenu(false);
-                              setIsExporting(true);
-                              try {
-                                exportSwineProfile(data, healthLogs, vaccinations, [], { includeHealth: true, includeVaccinations: true, includeBreeding: false });
-                              } finally { setIsExporting(false); }
-                            }}
-                            className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-teal-50 rounded-lg transition-colors cursor-pointer group"
-                          >
-                            <Stethoscope className="w-4 h-4 text-teal-600 mt-0.5 shrink-0" />
-                            <div>
-                              <p className="text-xs font-bold text-slate-700 group-hover:text-teal-700">Health Passport</p>
-                            </div>
-                          </button>
-                          {/* Breeding history only — sow only */}
-                          {data.category === 'Sow' && (
-                            <button
-                              onClick={() => {
-                                setShowExportMenu(false);
-                                setIsExporting(true);
-                                try {
-                                  exportSwineProfile(data, [], [], breedingHistory, { includeHealth: false, includeVaccinations: false, includeBreeding: true });
-                                } finally { setIsExporting(false); }
-                              }}
-                              className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-rose-50 rounded-lg transition-colors cursor-pointer group"
-                            >
-                              <Heart className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
-                              <div>
-                                <p className="text-xs font-bold text-slate-700 group-hover:text-rose-700">Breeding History</p>
-                              </div>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+              {/* View Footer — Standardized */}
+              <div className="px-6 py-4 bg-white border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={requestClose}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
 
                 <div className="flex items-center gap-2.5">
                   {isArchived ? (
                     onUnarchive && (
-                      <button type="button" onClick={() => onUnarchive(data)} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer">
-                        <RotateCcw className="w-3.5 h-3.5" /> Unarchive Record
+                      <button
+                        type="button"
+                        onClick={() => onUnarchive(data)}
+                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm hover:shadow transition-all cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Unarchive Record</span>
                       </button>
                     )
                   ) : (
                     <>
                       {onArchive && (
-                        <button type="button" onClick={() => onArchive(data)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-xs font-bold text-rose-700 transition-all cursor-pointer">
-                          <Archive className="w-3.5 h-3.5" /> Archive
+                        <button
+                          type="button"
+                          onClick={() => onArchive(data)}
+                          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-xs font-bold text-rose-700 transition-colors cursor-pointer"
+                        >
+                          <Archive className="w-3.5 h-3.5" />
+                          <span>Archive</span>
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={switchToEdit}
-                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold transition-all bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 cursor-pointer"
+                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm hover:shadow transition-all cursor-pointer"
                       >
-                        <Edit2 className="w-3.5 h-3.5" /> Edit Record <ChevronRight className="w-3.5 h-3.5" />
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span>Edit Record</span>
                       </button>
                     </>
                   )}

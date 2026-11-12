@@ -24,6 +24,55 @@ function getCreatorDetails(creator) {
   return { name, email, initials };
 }
 
+async function resolveBreedId(breedInput, client = supabaseAdmin) {
+  if (!breedInput || typeof breedInput !== 'string' || !breedInput.trim()) return null;
+  const trimmed = breedInput.trim();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+  if (isUuid) return trimmed;
+
+  // Format to Title Case, preserving crossbreed symbols and designations
+  const formattedName = trimmed
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .map((word) => {
+      const lower = word.toLowerCase();
+      if (lower === 'x' || lower === '×') return '×';
+      if (lower === 'f1') return 'F1';
+      if (lower === 'f2') return 'F2';
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+
+  // 1. Check case-insensitively using ilike
+  const { data: existing } = await client
+    .from('breeds')
+    .select('breed_id, name')
+    .ilike('name', formattedName)
+    .maybeSingle();
+
+  if (existing?.breed_id) return existing.breed_id;
+
+  // 2. Insert new cleaned breed
+  const { data: created, error } = await client
+    .from('breeds')
+    .insert([{ name: formattedName }])
+    .select('breed_id')
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      const { data: fallback } = await client
+        .from('breeds')
+        .select('breed_id')
+        .ilike('name', formattedName)
+        .maybeSingle();
+      return fallback?.breed_id || null;
+    }
+    throw error;
+  }
+  return created?.breed_id || null;
+}
+
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Inactive', 'Cull'];
 
 // GET /api/pigs/breeding-logs – legacy alias forwarding to breeding_logs
@@ -143,14 +192,22 @@ router.get('/api/pigs', async (req, res) => {
     const to = from + pageSize - 1;
 
     let pigData = [], batchData = [];
-    const queryPigs = !category || ['all', 'sow', 'boar'].includes(category);
+    const queryPigs = !category || ['all', 'sow', 'boar', 'breeding'].includes(category);
     const queryBatches = !category || ['all', 'piglet_batch'].includes(category);
+
+    const isHealthWatch = (status || '').toLowerCase() === 'health_watch';
 
     if (queryPigs) {
       // Join breeds so we get the breed name, not just the breed_id UUID stored on pigs.
       let q = supabase.from('pigs').select('*, breeds(name), pens(pen_code)').eq('is_archived', false);
       if (pen && pen !== 'all') q = q.eq('pen_id', pen);
-      if (status && status !== 'all') q = q.eq('status', status.toLowerCase());
+      if (status && status !== 'all') {
+        if (isHealthWatch) {
+          q = q.in('status', ['sick', 'quarantine']);
+        } else {
+          q = q.eq('status', status.toLowerCase());
+        }
+      }
       if (search) q = q.ilike('pig_tag', `%${search}%`);
       const { data } = await q;
       pigData = data || [];
@@ -159,7 +216,13 @@ router.get('/api/pigs', async (req, res) => {
     if (queryBatches) {
       let q = supabase.from('piglet_batches').select('*, breeds(name), pens(pen_code)').eq('is_archived', false);
       if (pen && pen !== 'all') q = q.eq('pen_id', pen);
-      if (status && status !== 'all') q = q.eq('status', status.toLowerCase());
+      if (status && status !== 'all') {
+        if (isHealthWatch) {
+          q = q.in('status', ['sick', 'quarantine']);
+        } else {
+          q = q.eq('status', status.toLowerCase());
+        }
+      }
       if (search) q = q.ilike('batch_tag', `%${search}%`);
       const { data } = await q;
       batchData = data || [];
@@ -219,8 +282,12 @@ router.get('/api/pigs', async (req, res) => {
 
     let merged = [...unifiedPigs, ...unifiedBatches];
     if (category && category !== 'all') {
-      const map = { sow: 'Sow', boar: 'Boar', piglet_batch: 'Piglet Batch' };
-      merged = merged.filter(i => i.category === map[category]);
+      if (category === 'breeding') {
+        merged = merged.filter(i => i.category === 'Sow' || i.category === 'Boar');
+      } else {
+        const map = { sow: 'Sow', boar: 'Boar', piglet_batch: 'Piglet Batch' };
+        merged = merged.filter(i => i.category === map[category]);
+      }
     }
     if (breed && breed !== 'all') {
       merged = merged.filter(i => (i.breed_id && i.breed_id === breed) || (i.breed && i.breed.toLowerCase() === breed.toLowerCase()));
@@ -248,7 +315,7 @@ router.get('/api/pigs', async (req, res) => {
 // GET /api/pigs/archived – fetch archived pig & batch records
 router.get('/api/pigs/archived', async (req, res) => {
   try {
-    const { search, category, breed, pen, page, limit } = req.query;
+    const { search, category, breed, pen, status, page, limit } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
     const pageSize = parseInt(limit) || 10;
     const from = (pageNum - 1) * pageSize;
@@ -312,11 +379,26 @@ router.get('/api/pigs/archived', async (req, res) => {
 
     let merged = [...unifiedPigs, ...unifiedBatches];
     if (category && category !== 'all') {
-      const map = { sow: 'Sow', boar: 'Boar', piglet_batch: 'Piglet Batch' };
-      merged = merged.filter(i => i.category === map[category]);
+      if (category === 'breeding') {
+        merged = merged.filter(i => i.category === 'Sow' || i.category === 'Boar');
+      } else {
+        const map = { sow: 'Sow', boar: 'Boar', piglet_batch: 'Piglet Batch' };
+        merged = merged.filter(i => i.category === map[category]);
+      }
     }
     if (breed && breed !== 'all') {
       merged = merged.filter(i => (i.breed_id && i.breed_id === breed) || (i.breed && i.breed.toLowerCase() === breed.toLowerCase()));
+    }
+    if (status && status !== 'all') {
+      const s = status.toLowerCase();
+      merged = merged.filter(i => {
+        const r = (i.archive_reasoning || '').toLowerCase();
+        if (s === 'sold') return r.includes('sold');
+        if (s === 'culled') return r.includes('cull');
+        if (s === 'mortality') return r.includes('mortal') || r.includes('died') || r.includes('death') || r.includes('loss');
+        if (s === 'transferred') return r.includes('transfer');
+        return (i.status || '').toLowerCase() === s;
+      });
     }
 
     // Default Order for Archived: Most Recently Archived First (archived_at DESC, then created_at DESC)
@@ -457,35 +539,8 @@ router.post('/api/pigs', async (req, res) => {
   try {
     const { tagNumber, dateOfBirth, breed, weight, penId, status, gender, creator, sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date } = req.body;
     const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
-    let finalBreedId = breed;
-
-    // 1. Check if 'breed' is a UUID or a custom string
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(breed);
-
-    if (!isUuid) {
-      // It's a new breed name! Let's insert it into the breeds table.
-      const { data: newBreed, error: breedError } = await supabaseAdmin
-        .from('breeds')
-        .insert([{ name: breed }])
-        .select()
-        .single();
-
-      if (breedError) {
-        // If it already exists but we didn't have the UUID, fetch it
-        if (breedError.code === '23505') {
-          const { data: existingBreed } = await supabaseAdmin
-            .from('breeds')
-            .select('breed_id')
-            .eq('name', breed)
-            .single();
-          finalBreedId = existingBreed.breed_id;
-        } else {
-          throw breedError;
-        }
-      } else {
-        finalBreedId = newBreed.breed_id;
-      }
-    }
+    // 1. Resolve breed (UUID or formatted custom string, case-insensitive)
+    const finalBreedId = await resolveBreedId(breed, supabaseAdmin);
 
     // 2. Confirm the selected pen still has room
     if (penId) {
@@ -542,7 +597,7 @@ router.post('/api/pigs', async (req, res) => {
         pig_tag: tagNumber,
         date_of_birth: dateOfBirth,
         breed_id: finalBreedId, // Use the UUID
-        weight: parseFloat(weight),
+        weight: (weight !== undefined && weight !== null && weight !== '' && !isNaN(parseFloat(weight))) ? parseFloat(weight) : null,
         pen_id: penId,
         status: status.toLowerCase(),
         gender: gender,
@@ -652,25 +707,8 @@ router.post('/api/pigs/batch', async (req, res) => {
       }
     }
 
-    // Resolve breed name → breed_id (upsert if new)
-    let resolvedBreedId = null;
-    if (breed && breed.trim()) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(breed.trim());
-      if (isUuid) {
-        resolvedBreedId = breed.trim();
-      } else {
-        const { data: existingBreed } = await supabaseAdmin
-          .from('breeds').select('breed_id').eq('name', breed.trim()).single();
-        if (existingBreed) {
-          resolvedBreedId = existingBreed.breed_id;
-        } else {
-          const { data: newBreed, error: breedErr } = await supabaseAdmin
-            .from('breeds').insert([{ name: breed.trim() }]).select().single();
-          if (breedErr) throw breedErr;
-          resolvedBreedId = newBreed.breed_id;
-        }
-      }
-    }
+    // Resolve breed name → breed_id (upsert if new, case-insensitive)
+    const resolvedBreedId = await resolveBreedId(breed, supabaseAdmin);
 
     const record = {
       batch_tag: resolvedTag,
@@ -757,29 +795,8 @@ router.put('/api/pigs/:id', async (req, res) => {
       }
     }
 
-    // Resolve breed name → UUID
-    let finalBreedId = breed;
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(breed);
-
-    if (!isUuid) {
-      const { data: existingBreed } = await supabaseAdmin
-        .from('breeds')
-        .select('breed_id')
-        .eq('name', breed)
-        .maybeSingle();
-
-      if (existingBreed) {
-        finalBreedId = existingBreed.breed_id;
-      } else {
-        const { data: newBreed, error: breedError } = await supabaseAdmin
-          .from('breeds')
-          .insert([{ name: breed }])
-          .select()
-          .single();
-        if (breedError) throw breedError;
-        finalBreedId = newBreed.breed_id;
-      }
-    }
+    // Resolve breed name → UUID (upsert if new, case-insensitive)
+    const finalBreedId = await resolveBreedId(breed, supabaseAdmin);
 
     if (checkIsBatch) {
       const updatePayload = {
@@ -910,7 +927,7 @@ router.put('/api/pigs/:id', async (req, res) => {
       pig_tag: tagNumber,
       date_of_birth: dateOfBirth || null,
       breed_id: finalBreedId,
-      weight: parseFloat(weight),
+      weight: (weight !== undefined && weight !== null && weight !== '' && !isNaN(parseFloat(weight))) ? parseFloat(weight) : null,
       pen_id: penId,
       status: (status || '').toLowerCase(),
     };
@@ -1223,21 +1240,7 @@ router.put('/api/pigs/batch/:id', async (req, res) => {
       }
     }
 
-    let finalBreedId = breed;
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(breed);
-
-    if (!isUuid) {
-      const { data: existingBreed } = await supabaseAdmin
-        .from('breeds').select('breed_id').eq('name', breed).maybeSingle();
-      if (existingBreed) {
-        finalBreedId = existingBreed.breed_id;
-      } else {
-        const { data: newBreed, error: breedError } = await supabaseAdmin
-          .from('breeds').insert([{ name: breed }]).select().single();
-        if (breedError) throw breedError;
-        finalBreedId = newBreed.breed_id;
-      }
-    }
+    const finalBreedId = await resolveBreedId(breed, supabaseAdmin);
 
     const updatePayload = {
       batch_tag: resolvedTag.trim(),
