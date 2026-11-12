@@ -52,7 +52,7 @@ export default function ArchiveBreedingLogModal({ isOpen, onClose, onConfirm, so
 
   return createPortal(
     <div 
-      className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 sm:p-0 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
+      className={`fixed inset-0 lg:left-64 z-[60] flex items-center justify-center p-4 sm:p-0 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
       onMouseDown={(e) => { if (e.target === e.currentTarget && !isArchiving) requestClose(); }}
     >
 

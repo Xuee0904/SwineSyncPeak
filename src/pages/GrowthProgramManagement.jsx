@@ -1250,7 +1250,7 @@ function EnrolledBatchesModal({ program, onClose, onUpdated }) {
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
+      className={`fixed inset-0 lg:left-64 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
       onClick={(e) => { if (e.target === e.currentTarget) requestClose(); }}
     >
       <style>{`
@@ -1576,7 +1576,7 @@ function ArchiveConfirmModal({ program, onCancel, onSuccess }) {
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
+      className={`fixed inset-0 lg:left-64 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
       onClick={(e) => {
         if (e.target === e.currentTarget && !loading) requestClose();
       }}
@@ -1706,7 +1706,7 @@ function RestoreConfirmModal({ program, onCancel, onSuccess }) {
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
+      className={`fixed inset-0 lg:left-64 z-[220] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
       onClick={(e) => {
         if (e.target === e.currentTarget && !loading) requestClose();
       }}

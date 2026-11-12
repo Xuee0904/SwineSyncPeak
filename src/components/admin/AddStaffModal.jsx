@@ -146,7 +146,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
+      className={`fixed inset-0 lg:left-64 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
       role="dialog"
       aria-modal="true"
       onClick={(e) => e.target === e.currentTarget && requestClose()}

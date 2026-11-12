@@ -13,7 +13,7 @@ import { Archive } from 'lucide-react';
  *   const { confirmDialog, openConfirm } = useConfirmDialog();
  *   // Trigger:
  *   openConfirm({ title, subtitle, message, icon, confirmLabel, onConfirm });
- *   // Pass leftOffset to skip the sidebar: leftOffset defaults to 'lg:left-60'
+ *   // Pass leftOffset to skip the sidebar: leftOffset defaults to 'lg:left-64'
  *   // Render anywhere in your tree:
  *   {confirmDialog}
  */
@@ -65,8 +65,8 @@ export default function useConfirmDialog() {
   const confirmDialog = state
     ? createPortal(
         <div
-          // 'leftOffset' lets callers skip past a sidebar. Default = lg:left-60 (240px).
-          className={`fixed top-0 right-0 bottom-0 z-[200] flex items-center justify-center ${state.leftOffset ?? 'left-0 lg:left-60'}`}
+          // 'leftOffset' lets callers skip past a sidebar. Default = lg:left-64 (240px).
+          className={`fixed top-0 right-0 bottom-0 z-[200] flex items-center justify-center ${state.leftOffset ?? 'left-0 lg:left-64'}`}
           style={{ backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', backgroundColor: 'rgba(15,23,42,0.40)' }}
           onClick={(e) => { if (e.target === e.currentTarget && !state.isLoading) close(); }}
         >

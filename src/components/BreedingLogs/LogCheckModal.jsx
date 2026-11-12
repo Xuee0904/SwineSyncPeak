@@ -106,7 +106,7 @@ export default function LogCheckModal({ isOpen, onClose, onSaved, loggedInUser, 
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
+      className={`fixed inset-0 lg:left-64 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
       onMouseDown={(e) => { if (e.target === e.currentTarget && !submitting) handleClose(); }}
     >
       <div

@@ -90,7 +90,7 @@ export default function EditStaffModal({ isOpen, onClose, staff, onEditSuccess, 
 
   return createPortal(
     <div
-      className={`fixed inset-0 lg:left-60 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
+      className={`fixed inset-0 lg:left-64 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
       onClick={(e) => e.target === e.currentTarget && requestClose()}
       role="dialog"
     >
