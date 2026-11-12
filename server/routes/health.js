@@ -46,7 +46,7 @@ router.get('/api/health-logs', async (req, res) => {
   try {
     const { pig_id, batch_id, archived } = req.query;
 
-    let dbQuery = supabase.from('health_logs').select('*, pigs(pig_tag), piglet_batches(batch_tag), inventory_items(item_id, item_name, unit_of_measure, category)');
+    let dbQuery = supabase.from('health_logs').select('*, pigs(pig_tag, pens(pen_code)), piglet_batches(batch_tag, current_count, total_born_alive, pens(pen_code)), inventory_items(item_id, item_name, unit_of_measure, category)');
     if (pig_id) dbQuery = dbQuery.eq('pig_id', pig_id);
     if (batch_id) dbQuery = dbQuery.eq('batch_id', batch_id);
 
@@ -297,7 +297,7 @@ router.get('/api/vaccination-records', async (req, res) => {
   try {
     const { pig_id, batch_id, archived } = req.query;
 
-    let dbQuery = supabase.from('vaccination_records').select('*, pigs(pig_tag), piglet_batches(batch_tag), inventory_items(item_id, item_name, unit_of_measure, category)');
+    let dbQuery = supabase.from('vaccination_records').select('*, pigs(pig_tag, pens(pen_code)), piglet_batches(batch_tag, pens(pen_code)), inventory_items(item_id, item_name, unit_of_measure, category)');
     if (pig_id) dbQuery = dbQuery.eq('pig_id', pig_id);
     if (batch_id) dbQuery = dbQuery.eq('batch_id', batch_id);
 

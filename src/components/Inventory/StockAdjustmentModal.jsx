@@ -16,7 +16,7 @@ import {
 } from "./inventoryUtils";
 
 function getDefaultReason(type, category) {
-  if (type === "in") return "Purchase/Delivery";
+  if (type === "in") return "Store Purchase";
   const cat = (category || "").toLowerCase();
   if (cat === "medical" || cat === "medication" || cat === "vaccines") return "Used in treatment";
   if (cat === "feed" || cat === "supplements") return "Used in feeding";
@@ -188,9 +188,9 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
 
       if (updateError) throw updateError;
 
-      // 2. Link financial expense if this is a Purchase/Delivery restock
+      // 2. Link financial expense if this is a Store Purchase restock
       let purchaseId = null;
-      if (form.type === "in" && form.reason === "Purchase/Delivery") {
+      if (form.type === "in" && (form.reason === "Store Purchase" || form.reason === "Purchase/Delivery" || form.reason === "Purchase")) {
         try {
           const unitCost = Number(item.unit_cost) || 0;
           const totalExp = Number((unitCost * qty).toFixed(2));
@@ -201,10 +201,10 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
             .insert({
               category: item.category || "Supplies",
               amount: totalExp > 0 ? totalExp : 0,
-              supplier_name: "Inventory Delivery",
+              supplier_name: `${item.item_name || "Supply"} Store Purchase`,
               payment_method: "Cash",
               date_incurred: new Date().toISOString().split("T")[0],
-              description: `Restocked ${qtyLabel} of ${item.item_name}`,
+              description: `Purchased ${qtyLabel} of ${item.item_name}`,
               receipt_no: txCode,
             })
             .select()
@@ -297,7 +297,7 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
         loggedInUser,
         event_title: form.type === "in" ? "Inventory Restocked" : "Inventory Stock Used/Adjusted",
         event_desc: `${item.item_name}: ${form.type === "in" ? "+" : "-"}${qtyLabel} (${form.reason}${feedTargetDesc ? ` - ${feedTargetDesc}` : ""}) → ${fmt(newRemaining)} remaining.`,
-        user_bg_color: form.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700",
+        user_bg_color: form.type === "in" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700",
       });
 
       toast.success(
@@ -320,6 +320,7 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
 
       // Notify parent to refresh in background
       if (onSaved) onSaved(true);
+      window.dispatchEvent(new CustomEvent('swinesync_inventory_updated'));
     } catch (err) {
       console.error(err);
       setErrors(er => ({ ...er, submit: err.message || "Failed to update stock." }));
@@ -599,7 +600,7 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
                   <option value="" >Select reason...</option>
                   {form.type === "in" ? (
                     <>
-                      <option value="Purchase/Delivery">Purchase</option>
+                      <option value="Store Purchase">Store Purchase</option>
                       <option value="Return/Refund">Return / Refund</option>
                       <option value="Correction">Stock Correction</option>
                       <option value="Transfer In">Transfer In</option>

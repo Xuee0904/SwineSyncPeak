@@ -6,7 +6,7 @@ import toast from '../../utils/toast';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Cull'];
-const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Quarantine'];
+const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Sick', 'Quarantine'];
 
 const SOURCE_OPTIONS = [
   { value: 'born_in_farm', label: 'Born in Farm', hint: 'Internal breeding cycle' },
@@ -456,8 +456,8 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
 
             <div
               className={`grid transition-all duration-300 ease-in-out ${form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
-                  ? 'grid-rows-[1fr] opacity-100 pt-3'
-                  : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
+                ? 'grid-rows-[1fr] opacity-100 pt-3'
+                : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
                 }`}
             >
               <div className="overflow-hidden">
@@ -575,8 +575,8 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
 
           <div
             className={`grid transition-all duration-300 ease-in-out ${form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
-                ? 'grid-rows-[1fr] opacity-100 pt-3'
-                : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
+              ? 'grid-rows-[1fr] opacity-100 pt-3'
+              : 'grid-rows-[0fr] opacity-0 pt-0 pointer-events-none'
               }`}
           >
             <div className="overflow-hidden">

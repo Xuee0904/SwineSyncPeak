@@ -90,10 +90,13 @@ router.get('/api/pigs/stats', async (req, res) => {
     const pigsCount = pigsList.length;
     const batchesCount = batchesList.length;
 
-    const getBatchHeads = (b) =>
-      b.current_count !== null && b.current_count !== undefined
-        ? Number(b.current_count)
-        : Number(b.total_born_alive || 0);
+    const getBatchHeads = (b) => {
+      const c = Number(b.current_count);
+      if (!isNaN(c) && c > 0) return c;
+      const t = Number(b.total_born_alive);
+      if (!isNaN(t) && t > 0) return t;
+      return 1;
+    };
 
     const pigletCount = batchesList.reduce((sum, b) => sum + getBatchHeads(b), 0);
     const sickBatchHeads = batchesList
@@ -1091,16 +1094,21 @@ router.patch('/api/pigs/:id/unarchive', async (req, res) => {
       if (pen) {
         const occ = await getPenOccupancy(batchCheck.pen_id);
         const occupied = occ.total || 0;
-        const incomingCount = batchCheck.current_count ?? batchCheck.total_born_alive ?? 1;
+        const incomingCount = (batchCheck.current_count && batchCheck.current_count > 0) ? batchCheck.current_count : (batchCheck.total_born_alive || 1);
         if (occupied + incomingCount > (pen.max_capacity ?? 0)) {
           return res.status(400).json({ error: `Cannot restore: Pen ${pen.pen_code} only has ${(pen.max_capacity ?? 0) - occupied} slot(s) available, but this batch has ${incomingCount} piglets.` });
         }
       }
     }
 
+    const batchUpdatePayload = { ...updatePayload };
+    if (!batchCheck.current_count || batchCheck.current_count <= 0) {
+      batchUpdatePayload.current_count = batchCheck.total_born_alive > 0 ? batchCheck.total_born_alive : 1;
+    }
+
     const { data: batchData, error: batchError } = await supabaseAdmin
       .from('piglet_batches')
-      .update(updatePayload)
+      .update(batchUpdatePayload)
       .eq('batch_id', id)
       .select();
 

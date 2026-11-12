@@ -169,7 +169,7 @@ router.get('/api/breeding-logs', async (req, res) => {
     if (pigIds.length > 0) {
       const { data: pigsData, error: pigsError } = await db
         .from('pigs')
-        .select('pig_id, pig_tag, pen_id, parity_count, breeds(name)')
+        .select('pig_id, pig_tag, pen_id, parity_count, breeds(name), pens(pen_code)')
         .in('pig_id', pigIds);
 
       if (!pigsError && pigsData) {
@@ -229,6 +229,7 @@ router.get('/api/breeding-logs', async (req, res) => {
         breeding_id: b.breeding_id,
         sow_id: b.sow_id,
         pen_id: sowObj?.pen_id || null,
+        pen_code: sowObj?.pens?.pen_code || null,
         boar_id: b.boar_id,
         tag: sowTag,
         parity,

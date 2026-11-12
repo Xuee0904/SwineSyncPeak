@@ -236,7 +236,7 @@ router.get('/api/growth/analytics', async (req, res) => {
     const analytics = batches.map(batch => {
       const dob = new Date(batch.date_of_birth);
       const ageInDays = Math.max(0, Math.floor((today - dob) / (1000 * 60 * 60 * 24)));
-      
+
       const program = batch.growth_programs;
       const targetWeight = program.target_weight || 105;
 
@@ -248,14 +248,14 @@ router.get('/api/growth/analytics', async (req, res) => {
         { day: 90, weight: 50.0 },
         { day: 150, weight: 105.0 }
       ];
-      
+
       let rawEstWeight = 1.5;
       if (ageInDays >= 150) {
         rawEstWeight = 105.0 + ((ageInDays - 150) * 0.85); // 850g ADG in late finisher
       } else {
         for (let i = 0; i < milestones.length - 1; i++) {
           const start = milestones[i];
-          const end = milestones[i+1];
+          const end = milestones[i + 1];
           if (ageInDays >= start.day && ageInDays < end.day) {
             const fraction = (ageInDays - start.day) / (end.day - start.day);
             rawEstWeight = start.weight + fraction * (end.weight - start.weight);
@@ -263,18 +263,18 @@ router.get('/api/growth/analytics', async (req, res) => {
           }
         }
       }
-      
+
       // Scale based on the specific program's target weight
       const scaleFactor = targetWeight / 105.0;
       const estimatedCurrentWeight = rawEstWeight * scaleFactor;
-      
+
       let cumulativeFeed = 0;
       if (program.growth_program_guidelines) {
-        const sorted = [...program.growth_program_guidelines].sort((a,b) => a.days_after_birth - b.days_after_birth);
+        const sorted = [...program.growth_program_guidelines].sort((a, b) => a.days_after_birth - b.days_after_birth);
         for (let i = 0; i < sorted.length; i++) {
           const g = sorted[i];
           if (g.activity_type !== 'FEED') continue;
-          
+
           const startDay = g.days_after_birth;
           if (startDay > ageInDays) break;
 
@@ -293,7 +293,7 @@ router.get('/api/growth/analytics', async (req, res) => {
       // DSS Alerts
       const alerts = [];
       let status = 'on-track';
-      
+
       if (estimatedCurrentWeight >= targetWeight) {
         alerts.push(`Target Reached: Batch has achieved its target weight of ${targetWeight}kg (Estimated: ${estimatedCurrentWeight.toFixed(1)}kg).`);
         status = 'alert';
@@ -349,8 +349,8 @@ router.post('/api/growth/programs', async (req, res) => {
     // 1. Insert the program header
     const { data: program, error: programErr } = await db
       .from('growth_programs')
-      .insert({ 
-        name: name.trim(), 
+      .insert({
+        name: name.trim(),
         description: description?.trim() || null,
         target_weight: target_weight ? parseFloat(target_weight) : null
       })
@@ -385,7 +385,7 @@ router.post('/api/growth/programs', async (req, res) => {
       event_title: 'Growth Program Created',
       event_desc: `Growth program template "${name.trim()}" was created.`,
       status: 'SUCCESS',
-    }).then(() => {}).catch(() => {}); // non-blocking
+    }).then(() => { }).catch(() => { }); // non-blocking
 
     res.status(201).json({ success: true, program_id: program.program_id });
   } catch (error) {
@@ -408,8 +408,8 @@ router.put('/api/growth/programs/:id', async (req, res) => {
     // 1. Update the program header
     const { error: updateErr } = await db
       .from('growth_programs')
-      .update({ 
-        name: name.trim(), 
+      .update({
+        name: name.trim(),
         description: description?.trim() || null,
         target_weight: target_weight ? parseFloat(target_weight) : null
       })
@@ -488,7 +488,7 @@ router.put('/api/growth/programs/:id', async (req, res) => {
       event_title: 'Growth Program Updated',
       event_desc: `Growth program template "${name.trim()}" was updated.`,
       status: 'SUCCESS',
-    }).then(() => {}).catch(() => {});
+    }).then(() => { }).catch(() => { });
 
     res.json({ success: true });
   } catch (error) {
@@ -521,10 +521,10 @@ router.get('/api/growth/unlinked-guidelines', async (req, res) => {
 
     if (error) throw error;
 
-    const valid = (data || []).filter(g => 
-      g.task_name && 
-      g.task_name.trim() !== '' && 
-      g.activity_type !== 'PROCEDURE' && 
+    const valid = (data || []).filter(g =>
+      g.task_name &&
+      g.task_name.trim() !== '' &&
+      g.activity_type !== 'PROCEDURE' &&
       g.activity_type !== 'VACCINATION'
     );
     res.json(valid);
@@ -622,7 +622,7 @@ router.patch('/api/growth/programs/:id/archive', async (req, res) => {
       event_title: 'Growth Program Archived',
       event_desc: `Growth program template "${program.name}" was archived/deleted.`,
       status: 'SUCCESS',
-    }).then(() => {}).catch(() => {});
+    }).then(() => { }).catch(() => { });
 
     res.json({ success: true });
   } catch (error) {
@@ -661,7 +661,7 @@ router.patch('/api/growth/programs/:id/restore', async (req, res) => {
       event_title: 'Growth Program Restored',
       event_desc: `Growth program template "${program.name}" was restored to active status.`,
       status: 'SUCCESS',
-    }).then(() => {}).catch(() => {});
+    }).then(() => { }).catch(() => { });
 
     res.json({ success: true });
   } catch (error) {
@@ -1038,7 +1038,7 @@ router.get('/api/growth/active-feed-batches', async (req, res) => {
       const upcomingMilestones = ((b.program?.guidelines) || [])
         .filter(g => {
           const type = (g.activity_type || '').toUpperCase();
-          if (type !== 'VACCINATION' && type !== 'SUPPLEMENT' && type !== 'MEDICATION') return false;
+          if (type !== 'VACCINATION' && type !== 'SUPPLEMENT' && type !== 'MEDICATION' && type !== 'PROCEDURE') return false;
           const daysAway = g.days_after_birth - ageInDays;
           if (daysAway < 0 || daysAway > 14) return false;
           if (g.guideline_id && completedMilestoneKeys.has(`${b.batch_id}::${g.guideline_id}`)) return false;
@@ -1062,6 +1062,8 @@ router.get('/api/growth/active-feed-batches', async (req, res) => {
         batch_tag: b.batch_tag,
         current_count: count,
         age_in_days: ageInDays,
+        status: b.status || null,
+        date_of_birth: b.date_of_birth || null,
         pen_code: b.pen?.pen_code || null,
         program_id: b.program?.program_id || b.assigned_program_id,
         program_name: b.program?.name || null,
@@ -1228,7 +1230,7 @@ router.get('/api/growth/batches', async (req, res) => {
       const stages = programGuidelines.map(g => {
         // Did we log an activity for this guideline?
         const isLogged = batchLogs.some(l => l.guideline_id === g.guideline_id);
-        
+
         let state = 'upcoming';
         if (isLogged) {
           state = 'done';
@@ -1252,15 +1254,15 @@ router.get('/api/growth/batches', async (req, res) => {
       // Calculate total feed given vs target
       const feedGuidelines = programGuidelines.filter(g => g.activity_type === 'FEED');
       let targetFeedKg = 0;
-      
+
       // Calculate how much they should have eaten by now
       for (let i = 0; i < feedGuidelines.length; i++) {
         const currentPhase = feedGuidelines[i];
         const nextPhase = feedGuidelines[i + 1];
-        
+
         const startDay = currentPhase.days_after_birth;
         const endDay = nextPhase ? Math.min(nextPhase.days_after_birth, ageInDays) : ageInDays;
-        
+
         if (ageInDays >= startDay) {
           const daysInPhase = endDay - startDay;
           targetFeedKg += (daysInPhase * currentPhase.daily_consumption_per_head * batch.current_count);
@@ -1276,7 +1278,7 @@ router.get('/api/growth/batches', async (req, res) => {
       let status = 'on-track';
       let statusLabel = 'On Track';
       let alertNote = null;
-      
+
       const hasFlagged = stages.some(s => s.state === 'flagged');
       if (hasFlagged) {
         status = 'alert';
@@ -1456,7 +1458,7 @@ router.post('/api/growth/logs', async (req, res) => {
             .from('growth_program_guidelines')
             .update({ item_id: resolvedItemId })
             .eq('guideline_id', guideline_id)
-            .catch(() => {});
+            .catch(() => { });
         }
       }
     }
