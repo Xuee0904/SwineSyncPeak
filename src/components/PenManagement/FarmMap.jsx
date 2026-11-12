@@ -144,37 +144,44 @@ function Tooltip({ slot, pen, building }) {
   const section = SECTIONS[getSectionKey(pen.section)];
   const below = slot.y < 1.5;
 
+  const occ = Number(pen.occupancy || 0);
+  const cap = Number(pen.capacity || 0);
+  const freeSlots = Math.max(0, cap - occ);
+
   const canvasW = building ? building.width * UNIT.x + MARGIN * 2 : 300;
-  const tooltipW = 192; // px (w-48)
   const centerX = r.left + r.width / 2;
-  // Clamp tooltip center so it never bleeds off the left or right canvas boundaries
-  const clampedX = Math.max(tooltipW / 2 + 8, Math.min(centerX, canvasW - tooltipW / 2 - 8));
+  const halfW = 110;
+  // Clamp tooltip center so it never bleeds off canvas edges
+  const clampedX = Math.max(halfW + 8, Math.min(centerX, canvasW - halfW - 8));
 
   return (
     <div
-      className="absolute z-50 pointer-events-none w-48 animate-in fade-in zoom-in-95 duration-100"
+      className="absolute z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-100 whitespace-nowrap"
       style={{
         left: clampedX,
-        top: below ? r.top + r.height + 8 : r.top - 8,
+        top: below ? r.top + r.height + 6 : r.top - 6,
         transform: `translate(-50%, ${below ? "0" : "-100%"})`,
       }}
     >
-      <div className="rounded-xl bg-slate-900/95 backdrop-blur-sm text-white shadow-2xl border border-slate-700/60 p-3 space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-black tracking-tight">{slot.code}</span>
-          <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-slate-300">
-            <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} /> {status.label}
-          </span>
-        </div>
-        <p className="text-[10px] text-slate-300 font-medium">{section?.label || pen.section}</p>
+      <div className="rounded-lg bg-slate-900/95 backdrop-blur-sm text-white shadow-xl border border-slate-700/60 px-2.5 py-1 text-xs flex items-center gap-1.5">
+        <span className={`w-2 h-2 rounded-full shrink-0 ${status.dot}`} />
+        <span className="font-bold text-white">{slot.code}</span>
+        <span className="text-slate-500">•</span>
+        <span className="font-semibold text-slate-300">{section?.label || pen.section}</span>
+        <span className="text-slate-500">•</span>
         {pen.is_archived ? (
-          <p className="text-[10px] text-slate-200 leading-snug">
-            <span className="font-bold">Reason:</span> {pen.archive_reason || "Not specified"}
-          </p>
+          <span className="text-amber-300 font-medium truncate max-w-[160px]">
+            {pen.archive_reason || "Out of Service"}
+          </span>
+        ) : occ === 0 ? (
+          <span className="text-emerald-400 font-medium">Vacant ({cap} free)</span>
+        ) : occ >= cap ? (
+          <span className="text-rose-400 font-bold">Full ({occ}/{cap})</span>
         ) : (
-          <p className="text-[10px] text-slate-200">
-            <span className="font-bold text-white">{pen.occupancy}</span> / {pen.capacity} head · {Math.max(0, pen.capacity - pen.occupancy)} slot(s) left
-          </p>
+          <span className="text-slate-300">
+            <strong className="text-white font-bold">{occ}/{cap}</strong>
+            <span className="text-slate-400 ml-1">({freeSlots} free)</span>
+          </span>
         )}
       </div>
     </div>

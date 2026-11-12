@@ -23,7 +23,7 @@ import {
 import {
   Sparkles, Database, ArrowUpRight, ChevronRight,
   AlertTriangle,
-  Bell, ChevronLeft, Settings, Menu,
+  ChevronLeft, Menu,
   Users, HeartPulse, Grid3X3, ArrowRight,
   CheckCircle2, RefreshCw, Calendar, Check,
   Dna, TrendingUp, Activity, MapPin, Plus, Syringe,
@@ -751,16 +751,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
     return upcoming.length > 0 ? upcoming.slice(0, 5) : currentMonthEvents.slice(0, 5);
   }, [currentMonthEvents, selectedDay, calMonth]);
 
-  const getInitialsSafe = () => {
-    if (!loggedInUser) return '?';
-    if (typeof loggedInUser === 'string') return loggedInUser.charAt(0).toUpperCase();
-    if (typeof loggedInUser === 'object') {
-      const name = loggedInUser.name || loggedInUser.user_metadata?.full_name || loggedInUser.email || '';
-      return name.charAt(0).toUpperCase() || '?';
-    }
-    return '?';
-  };
-
   const getUserRole = () => {
     if (!loggedInUser) return 'Staff';
     if (typeof loggedInUser === 'string') return loggedInUser;
@@ -768,32 +758,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
       return loggedInUser.role || 'Staff';
     }
     return 'Staff';
-  };
-
-  const urgentTasksCount = actionItems.filter(t => ['OVERDUE', 'TODAY', 'DUE TODAY', 'ACTION', 'ACTION DUE'].includes(t.urgency)).length;
-  const totalNotificationCount = healthAlerts.length + urgentTasksCount;
-
-  const handleBellClick = () => {
-    if (activeTab !== 'dashboard') {
-      setActiveTab('dashboard');
-    }
-    setTimeout(() => {
-      const target = healthAlerts.length > 0
-        ? document.getElementById('health-alerts-card')
-        : document.getElementById('todo-card');
-      if (target) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 100);
-  };
-
-  const handleSettingsClick = () => {
-    const role = getUserRole().toLowerCase();
-    if (role === 'admin') {
-      setActiveTab('admin');
-    } else {
-      toast.info('Admin access required to modify facility parameters.');
-    }
   };
 
   const now = new Date();
@@ -832,28 +796,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                 return 'Dashboard';
               })()}
             </h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleBellClick}
-              className="relative p-2 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors cursor-pointer"
-              aria-label="Notifications"
-            >
-              <Bell className="w-5 h-5" />
-              {totalNotificationCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 min-w-2 h-2 rounded-full bg-rose-500 border border-white" />
-              )}
-            </button>
-            <button
-              onClick={handleSettingsClick}
-              className="p-2 rounded-xl text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors cursor-pointer"
-              aria-label="System Settings"
-            >
-              <Settings className="w-5 h-5" />
-            </button>
-            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm flex items-center justify-center select-none cursor-pointer">
-              {getInitialsSafe()}
-            </div>
           </div>
         </header>
 

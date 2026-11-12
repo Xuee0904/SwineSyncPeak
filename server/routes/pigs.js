@@ -393,6 +393,7 @@ router.get('/api/pigs/archived', async (req, res) => {
       const s = status.toLowerCase();
       merged = merged.filter(i => {
         const r = (i.archive_reasoning || '').toLowerCase();
+        if (s === 'promoted') return r.includes('promot');
         if (s === 'sold') return r.includes('sold');
         if (s === 'culled') return r.includes('cull');
         if (s === 'mortality') return r.includes('mortal') || r.includes('died') || r.includes('death') || r.includes('loss');
@@ -1035,6 +1036,180 @@ router.patch('/api/pigs/:id/archive', async (req, res) => {
   }
 });
 
+// POST /api/pigs/batch/:batchId/promote - Promote 1 pig from batch to breeding herd (Gilt/Boar)
+router.post('/api/pigs/batch/:batchId/promote', async (req, res) => {
+  try {
+    const { batchId } = req.params;
+    const { tagNumber, gender, penId, weight, dateOfBirth, creator } = req.body;
+
+    if (!tagNumber || !tagNumber.trim()) {
+      return res.status(400).json({ error: 'Pig tag number is required.' });
+    }
+    if (!gender || !['Female', 'Male'].includes(gender)) {
+      return res.status(400).json({ error: 'Gender must be either "Female" or "Male".' });
+    }
+    if (!penId) {
+      return res.status(400).json({ error: 'Target pen is required.' });
+    }
+
+    // 1. Fetch batch
+    const { data: batch, error: batchError } = await supabaseAdmin
+      .from('piglet_batches')
+      .select('*')
+      .eq('batch_id', batchId)
+      .maybeSingle();
+
+    if (batchError) throw batchError;
+    if (!batch) {
+      return res.status(404).json({ error: 'Piglet batch not found.' });
+    }
+    if (batch.is_archived) {
+      return res.status(400).json({ error: 'Cannot promote pigs from an archived batch.' });
+    }
+    if ((batch.current_count ?? 0) < 1) {
+      return res.status(400).json({ error: 'Batch has no remaining pigs to promote.' });
+    }
+
+    // 2. Check tag uniqueness in pigs table
+    const cleanTag = tagNumber.trim();
+    const { data: existingPig, error: tagCheckError } = await supabaseAdmin
+      .from('pigs')
+      .select('pig_id')
+      .ilike('pig_tag', cleanTag)
+      .maybeSingle();
+
+    if (tagCheckError) throw tagCheckError;
+    if (existingPig) {
+      return res.status(400).json({ error: `Tag "${cleanTag}" is already in use by another swine record.` });
+    }
+
+    // 3. Confirm target pen validation & occupancy
+    const { data: pen, error: penError } = await supabase
+      .from('pens')
+      .select('pen_code, pen_type, max_capacity')
+      .eq('pen_id', penId)
+      .single();
+
+    if (penError || !pen) {
+      return res.status(400).json({ error: 'Selected pen was not found.' });
+    }
+
+    const occ = await getPenOccupancy(penId);
+    let occupied = typeof occ === 'number' ? occ : (occ.total || 0);
+
+    // If target pen is the batch's current pen, 1 head leaves the batch and enters as a pig,
+    // so net occupancy remains unchanged. Subtract 1 to reflect this transition.
+    if (batch.pen_id && String(batch.pen_id) === String(penId)) {
+      occupied = Math.max(0, occupied - 1);
+    }
+
+    const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
+
+    if (gender === 'Female' && (penSection === 'B' || penSection === 'BOAR')) {
+      return res.status(400).json({ error: `Cannot assign a female sow/gilt to boar pen ${pen.pen_code}.` });
+    }
+    if (gender === 'Male' && penSection !== 'B' && penSection !== 'BOAR') {
+      return res.status(400).json({ error: `Cannot assign a male boar to ${pen.pen_code}. Boars must be housed alone in a Boar pen.` });
+    }
+    if (gender === 'Female' && penSection !== 'S' && penSection !== 'SOW') {
+      return res.status(400).json({ error: `Cannot assign a female sow/gilt to ${pen.pen_code}. Sows must be housed in Sow/Farrowing pens.` });
+    }
+    if ((penSection === 'S' || penSection === 'SOW') && (occ.hasSow || occ.sowCount >= 1 || occ.pigCount >= 1)) {
+      return res.status(400).json({
+        error: `Sow pen ${pen.pen_code} already houses 1 sow. The farm can only house 1 sow per sow pen.`,
+      });
+    }
+    if ((penSection === 'B' || penSection === 'BOAR') && (occ.hasBoar || occ.boarCount >= 1 || occ.pigCount >= 1)) {
+      return res.status(400).json({
+        error: `Boar pen ${pen.pen_code} already houses 1 boar. The farm can only house 1 boar per boar pen.`,
+      });
+    }
+    if (occupied >= (pen.max_capacity ?? 0)) {
+      return res.status(400).json({
+        error: `Pen ${pen.pen_code} is already at full capacity (${pen.max_capacity}). Please choose another pen.`,
+      });
+    }
+
+    // 4. Insert new pig record
+    const parsedWeight = (weight !== undefined && weight !== null && weight !== '' && !isNaN(parseFloat(weight)))
+      ? parseFloat(weight)
+      : (batch.average_weight || null);
+    const resolvedDob = dateOfBirth || batch.date_of_birth || null;
+
+    const { data: newPigData, error: pigInsertError } = await supabaseAdmin
+      .from('pigs')
+      .insert([{
+        pig_tag: cleanTag,
+        gender: gender,
+        date_of_birth: resolvedDob,
+        breed_id: batch.breed_id || null,
+        weight: parsedWeight,
+        pen_id: penId,
+        status: 'healthy',
+        parity_count: 0,
+        source_origin: batch.source_origin || 'born_in_farm',
+        supplier_name: batch.supplier_name || null,
+        arrival_date: batch.arrival_date || null,
+        source_batch_id: batch.batch_id,
+        source_batch_tag: batch.batch_tag,
+        dam_id: batch.sow_id || null,
+        promoted_at: new Date().toISOString(),
+        is_archived: false,
+      }])
+      .select();
+
+    if (pigInsertError) throw pigInsertError;
+    const createdPig = newPigData[0];
+
+    // 5. Deduct 1 head from batch and auto-archive if 0 left
+    const newCount = (batch.current_count || 1) - 1;
+    const batchUpdatePayload = {
+      current_count: newCount,
+    };
+    if (newCount === 0) {
+      batchUpdatePayload.is_archived = true;
+      batchUpdatePayload.archived_at = new Date().toISOString();
+      batchUpdatePayload.archive_reasoning = `Promoted to Breeder - ${cleanTag}`;
+    }
+
+    const { error: batchUpdateError } = await supabaseAdmin
+      .from('piglet_batches')
+      .update(batchUpdatePayload)
+      .eq('batch_id', batchId);
+
+    if (batchUpdateError) {
+      // Rollback pig insert
+      await supabaseAdmin.from('pigs').delete().eq('pig_id', createdPig.pig_id);
+      throw batchUpdateError;
+    }
+
+    // 6. Record activity log
+    const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator || 'Admin');
+    const roleTerm = gender === 'Female' ? 'gilt' : 'boar';
+    const logDesc = `Promoted 1 pig from batch ${batch.batch_tag || batchId} to ${roleTerm} ${cleanTag}.${newCount === 0 ? ' Batch archived (0 heads left).' : ` ${newCount} head(s) remain.`}`;
+
+    await supabaseAdmin.from('activity_logs').insert({
+      user_name: creatorName,
+      user_email: creatorEmail,
+      user_initials: creatorInitials,
+      user_bg_color: 'bg-emerald-100 text-emerald-700',
+      event_title: 'Promoted to Breeder',
+      event_desc: logDesc,
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      message: `Successfully promoted 1 pig to ${roleTerm} ${cleanTag}.`,
+      pig: createdPig,
+      batch_remaining: newCount,
+      batch_archived: newCount === 0,
+    });
+  } catch (error) {
+    console.error('Error promoting pig from batch:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // PATCH /api/pigs/:id/unarchive – unarchive a pig or piglet batch
 router.patch('/api/pigs/:id/unarchive', async (req, res) => {
   try {
@@ -1098,12 +1273,18 @@ router.patch('/api/pigs/:id/unarchive', async (req, res) => {
     // 2. Fallback to piglet_batches
     const { data: batchCheck } = await supabaseAdmin
       .from('piglet_batches')
-      .select('batch_id, batch_tag, pen_id, current_count, total_born_alive')
+      .select('batch_id, batch_tag, pen_id, current_count, total_born_alive, archive_reasoning')
       .eq('batch_id', id)
       .maybeSingle();
 
     if (!batchCheck) {
       return res.status(404).json({ error: 'Record not found.' });
+    }
+
+    if (batchCheck.archive_reasoning && batchCheck.archive_reasoning.toLowerCase().includes('promot')) {
+      return res.status(400).json({
+        error: 'Cannot restore this batch: its piglet was promoted to the breeding herd and is now an active sow/boar. Restoring would create duplicate records.'
+      });
     }
 
     if (batchCheck.pen_id) {

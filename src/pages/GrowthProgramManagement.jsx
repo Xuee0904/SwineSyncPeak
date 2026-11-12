@@ -4,12 +4,13 @@ import useModalAnimation from "../hooks/useModalAnimation";
 import {
   Plus, ClipboardList, Wheat, Syringe, FlaskConical, Scissors,
   ArrowRight, Activity, AlertTriangle, AlertCircle, X, Trash2,
-  ChevronDown, Save, Archive, Pencil, Check, Unlock, Users, Loader2, ExternalLink, Target, Pill, Package, PiggyBank
+  ChevronDown, Save, Archive, Pencil, Check, Unlock, Loader2, ExternalLink, Target, Pill, Package, PiggyBank
 } from "lucide-react";
 import { toast } from "../utils/toast";
 import { supabase } from "../supabaseClient";
 import AddSupplyModal from "../components/Inventory/AddSupplyModal";
 import DailyFeedingPanel from "../components/Feeding/DailyFeedingPanel";
+import PigSnout from "../components/common/PigSnout";
 
 const FONT_DISPLAY = "font-['Space_Grotesk',_sans-serif]";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -889,26 +890,63 @@ function ProgramFormModal({ isOpen, onClose, onSaved, editProgram }) {
 /* ---------------------------------------------------------------------- */
 /* Operational Summary StatCard                                           */
 /* ---------------------------------------------------------------------- */
-function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
-  return (
-    <div className={`relative overflow-hidden rounded-2xl border border-slate-100 shadow-sm ${bg || "bg-white"} p-5 flex items-center gap-4 transition-all duration-200 hover:shadow-md`}>
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${accentColor || "bg-slate-50"}`}>
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          {loading ? (
-            <div className="h-7 w-16 bg-slate-100 animate-pulse rounded-md" />
-          ) : (
-            <h3 className="text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
-          )}
-          {badge && !loading && (
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeColor || "bg-slate-100 text-slate-600"}`}>
-              {badge}
-            </span>
-          )}
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  unit,
+  unitColor,
+  badge,
+  badgeColor,
+  iconBg,
+  iconColor,
+  loading = false,
+}) {
+  if (loading) {
+    return (
+      <div className="bg-white border border-slate-200/70 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between min-h-[106px] sm:min-h-[112px]">
+        <div className="flex items-center justify-between mb-2">
+          <div className="h-3 w-28 bg-slate-100 animate-pulse rounded" />
+          <div className="w-8 h-8 rounded-xl bg-slate-100 animate-pulse" />
         </div>
+        <div className="h-8 w-24 bg-slate-100 animate-pulse rounded mt-2" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-slate-200/70 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between min-h-[106px] sm:min-h-[112px]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">
+          {label}
+        </span>
+        <div
+          className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+            iconBg || "bg-slate-50"
+          } ${iconColor || "text-slate-500"}`}
+        >
+          {React.isValidElement(Icon) ? Icon : (Icon ? <Icon className="w-4 h-4" /> : null)}
+        </div>
+      </div>
+
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          {value}
+        </span>
+        {unit && (
+          <span className={`text-xs font-semibold ${unitColor || "text-slate-400"}`}>
+            {unit}
+          </span>
+        )}
+        {badge && (
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ml-auto shrink-0 ${
+              badgeColor || "bg-slate-100 text-slate-600 border border-slate-200"
+            }`}
+          >
+            {badge}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -1008,22 +1046,15 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
                       {g.daily_consumption_per_head > 0 && (
                         <span className="block text-[10px] text-neutral-500 mt-0.5">~{g.daily_consumption_per_head} kg/head</span>
                       )}
-                      {g.item_id ? (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200 mt-1">
-                          <Package className="w-2.5 h-2.5" />
-                          {g.inventory_items ? `${g.inventory_items.current_stock_level} ${g.inventory_items.unit_of_measure}` : 'Linked'}
-                        </span>
-                      ) : (
-                        !viewArchived && g.activity_type !== 'PROCEDURE' && g.task_name && g.task_name.trim() && onAddToInventory && (
-                          <button
-                            type="button"
-                            onClick={() => onAddToInventory(g, program)}
-                            className="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300 mt-1.5 transition-colors cursor-pointer shadow-2xs"
-                            title="Register this custom item in Farm Inventory"
-                          >
-                            <Plus className="w-2.5 h-2.5 text-amber-600" /> Add to Inventory
-                          </button>
-                        )
+                      {!g.item_id && !viewArchived && g.activity_type !== 'PROCEDURE' && g.task_name && g.task_name.trim() && onAddToInventory && (
+                        <button
+                          type="button"
+                          onClick={() => onAddToInventory(g, program)}
+                          className="inline-flex items-center gap-1 text-[9px] font-semibold text-slate-500 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 px-2 py-0.5 rounded-full border border-slate-200 hover:border-emerald-200 mt-1.5 transition-colors cursor-pointer"
+                          title="Register this custom item in Farm Inventory"
+                        >
+                          <Plus className="w-2.5 h-2.5 text-slate-400" /> Link Supply
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1046,16 +1077,17 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
             </>
           )}
           <button
-            onClick={() => onViewBatches(program)}
-            className={`inline-flex items-center gap-1.5 transition-colors ${hasEnrolled
-              ? 'text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer'
+            type="button"
+            onClick={() => hasEnrolled && onViewBatches(program)}
+            className={`inline-flex items-center gap-1.5 transition-colors group/batches ${hasEnrolled
+              ? 'text-neutral-600 hover:text-emerald-700 cursor-pointer'
               : 'text-neutral-400 cursor-default'
               }`}
-            title="Click to view enrolled batches"
+            title={hasEnrolled ? "Click to view enrolled batches" : "No batches enrolled"}
           >
-            <Users className="w-3.5 h-3.5" />
-            <strong className={hasEnrolled ? 'text-indigo-700' : 'text-neutral-400'}>{headCount}</strong>
-            Headcount
+            <PigSnout className={`w-3.5 h-3.5 transition-colors ${hasEnrolled ? 'text-neutral-400 group-hover/batches:text-emerald-600' : 'text-neutral-300'}`} />
+            <strong className={`transition-colors ${hasEnrolled ? 'text-neutral-800 group-hover/batches:text-emerald-700' : 'text-neutral-400'}`}>{headCount}</strong>
+            <span>Headcount</span>
           </button>
           {estDailyFeed > 0 && (
             <>
@@ -1065,7 +1097,7 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
                   type="button"
                   disabled={submittingFeed}
                   onClick={handleQuickFeed}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 active:scale-95 disabled:opacity-50 text-white font-bold text-[11.5px] shadow-2xs transition-all cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 text-white font-bold text-[11.5px] shadow-2xs transition-all cursor-pointer"
                   title="1-click: feed all batches in this program today"
                 >
                   {submittingFeed ? (
@@ -1166,9 +1198,13 @@ function EnrolledBatchesModal({ program, onClose, onUpdated }) {
   if (!shouldRender || !program) return null;
 
   const statusColors = {
-    Active: 'bg-emerald-100 text-emerald-700',
-    Weaning: 'bg-amber-100 text-amber-700',
-    Archived: 'bg-slate-100 text-slate-500',
+    Active: 'bg-emerald-50 text-emerald-700 border border-emerald-200/60',
+    Weaning: 'bg-amber-50 text-amber-700 border border-amber-200/60',
+    Archived: 'bg-slate-100 text-slate-500 border border-slate-200/60',
+    SUCKLING: 'bg-slate-100 text-slate-700 border border-slate-200/60',
+    WEANED: 'bg-slate-100 text-slate-700 border border-slate-200/60',
+    GROWER: 'bg-slate-100 text-slate-700 border border-slate-200/60',
+    FATTENER: 'bg-slate-100 text-slate-700 border border-slate-200/60',
   };
 
   const totalHeadcount = batches.reduce((sum, b) => sum + (Number(b.current_count) || 0), 0);
@@ -1259,36 +1295,43 @@ function EnrolledBatchesModal({ program, onClose, onUpdated }) {
         .animate-modal-in  { animation: modal-panel-in  220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
         .animate-modal-out { animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
       `}</style>
-      <div className={`bg-white rounded-3xl shadow-2xl w-full max-w-lg mx-auto overflow-hidden ${panelClassName || 'animate-modal-in'}`}>
+      <div className={`bg-white rounded-3xl shadow-2xl w-full max-w-xl mx-auto overflow-hidden ${panelClassName || 'animate-modal-in'}`}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0 border border-indigo-100">
-              <Users className="w-5 h-5 text-indigo-600" />
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center shrink-0 border border-emerald-100/80 shadow-2xs">
+              <PigSnout className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900 leading-tight">Enrolled Batches</h3>
-              <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[280px]">Program: {program.name}</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-slate-900 leading-tight">Enrolled Batches</h3>
+                {!loading && batches.length > 0 && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-slate-100 text-slate-600 border border-slate-200/60">
+                    {batches.length} {batches.length === 1 ? 'batch' : 'batches'}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[320px]">Program: {program.name}</p>
             </div>
           </div>
           <button
             onClick={requestClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="px-6 py-4 max-h-[460px] overflow-y-auto space-y-3">
+        <div className="px-6 py-4 max-h-[min(540px,65vh)] overflow-y-auto space-y-3 custom-scrollbar">
           {loading ? (
             <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-7 h-7 text-indigo-400 animate-spin" />
+              <Loader2 className="w-7 h-7 text-emerald-500 animate-spin" />
             </div>
           ) : batches.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center">
-                <Users className="w-6 h-6 text-slate-300" />
+                <PigSnout className="w-6 h-6 text-slate-300" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-500">No batches enrolled</p>
@@ -1296,159 +1339,142 @@ function EnrolledBatchesModal({ program, onClose, onUpdated }) {
               </div>
             </div>
           ) : (
-            <ul className="space-y-3">
+            <ul className="space-y-2.5">
               {batches.map(batch => (
                 <li
                   key={batch.batch_id}
-                  className="p-3.5 rounded-2xl border border-slate-200/80 bg-white hover:border-indigo-200 transition-all shadow-xs"
+                  className="p-3.5 rounded-xl border border-slate-200/90 bg-white hover:border-slate-300 transition-all space-y-2 shadow-2xs"
                 >
-                  <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[13.5px] font-extrabold text-slate-900 tracking-tight">{batch.batch_tag || 'Unnamed Batch'}</span>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wide ${statusColors[batch.status] || 'bg-slate-100 text-slate-600'}`}>
-                        {batch.status || 'Active'}
+                  {/* Line 1: Identity, Herd specs & Market readiness */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13.5px] font-extrabold text-slate-900 tracking-tight">
+                        {batch.batch_tag || 'Unnamed Batch'}
+                      </span>
+                      {batch.status && (
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded">
+                          {batch.status}
+                        </span>
+                      )}
+                      <span className="text-slate-300">·</span>
+                      <span className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                        <PigSnout className="w-3.5 h-3.5 text-emerald-600" />
+                        <strong className="text-slate-900 font-bold">{batch.current_count ?? 0}</strong> {batch.current_count === 1 ? 'head' : 'heads'}
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-xs text-slate-500">
+                        Pen <strong className="text-slate-700 font-semibold">{batch.pen?.pen_code ? batch.pen.pen_code : 'Unassigned'}</strong>
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-xs text-slate-500">
+                        Day <strong className="text-slate-700 font-semibold">{batch.age_in_days ?? 0}</strong>
                       </span>
                     </div>
-                    {batch.market_status === 'fattener_ready' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        <Check className="w-3 h-3 text-emerald-700" />
-                        Market Ready Fattener (Day {batch.age_in_days})
-                      </span>
-                    )}
+
                     {batch.market_status === 'weaner_ready' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                        <Check className="w-3 h-3 text-amber-700" />
-                        Market Ready Weaner (Day {batch.age_in_days})
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200/80 shrink-0">
+                        <PiggyBank className="w-3 h-3 text-amber-600" />
+                        Ready Weaner
+                      </span>
+                    )}
+                    {batch.market_status === 'fattener_ready' && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80 shrink-0">
+                        <Check className="w-3 h-3 text-emerald-600 stroke-[2.5]" />
+                        Ready Fattener
                       </span>
                     )}
                   </div>
 
-                  {/* Core specifications */}
-                  <div className="flex items-center gap-3 text-[11.5px] text-slate-600 flex-wrap">
-                    <span className="font-bold text-slate-800">{batch.current_count ?? 0} head</span>
-                    <span className="w-1 h-1 rounded-full bg-slate-300" aria-hidden="true" />
-                    <span>Pen: {batch.pen?.pen_code ? <strong className="text-slate-700">{batch.pen.pen_code}</strong> : 'Unassigned'}</span>
-                    <span className="w-1 h-1 rounded-full bg-slate-300" aria-hidden="true" />
-                    <span>Age: <strong className="text-slate-700">Day {batch.age_in_days ?? 0}</strong></span>
-                  </div>
-
-                  {/* Active Feed Requirement */}
-                  {batch.current_feed && (
+                  {/* Line 2: Feed status & quick action */}
+                  {batch.current_feed ? (
                     batch.current_feed.fed_today ? (
-                      <div className="mt-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-[11.5px] text-emerald-900">
-                        <div className="flex items-center gap-1.5 font-semibold">
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-700">
                           <Wheat className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span>{batch.current_feed.task_name}</span>
+                          <span className="font-semibold text-slate-900">{batch.current_feed.task_name}</span>
+                          <span className="text-slate-400">·</span>
+                          <span className="text-slate-500">~{batch.current_feed.total_daily_feed_kg} kg prescribed</span>
                         </div>
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                          <Check className="w-3 h-3 text-emerald-600" />
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 shrink-0">
+                          <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
                           Fed Today ({batch.current_feed.fed_today_kg} kg)
                         </span>
                       </div>
                     ) : activeBatchFeedId === batch.batch_id ? (
-                      <div className="mt-2.5 bg-amber-50 border border-amber-300 rounded-xl p-3 text-xs text-slate-800 space-y-2.5">
+                      <div className="mt-2 bg-slate-50 border border-slate-200/90 rounded-xl p-3 text-xs space-y-2.5">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 font-bold text-amber-900">
-                            <Wheat className="w-4 h-4 text-amber-600" />
-                            <span>Feed Log — {batch.current_feed.task_name}</span>
+                          <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                            <Wheat className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Adjust Feed ({batch.current_feed.task_name})</span>
                           </div>
                           <button
                             type="button"
                             onClick={() => setActiveBatchFeedId(null)}
-                            className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+                            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 cursor-pointer"
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px] bg-white/80 p-2.5 rounded-lg border border-amber-200/60">
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase">Amount to Deduct</label>
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <input
-                                type="number"
-                                step="0.1"
-                                min="0.1"
-                                value={feedAmountInput}
-                                onChange={e => setFeedAmountInput(e.target.value)}
-                                className="w-24 px-2 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 text-xs focus:ring-2 focus:ring-amber-500/30"
-                              />
-                              <span className="font-semibold text-slate-600">kg</span>
-                            </div>
-                            {batch.current_feed.unit_of_measure?.toLowerCase().includes('sack') && (
-                              <span className="text-slate-500 text-[10px] block mt-0.5">
-                                ~{(Number(feedAmountInput || 0) / 50).toFixed(2)} sacks (50kg/sack)
-                              </span>
-                            )}
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0.1"
+                              value={feedAmountInput}
+                              onChange={e => setFeedAmountInput(e.target.value)}
+                              className="w-20 px-2 py-1 bg-white border border-slate-300 rounded-lg font-bold text-slate-900 text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                            />
+                            <span className="font-semibold text-slate-600">kg</span>
                           </div>
-
-                          <div className="text-[11px] text-slate-600 flex flex-col justify-center">
-                            <span>Current Stock: <strong className={Number(batch.current_feed.current_stock_level) < Number(feedAmountInput) ? 'text-rose-600' : 'text-emerald-700'}>
+                          <div className="text-[11px] text-slate-500">
+                            Stock: <strong className={Number(batch.current_feed.current_stock_level) < Number(feedAmountInput) ? 'text-rose-600 font-bold' : 'text-emerald-700 font-bold'}>
                               {batch.current_feed.current_stock_level ?? '—'} {batch.current_feed.unit_of_measure || 'kg'}
-                            </strong></span>
-                            <span className="text-slate-400 text-[10px] mt-0.5">Default budget: {batch.current_feed.total_daily_feed_kg} kg</span>
+                            </strong>
                           </div>
-                        </div>
-
-                        {Number(batch.current_feed.current_stock_level) < Number(feedAmountInput) && (
-                          <p className="text-[10.5px] text-rose-600 font-semibold flex items-center gap-1">
-                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                            Warning: Stock level is lower than the entered feed quantity.
-                          </p>
-                        )}
-
-                        <div className="flex items-center justify-end gap-2 pt-1">
-                          <button
-                            type="button"
-                            disabled={submittingFeed}
-                            onClick={() => setActiveBatchFeedId(null)}
-                            className="px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            disabled={submittingFeed || !feedAmountInput || Number(feedAmountInput) <= 0}
-                            onClick={() => handleLogSingleFeed(batch)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg shadow-xs transition-colors cursor-pointer"
-                          >
-                            {submittingFeed ? (
-                              <>
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                Deducting...
-                              </>
-                            ) : (
-                              <>
-                                <Check className="w-3.5 h-3.5" />
-                                Confirm & Deduct Stock
-                              </>
-                            )}
-                          </button>
+                          <div className="ml-auto flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={submittingFeed}
+                              onClick={() => setActiveBatchFeedId(null)}
+                              className="px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200/70 rounded-lg cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              disabled={submittingFeed || !feedAmountInput || Number(feedAmountInput) <= 0}
+                              onClick={() => handleLogSingleFeed(batch)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg shadow-2xs transition-colors cursor-pointer"
+                            >
+                              {submittingFeed ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3 stroke-[2.5]" />}
+                              Confirm
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ) : (
-                      <div className="mt-2.5 bg-amber-50/70 border border-amber-200/70 rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-[11.5px] text-amber-900 flex-wrap">
-                        <div>
-                          <span className="flex items-center gap-1.5 font-semibold">
-                            <Wheat className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                            {batch.current_feed.task_name}
-                          </span>
-                          <span className="text-[11px] text-amber-700/80 block mt-0.5">
-                            Budget: ~{batch.current_feed.total_daily_feed_kg} kg/day ({batch.current_feed.daily_consumption_per_head} kg/head)
-                          </span>
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-700 truncate">
+                          <Wheat className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span className="font-semibold text-slate-900">{batch.current_feed.task_name}</span>
+                          <span className="text-slate-400">·</span>
+                          <span className="text-slate-500 font-medium">~{batch.current_feed.total_daily_feed_kg} kg/day</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
+
+                        <div className="flex items-center gap-1.5 shrink-0">
                           {batch.current_feed.item_id ? (
                             <>
                               <button
                                 type="button"
                                 disabled={submittingFeed}
                                 onClick={() => handleLogSingleFeed(batch, batch.current_feed.total_daily_feed_kg)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-600/30 text-emerald-700 bg-emerald-50/60 hover:bg-emerald-600 hover:text-white active:scale-95 text-xs font-bold transition-all cursor-pointer shadow-2xs"
                                 title={`Feed ~${batch.current_feed.total_daily_feed_kg} kg in 1 click`}
                               >
-                                <Wheat className="w-3.5 h-3.5" />
-                                Feed ~{batch.current_feed.total_daily_feed_kg} kg
+                                <Wheat className="w-3 h-3" />
+                                Feed {batch.current_feed.total_daily_feed_kg} kg
                               </button>
                               <button
                                 type="button"
@@ -1456,28 +1482,21 @@ function EnrolledBatchesModal({ program, onClose, onUpdated }) {
                                   setActiveBatchFeedId(batch.batch_id);
                                   setFeedAmountInput(String(batch.current_feed.total_daily_feed_kg || 0));
                                 }}
-                                className="p-1.5 text-slate-400 hover:text-amber-700 hover:bg-amber-100/60 rounded-lg transition-colors cursor-pointer"
+                                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                                 title="Adjust kg before feeding"
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
                             </>
                           ) : (
-                            <span className="text-[10.5px] text-amber-700 italic">No inventory item linked</span>
+                            <span className="text-[11px] text-slate-400 italic">No supply linked</span>
                           )}
                         </div>
                       </div>
                     )
-                  )}
-
-                  {/* Next Activity Milestone */}
-                  {batch.next_activity && (
-                    <div className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-500">
-                      <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
-                      <span>Next Milestone:</span>
-                      <span className="font-bold text-slate-700">Day {batch.next_activity.days_after_birth}</span>
-                      <span className="text-slate-400">·</span>
-                      <span className="text-slate-700 font-medium">{batch.next_activity.task_name}</span>
+                  ) : (
+                    <div className="pt-2 border-t border-slate-100 text-[11.5px] text-slate-400 italic">
+                      No feed schedule active for this stage
                     </div>
                   )}
                 </li>
@@ -1490,23 +1509,23 @@ function EnrolledBatchesModal({ program, onClose, onUpdated }) {
         {!loading && batches.length > 0 && (
           <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between gap-3 text-xs text-slate-600 font-medium flex-wrap">
             <div>
-              <span className="block">
-                <strong className="text-slate-900 font-bold">{totalHeadcount} heads</strong> across <strong className="text-slate-900 font-bold">{batches.length} {batches.length === 1 ? 'batch' : 'batches'}</strong>
+              <span className="block text-slate-800">
+                <strong className="text-slate-950 font-bold">{totalHeadcount} heads</strong> across <strong className="text-slate-950 font-bold">{batches.length} {batches.length === 1 ? 'batch' : 'batches'}</strong>
               </span>
               {Number(totalDailyFeed) > 0 && (
-                <span className="flex items-center gap-1 font-bold text-amber-800 text-[11px] mt-0.5">
-                  <Wheat className="w-3.5 h-3.5 text-amber-600" />
-                  ~{totalDailyFeed} kg/day total budget
+                <span className="flex items-center gap-1.5 font-medium text-slate-500 text-[11px] mt-0.5">
+                  <Wheat className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  Total budget: <strong className="text-slate-700">~{totalDailyFeed} kg/day</strong>
                 </span>
               )}
             </div>
 
-            {unfedBatches.length > 1 && (
+            {unfedBatches.length > 0 ? (
               <button
                 type="button"
                 disabled={bulkFeeding}
                 onClick={handleBulkFeedAll}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
                 title="Deduct today's feed for all unfed batches in this program"
               >
                 {bulkFeeding ? (
@@ -1516,11 +1535,16 @@ function EnrolledBatchesModal({ program, onClose, onUpdated }) {
                   </>
                 ) : (
                   <>
-                    <Check className="w-3.5 h-3.5" />
+                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
                     Log All Batches Today ({unfedFeedKg} kg)
                   </>
                 )}
               </button>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200/80 text-xs font-semibold">
+                <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[2.5]" />
+                All Batches Fed Today
+              </div>
             )}
           </div>
         )}
@@ -1853,41 +1877,35 @@ export default function GrowthProgramManagement() {
 
       {/* High-level Operational Summary Cards */}
       {!viewArchived && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <StatCard
-            icon={<Users className="w-6 h-6 text-indigo-600" />}
+            icon={<PigSnout className="w-4 h-4" />}
             label="Enrolled Headcount"
-            value={`${totalHeadcount} heads`}
-            badge={totalHeadcount > 0 ? "ENROLLED" : "NONE"}
-            badgeColor="bg-indigo-100 text-indigo-700"
-            accentColor="bg-indigo-50"
+            value={totalHeadcount}
+            unit={totalHeadcount === 1 ? "head" : "heads"}
             loading={loading}
           />
           <StatCard
-            icon={<Wheat className="w-6 h-6 text-amber-600" />}
+            icon={<Wheat className="w-4 h-4" />}
             label="Est. Daily Feed Needed"
-            value={`${totalDailyFeedKg} kg`}
-            badge="PER DAY"
-            badgeColor="bg-amber-100 text-amber-700"
-            accentColor="bg-amber-50"
+            value={totalDailyFeedKg}
+            unit="kg/day"
             loading={loading}
           />
           <StatCard
-            icon={<PiggyBank className="w-6 h-6 text-amber-600" />}
+            icon={<PiggyBank className="w-4 h-4" />}
             label="Market Ready Weaners"
-            value={`${totalReadyWeanersHeads} heads`}
-            badge={totalReadyWeanersHeads > 0 ? `${totalReadyWeanersBatches} BATCH${totalReadyWeanersBatches === 1 ? '' : 'ES'}` : "NONE"}
-            badgeColor={totalReadyWeanersHeads > 0 ? "bg-amber-100 text-amber-800 font-bold" : "bg-slate-100 text-slate-600"}
-            accentColor="bg-amber-50"
+            value={totalReadyWeanersHeads}
+            unit={totalReadyWeanersHeads === 1 ? "head" : "heads"}
+            badge={totalReadyWeanersHeads > 0 ? `${totalReadyWeanersBatches} ${totalReadyWeanersBatches === 1 ? 'batch' : 'batches'}` : null}
             loading={loading}
           />
           <StatCard
-            icon={<Target className="w-6 h-6 text-emerald-700" />}
+            icon={<Target className="w-4 h-4" />}
             label="Market Ready Fatteners"
-            value={`${totalReadyFattenersHeads} heads`}
-            badge={totalReadyFattenersHeads > 0 ? `${totalReadyFattenersBatches} BATCH${totalReadyFattenersBatches === 1 ? '' : 'ES'}` : "NONE"}
-            badgeColor={totalReadyFattenersHeads > 0 ? "bg-emerald-600 text-white font-bold" : "bg-slate-100 text-slate-600"}
-            accentColor="bg-emerald-50"
+            value={totalReadyFattenersHeads}
+            unit={totalReadyFattenersHeads === 1 ? "head" : "heads"}
+            badge={totalReadyFattenersHeads > 0 ? `${totalReadyFattenersBatches} ${totalReadyFattenersBatches === 1 ? 'batch' : 'batches'}` : null}
             loading={loading}
           />
         </div>

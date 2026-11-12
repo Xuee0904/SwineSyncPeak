@@ -5,6 +5,7 @@ import {
   Grid3X3, HeartPulse, Dna,
 } from 'lucide-react';
 import PigSnout from './common/PigSnout';
+import farmLogo from '../assets/Logo.jpg';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const NAV_ITEMS = [
@@ -89,17 +90,24 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
       >
         <div>
           {/* Brand */}
-          <div className="flex items-center justify-between px-5 py-5 border-b border-slate-800/80 shrink-0">
-            <div>
-              <p className="text-xs font-extrabold text-white tracking-tight">
-                Swine<span className="text-emerald-400">Sync</span> Ops
-              </p>
-              <p className="text-[10px] text-slate-400 font-semibold mt-0.5 uppercase tracking-wide">
-                Main Facility
-              </p>
+          <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800/80 shrink-0">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <img
+                src={farmLogo}
+                alt="Ambo & Ang's Oink Yard Logo"
+                className="w-9 h-9 rounded-xl object-contain bg-[#fdfbf7] p-0.5 shadow-sm border border-white/10 shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-white tracking-tight truncate" title="Ambo & Ang's Oink Yard">
+                  Ambo &amp; Ang&apos;s Oink Yard
+                </p>
+                <p className="text-[10px] font-semibold text-emerald-400 tracking-wide truncate">
+                  SwineSync Ops
+                </p>
+              </div>
             </div>
             <button
-              className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer"
+              className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer shrink-0 ml-1"
               onClick={onClose}
               aria-label="Close navigation"
             >
@@ -235,26 +243,42 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
         </div>
 
         {/* Bottom User Chip & Logout */}
-        <div className="px-3 py-4 border-t border-slate-800/80 space-y-1 shrink-0">
-          {loggedInUser && (
-            <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 mb-2">
-              <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                {getInitials()}
+        <div className="px-3 py-3.5 border-t border-slate-800/80 shrink-0">
+          {loggedInUser ? (
+            <div className="flex items-center justify-between gap-2.5 p-2 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/15 transition-colors">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-sm shadow-emerald-950/40">
+                  {getInitials()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-slate-100 truncate leading-tight" title={getDisplayName()}>
+                    {getDisplayName()}
+                  </p>
+                  <p className="text-[10px] text-slate-400 font-semibold tracking-wide truncate mt-0.5">
+                    {getUserRole()?.toLowerCase() === 'admin' ? 'Administrator' : 'Staff Portal'}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold text-slate-100 truncate">{getDisplayName()}</p>
-                <p className="text-[10px] text-slate-400 font-semibold">Staff Portal</p>
-              </div>
+              <button
+                onClick={onLogout}
+                className="p-2 rounded-lg text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 transition-all cursor-pointer shrink-0"
+                title="Logout"
+                aria-label="Logout"
+                id="sidenav-logout-btn"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
+          ) : (
+            <button
+              onClick={onLogout}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 transition-all cursor-pointer"
+              id="sidenav-logout-btn"
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              Logout
+            </button>
           )}
-          <button
-            onClick={onLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 transition-all cursor-pointer"
-            id="sidenav-logout-btn"
-          >
-            <LogOut className="w-4 h-4 shrink-0" />
-            Logout
-          </button>
         </div>
       </aside>
 

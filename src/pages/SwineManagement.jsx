@@ -9,6 +9,7 @@ import AddPigModal from '../components/SwineManagement/AddPigModal.jsx';
 import EditPigModal from '../components/SwineManagement/EditPigModal.jsx';
 import ViewPigModal from '../components/SwineManagement/ViewPigModal.jsx';
 import ArchiveSwineModal from '../components/SwineManagement/ArchiveSwineModal.jsx';
+import PromoteToBreederModal from '../components/SwineManagement/PromoteToBreederModal.jsx';
 import useConfirmDialog from '../hooks/useConfirmDialog.jsx';
 import toast from '../utils/toast';
 import StatusBadge from '../components/StatusBadge.jsx';
@@ -21,6 +22,7 @@ const PAGE_SIZE = 5;
 function getArchiveStatus(reason) {
   if (!reason) return 'Archived';
   const r = reason.toLowerCase();
+  if (r.includes('promot')) return 'Promoted';
   if (r.includes('sold')) return 'Sold';
   if (r.includes('cull')) return 'Culled';
   if (r.includes('mortal') || r.includes('died') || r.includes('death') || r.includes('loss')) return 'Mortality';
@@ -153,6 +155,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedPig, setSelectedPig] = useState(null);
   const [selectedArchiveSwine, setSelectedArchiveSwine] = useState(null);
+  const [promoteBatch, setPromoteBatch] = useState(null);
 
   // Reusable confirm dialog hook (portal-based, blurs full page)
   const { confirmDialog, openConfirm } = useConfirmDialog();
@@ -334,6 +337,15 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
 
   const handleArchiveModalSuccess = () => {
     setSelectedArchiveSwine(null);
+    setIsViewModalOpen(false);
+    setSelectedPig(null);
+    fetchSwine();
+    fetchStats();
+    fetchArchived();
+  };
+
+  const handlePromoteSuccess = () => {
+    setPromoteBatch(null);
     setIsViewModalOpen(false);
     setSelectedPig(null);
     fetchSwine();
@@ -629,6 +641,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                 <option value="all">{viewArchived ? 'All Reasons' : 'All Statuses'}</option>
                 {viewArchived ? (
                   <>
+                    <option value="promoted">Promoted</option>
                     <option value="sold">Sold</option>
                     <option value="culled">Culled</option>
                     <option value="mortality">Mortality</option>
@@ -834,6 +847,22 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
 
+                            {/* Promote to Breeder Action (Batches Only) */}
+                            {pig.category === 'Piglet Batch' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPromoteBatch(pig);
+                                }}
+                                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors active:scale-95 cursor-pointer"
+                                title="Promote to Breeder (Gilt / Boar)"
+                                id={`swine-promote-${pig.id ?? idx}`}
+                              >
+                                <PigSnout className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
                             {/* Archive Action */}
                             <button
                               type="button"
@@ -846,16 +875,31 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                             </button>
                           </>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => promptUnarchive(pig)}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/60 rounded-lg transition-colors active:scale-95 cursor-pointer"
-                            title="Restore Swine to Active Herd"
-                            id={`swine-unarchive-${pig.id ?? idx}`}
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Restore</span>
-                          </button>
+                          (() => {
+                            const isPromoted = (pig.archive_reasoning || '').toLowerCase().includes('promot');
+                            if (isPromoted) {
+                              return (
+                                <span
+                                  className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-slate-400 bg-slate-100/80 border border-slate-200/60 rounded-md cursor-default select-none"
+                                  title="This batch was promoted to breeding stock and cannot be restored."
+                                >
+                                  In Breeding Herd
+                                </span>
+                              );
+                            }
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => promptUnarchive(pig)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200/60 rounded-lg transition-colors active:scale-95 cursor-pointer"
+                                title="Restore Swine to Active Herd"
+                                id={`swine-unarchive-${pig.id ?? idx}`}
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Restore</span>
+                              </button>
+                            );
+                          })()
                         )}
                       </div>
                     </td>
@@ -904,6 +948,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
         onSave={handleUpdatePig}
         onArchive={!viewArchived ? (pig) => promptArchive(pig) : null}
         onUnarchive={viewArchived ? (pig) => promptUnarchive(pig) : null}
+        onPromote={!viewArchived ? (batch) => setPromoteBatch(batch) : null}
         pigData={selectedPig}
         loggedInUser={loggedInUser}
       />
@@ -913,6 +958,15 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
         onClose={() => setSelectedArchiveSwine(null)}
         archiveData={selectedArchiveSwine}
         onConfirmSuccess={handleArchiveModalSuccess}
+        loggedInUser={loggedInUser}
+      />
+
+      {/* RENDER: Promote to Breeder Modal (Batches only) */}
+      <PromoteToBreederModal
+        isOpen={!!promoteBatch}
+        onClose={() => setPromoteBatch(null)}
+        batch={promoteBatch}
+        onSuccess={handlePromoteSuccess}
         loggedInUser={loggedInUser}
       />
     </div>

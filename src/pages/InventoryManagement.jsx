@@ -19,6 +19,7 @@ import {
   User,
   Wheat,
   Pill,
+  Syringe,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -151,9 +152,16 @@ export function getCategoryIconConfig(category) {
       border: "border-emerald-100",
     };
   }
+  if (cat.includes("vaccin")) {
+    return {
+      Icon: Syringe,
+      color: "text-blue-600",
+      bg: "bg-blue-50",
+      border: "border-blue-100",
+    };
+  }
   if (
     cat.includes("medic") ||
-    cat.includes("vaccin") ||
     cat.includes("health")
   ) {
     return {
@@ -186,15 +194,82 @@ function toTitleCase(name) {
   return name.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
-function formatStatQty(n, unit) {
+function formatStatQty(n, unit, appendUnit = true) {
   const num = Number(n) || 0;
   const u = String(unit || "").trim().toLowerCase();
   const isContinuous = ["kg", "g", "mg", "ml", "l", "liters", "litres"].includes(u);
-  if (isContinuous) {
-    const formatted = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(num);
-    return unit ? `${formatted} ${unit}` : formatted;
+  const formatted = isContinuous
+    ? new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(num)
+    : new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(num));
+  return unit && appendUnit ? `${formatted} ${unit}` : formatted;
+}
+
+function getRunwayInsight(item, metrics, current, statusKey) {
+  const cat = (item?.category || "").toLowerCase();
+  const isMedication =
+    metrics?.burnRateSource === "par_level" ||
+    metrics?.supplyCategory === "medication" ||
+    cat.includes("medic");
+
+  if (isMedication) {
+    if (current <= 0) return "Out of stock";
+    if (statusKey === "critical") return "Immediate restock needed";
+    if (statusKey === "low") return "Below par-level threshold";
+    return "Par-level buffer maintained";
   }
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(num));
+
+  const isVaccine =
+    metrics?.burnRateSource === "vaccine_milestone" ||
+    metrics?.supplyCategory === "vaccine" ||
+    cat.includes("vaccin");
+
+  const hasUpcoming = (metrics?.upcomingDemandSubUnit || 0) > 0;
+  const burnRate = Number(metrics?.dailyBurnRate) || 0;
+
+  // Vaccine or milestone items with upcoming schedule
+  if (hasUpcoming && burnRate <= 0) {
+    const days = metrics.earliestDueDays ?? 0;
+    const dayText = days === 0 ? "today" : `in ${days}d`;
+    if (metrics?.hasUpcomingShortfall) {
+      return `${metrics.shortfallSubUnit} ${metrics.upcomingDemandSubUnitLabel || "units"} short ${dayText}`;
+    }
+    return `Scheduled: ${metrics.upcomingDemandSubUnit} ${metrics.upcomingDemandSubUnitLabel || "units"} ${dayText}`;
+  }
+
+  if (isVaccine && !hasUpcoming && burnRate <= 0) {
+    if (current <= 0) return "Out of stock";
+    if (statusKey === "critical") return "Critical · Restock required";
+    if (statusKey === "low") return "Low stock · Reorder soon";
+    return "No scheduled doses (14d)";
+  }
+
+  // Items with daily burn rate (Feeds, Supplements, etc.)
+  let daysOfSupply = null;
+  if (burnRate > 0) {
+    daysOfSupply = Math.floor(current / burnRate);
+  } else if (metrics?.total_out > 0) {
+    const fallbackBurn = metrics.total_out / 30;
+    if (fallbackBurn > 0) {
+      daysOfSupply = Math.floor(current / fallbackBurn);
+    }
+  }
+
+  if (daysOfSupply !== null && !isNaN(daysOfSupply) && isFinite(daysOfSupply) && daysOfSupply >= 0) {
+    if (current <= 0) return "Out of stock";
+    if (daysOfSupply > 365) {
+      return statusKey === "healthy" ? ">1 year supply remaining" : ">1 year supply left";
+    }
+    if (statusKey === "healthy") {
+      return `~${daysOfSupply} days of supply remaining`;
+    }
+    return `~${daysOfSupply} days of supply left`;
+  }
+
+  // Fallback for items with no consumption history recorded yet
+  if (current <= 0) return "Out of stock";
+  if (statusKey === "critical") return "Immediate restock needed";
+  if (statusKey === "low") return "Reorder threshold reached";
+  return "Adequate supply buffer";
 }
 
 // ----- CriticalStockCard -----
@@ -214,7 +289,7 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory }) {
     : 0.25;
   const criticalRatio = 0.10; // Exactly 10% of max capacity
 
-  // Single source of truth evaluation (3 tiers: Critical, Low Stock, Healthy buffer)
+  // Single source of truth evaluation (3 tiers: Critical, Low Stock, Healthy)
   let statusKey = "healthy";
   if (
     current <= 0 ||
@@ -234,80 +309,32 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory }) {
 
   const CONFIG = {
     critical: {
-      label: metrics?.hasUpcomingShortfall ? "Critical Shortfall" : "Critical",
+      label: current <= 0 ? "Out of Stock" : (metrics?.hasUpcomingShortfall ? "Shortfall" : "Critical"),
       barClass: "bg-rose-500",
-      badgeClass: "bg-rose-50 text-rose-700 ring-rose-200 border border-rose-200",
-      textClass: "text-rose-600 font-bold",
-      iconClass: "text-rose-600",
-      Icon: AlertTriangle,
-      buttonClass: "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200",
-      buttonLabel: "Adjust / Restock",
+      badgeClass: "bg-rose-50 text-rose-700 ring-1 ring-rose-600/20 border border-rose-200",
+      dotClass: "bg-rose-500 animate-pulse",
+      buttonClass: "bg-rose-600 hover:bg-rose-700 text-white shadow-2xs",
+      buttonLabel: "Restock",
     },
     low: {
-      label: metrics?.hasUpcomingShortfall ? "Upcoming Shortfall" : "Low Stock",
+      label: metrics?.hasUpcomingShortfall ? "Shortfall" : "Low Stock",
       barClass: "bg-amber-500",
-      badgeClass: "bg-amber-50 text-amber-700 ring-amber-200 border border-amber-200",
-      textClass: "text-amber-600 font-bold",
-      iconClass: "text-amber-600",
-      Icon: AlertTriangle,
-      buttonClass: "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200",
-      buttonLabel: "Adjust / Restock",
+      badgeClass: "bg-amber-50 text-amber-700 ring-1 ring-amber-600/20 border border-amber-200",
+      dotClass: "bg-amber-500",
+      buttonClass: "bg-amber-500 hover:bg-amber-600 text-white shadow-2xs",
+      buttonLabel: "Restock",
     },
     healthy: {
-      label: "Healthy buffer",
+      label: "Healthy",
       barClass: "bg-emerald-500",
-      badgeClass: "bg-emerald-50 text-emerald-700 ring-emerald-200 border border-emerald-200",
-      textClass: "text-emerald-700 font-medium",
-      iconClass: "text-emerald-500",
-      Icon: CheckCircle2,
-      buttonClass: "bg-slate-50 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 border border-slate-200/80",
-      buttonLabel: "Update Stock",
+      badgeClass: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20 border border-emerald-200",
+      dotClass: "bg-emerald-500",
+      buttonClass: "bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200/80 hover:border-slate-300",
+      buttonLabel: "Adjust",
     },
   };
 
   const cfg = CONFIG[statusKey];
-  const StatusIcon = cfg.Icon;
-
-  // Days of supply on every card - category aware
-  let runwayText = "";
-  const isMedication = metrics?.burnRateSource === "par_level" || metrics?.supplyCategory === "medication";
-  const hasUpcoming = (metrics?.upcomingDemandSubUnit || 0) > 0;
-
-  if (isMedication) {
-    runwayText = statusKey === "healthy" ? " (Par-level)" : " (Restock par-level)";
-  } else if (hasUpcoming && (metrics?.dailyBurnRate || 0) <= 0) {
-    if (metrics?.hasUpcomingShortfall) {
-      runwayText = ` (${metrics.shortfallSubUnit} ${metrics.upcomingDemandSubUnitLabel} short in ${metrics.earliestDueDays}d)`;
-    } else {
-      runwayText = ` (${metrics.upcomingDemandSubUnit} ${metrics.upcomingDemandSubUnitLabel} needed in ${metrics.earliestDueDays}d)`;
-    }
-  } else {
-    const burnRate = Number(metrics?.dailyBurnRate) || 0;
-    let daysOfSupply = null;
-    if (burnRate > 0) {
-      daysOfSupply = Math.floor(current / burnRate);
-    } else if (metrics?.total_out > 0) {
-      const fallbackBurn = metrics.total_out / 30;
-      if (fallbackBurn > 0) {
-        daysOfSupply = Math.floor(current / fallbackBurn);
-      }
-    }
-
-    if (daysOfSupply !== null && !isNaN(daysOfSupply) && isFinite(daysOfSupply) && daysOfSupply >= 0) {
-      const formattedDays = daysOfSupply > 365 ? ">1y" : `~${daysOfSupply}d`;
-      if (statusKey === "healthy") {
-        runwayText = ` (${formattedDays} buffer)`;
-      } else {
-        runwayText = ` (${formattedDays} left)`;
-      }
-    } else {
-      runwayText = statusKey === "healthy" ? ` (>1y buffer)` : ` (>1y supply)`;
-    }
-  }
-
-  const statusLine = `${cfg.label}${runwayText}`;
-
-  // Formatting casing & numbers
   const displayName = toTitleCase(item.item_name || "Unnamed Item");
   const catCfg = getCategoryIconConfig(item.category);
   const CategoryIcon = catCfg.Icon;
@@ -316,106 +343,111 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory }) {
   let subUnitQtyText = null;
   if (containerMeta) {
     const subQty = toSubUnitQty(current, containerMeta.size);
-    subUnitQtyText = formatStatQty(subQty, containerMeta.subUnit);
+    subUnitQtyText = formatStatQty(subQty, containerMeta.subUnit, true);
   }
 
-  const isDiscrete =
-    !containerMeta &&
-    unitLabel &&
-    !["kg", "g", "mg", "ml", "l", "liters", "litres"].includes(unitLabel.toLowerCase());
+  const runwayInsight = getRunwayInsight(item, metrics, current, statusKey);
 
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm flex flex-col justify-between gap-3 hover:shadow-md transition-all hover:border-slate-200">
-      <div className="space-y-2.5">
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs flex flex-col justify-between gap-3 hover:shadow-md hover:border-slate-300 transition-all">
+      <div className="space-y-3">
+        {/* Top Header Row: Category Icon + Item Name on Left, Status Badge on Right */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${catCfg.bg} border ${catCfg.border}`}>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${catCfg.bg} border ${catCfg.border}`}>
               <CategoryIcon className={`w-4 h-4 ${catCfg.color}`} />
             </div>
             <div className="min-w-0">
-              <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-none mb-1">
                 {item.category || "General"}
               </span>
-              <p className="text-sm font-bold text-slate-900 leading-tight truncate" title={displayName}>
+              <h4 className="text-sm font-bold text-slate-900 leading-tight truncate" title={displayName}>
                 {displayName}
-              </p>
+              </h4>
             </div>
           </div>
           <span
-            className={`text-[11px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0 ${cfg.badgeClass}`}
+            className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cfg.badgeClass}`}
           >
-            {pct}%
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dotClass}`} />
+            {cfg.label}
           </span>
         </div>
 
-        {/* Progress Bar with synced color and threshold tick */}
-        <div className="space-y-1">
+        {/* Stock Figures & Progress Bar */}
+        <div className="space-y-1.5">
+          <div className="flex items-baseline justify-between gap-2 text-xs">
+            <div className="min-w-0 truncate">
+              <span className="text-sm font-extrabold text-slate-900">
+                {formatStatQty(current, unitLabel, false)}
+              </span>
+              <span className="text-slate-500 font-medium ml-1">
+                of {formatStatQty(capacity, unitLabel, false)} {unitLabel}
+              </span>
+              {subUnitQtyText && (
+                <span className="text-slate-400 font-normal ml-1.5 text-[11px]" title={subUnitQtyText}>
+                  ({subUnitQtyText})
+                </span>
+              )}
+            </div>
+            <span className="text-xs font-bold text-slate-500 shrink-0">
+              {pct}%
+            </span>
+          </div>
+
           <div
             role="progressbar"
             aria-valuenow={pct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`${displayName}: ${pct}% in stock, reorder threshold ${Math.round(thresholdRatio * 100)}%`}
-            className="relative h-1.5 w-full bg-slate-100 rounded-full"
+            aria-label={`${displayName}: ${pct}% in stock`}
+            className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden"
           >
             <div
               className={`h-full rounded-full transition-all duration-500 ${cfg.barClass}`}
               style={{ width: `${Math.min(pct, 100)}%` }}
             />
-            <div
-              className="absolute -top-0.5 -bottom-0.5 w-[2px] bg-slate-400 rounded-xs z-10 -translate-x-1/2 pointer-events-auto"
-              style={{ left: `${Math.min(Math.max(thresholdRatio * 100, 0), 100)}%` }}
-              title={`Reorder threshold: ${Math.round(thresholdRatio * 100)}%`}
-            />
           </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium">
-            <span>
-              <strong className="text-slate-900 font-bold">
-                {formatStatQty(current, isDiscrete ? unitLabel : null)}
-              </strong>
-              <span className="text-slate-500">
-                {" "}/ {formatStatQty(capacity, isDiscrete ? unitLabel : null)} {unitLabel}
-              </span>
-            </span>
-            {subUnitQtyText && (
-              <span className="text-[11px] text-slate-500">
-                {subUnitQtyText}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Synced Status Line with Days-of-Supply on every card */}
-        <div className="min-h-[26px] text-[11px] flex items-center">
-          <p className={`flex items-center gap-1.5 text-[11px] ${cfg.textClass}`}>
-            <StatusIcon className={`w-3.5 h-3.5 shrink-0 ${cfg.iconClass}`} />
-            <span>{statusLine}</span>
-          </p>
         </div>
       </div>
 
-      {/* Action Buttons Row */}
-      <div className="flex items-stretch gap-1.5">
-        <button
-          type="button"
-          onClick={onViewHistory}
-          aria-label="View stock history"
-          title="View Stock History"
-          className="px-2.5 rounded-xl border border-slate-200/80 bg-slate-50 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer shrink-0 flex items-center justify-center focus:outline-hidden focus:ring-2 focus:ring-slate-300"
+      {/* Footer Row: Supply Runway Insight on Left, Action Buttons on Right */}
+      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100/80">
+        <p
+          className={`text-xs font-medium truncate min-w-0 flex-1 ${statusKey === "critical"
+              ? "text-rose-600 font-semibold"
+              : statusKey === "low"
+                ? "text-amber-700 font-semibold"
+                : "text-slate-500"
+            }`}
+          title={runwayInsight}
         >
-          <History className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={onAdjust}
-          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center shadow-2xs ${cfg.buttonClass}`}
-        >
-          {cfg.buttonLabel}
-        </button>
+          {runwayInsight}
+        </p>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={onViewHistory}
+            aria-label={`View stock history for ${displayName}`}
+            title="View Stock History"
+            className="p-1.5 rounded-lg border border-slate-200/80 bg-slate-50 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+          >
+            <History className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={onAdjust}
+            className={`py-1 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${cfg.buttonClass}`}
+          >
+            {cfg.buttonLabel}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+
 
 // ----- StatusPill -----
 function StatusPill({ current, threshold, daysUntilLow, extra }) {
@@ -896,178 +928,176 @@ export default function InventoryManagement({ loggedInUser }) {
       <div className="p-5 lg:p-6 space-y-6">
         {/* Top Section: Critical Stock & Growth Program Alerts (smoothly animates on tab switch) */}
         <div
-          className={`grid transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            !viewArchived && !viewHistory
+          className={`grid transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${!viewArchived && !viewHistory
               ? "grid-rows-[1fr] opacity-100"
               : "grid-rows-[0fr] opacity-0 pointer-events-none"
-          }`}
+            }`}
         >
           <div className="overflow-hidden">
             <div
-              className={`p-1 -m-1 space-y-6 pb-2 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                !viewArchived && !viewHistory
+              className={`p-1 -m-1 space-y-6 pb-2 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${!viewArchived && !viewHistory
                   ? "translate-y-0 opacity-100"
                   : "-translate-y-4 opacity-0"
-              }`}
+                }`}
             >
               <section className="space-y-3">
 
-            {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {[...Array(4)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm space-y-3"
-                  >
-                    <div className="skeleton h-9 w-9 rounded-lg" />
-                    <div className="skeleton h-4 w-3/4 rounded-md" />
-                    <div className="skeleton h-2 w-full rounded-full" />
-                    <div className="skeleton h-3 w-1/2 rounded-md" />
-                  </div>
-                ))}
-              </div>
-            ) : criticalDisplay.length === 0 ? (
-              <div className="rounded-2xl border border-slate-100 bg-white p-8 text-center text-sm text-slate-400 shadow-sm">
-                No active inventory items yet. Add your first supply above.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {criticalDisplay.map((item) => (
-                  <CriticalStockCard
-                    key={item.item_id}
-                    item={item}
-                    metrics={itemMetrics[item.item_id]}
-                    onAdjust={() => setAdjustItem(item)}
-                    onViewHistory={() => setHistoryItem(item)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Collapsible Unregistered Supplies Alert Card */}
-          {unlinkedGuidelines.length > 0 && (
-            <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition-all">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold text-slate-800">
-                Unregistered Growth Program Supplies
-              </h3>
-
-              <button
-                type="button"
-                onClick={() => setUnregisteredOpen((prev) => !prev)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200/80 border border-slate-200/60 transition-colors cursor-pointer shrink-0"
-              >
-                <span>{unregisteredOpen ? "Collapse" : `Review Supplies (${unlinkedGuidelines.length})`}</span>
-                <ChevronDown
-                  className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-300 ${unregisteredOpen ? "rotate-180" : ""
-                    }`}
-                />
-              </button>
-            </div>
-
-            {/* Smooth Animated Accordion Container (CSS Grid Transition) */}
-            <div
-              className={`grid transition-all duration-300 ease-in-out ${unregisteredOpen
-                ? "grid-rows-[1fr] opacity-100 mt-3 pt-3 border-t border-slate-100"
-                : "grid-rows-[0fr] opacity-0"
-                }`}
-            >
-              <div className="overflow-hidden space-y-3">
-                {/* 4 Items per page with fade transition */}
-                <div key={safeUnregPage} className="space-y-2 animate-in fade-in duration-200">
-                  {paginatedUnregistered.map((g) => {
-                    const typeMap = {
-                      FEED: "Feed",
-                      MEDICATION: "Medication",
-                      SUPPLEMENT: "Supplements",
-                    };
-                    const mappedCat = typeMap[(g.activity_type || "").toUpperCase()] || "Feed";
-                    const progName = g.growth_programs?.name || "Growth Program";
-                    const catCfg = getCategoryIconConfig(mappedCat);
-                    const CatIcon = catCfg.Icon;
-                    return (
+                {loading ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[...Array(4)].map((_, i) => (
                       <div
-                        key={g.guideline_id}
-                        className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-50/50 hover:bg-slate-50 border border-slate-100 shadow-2xs hover:border-slate-200 transition-all"
+                        key={i}
+                        className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm space-y-3"
                       >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className={`w-8 h-8 rounded-lg ${catCfg.bg} border ${catCfg.border} flex items-center justify-center shrink-0`}>
-                            <CatIcon className={`w-4 h-4 ${catCfg.color}`} />
-                          </div>
-                          <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-2">
-                            <h4
-                              className="text-xs sm:text-sm font-bold text-slate-900 truncate"
-                              title={g.task_name}
-                            >
-                              {g.task_name}
-                            </h4>
-                            <span className="text-slate-300 hidden sm:inline">&bull;</span>
-                            <p className="text-xs text-slate-500 font-medium truncate">
-                              {progName} &bull; Day {g.days_after_birth}
-                            </p>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditItem(null);
-                            setPrefillSupply({
-                              item_name: g.task_name,
-                              category: mappedCat,
-                              description: `Added from Growth Program "${progName}" (Day ${g.days_after_birth})`,
-                              guideline: g,
-                            });
-                            setAddModal(true);
-                          }}
-                          className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 text-xs font-bold shadow-2xs shadow-emerald-600/20 transition-all shrink-0 cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          Add to Inventory
-                        </button>
+                        <div className="skeleton h-9 w-9 rounded-lg" />
+                        <div className="skeleton h-4 w-3/4 rounded-md" />
+                        <div className="skeleton h-2 w-full rounded-full" />
+                        <div className="skeleton h-3 w-1/2 rounded-md" />
                       </div>
-                    );
-                  })}
-                </div>
-
-                {/* Pagination Controls (when more than 4 items) */}
-                {totalUnregPages > 1 && (
-                  <div className="flex items-center justify-between pt-2 px-1 text-xs border-t border-slate-100/80">
-                    <span className="text-slate-400 font-medium text-[11px]">
-                      Showing {(safeUnregPage - 1) * UNREG_PER_PAGE + 1}–
-                      {Math.min(safeUnregPage * UNREG_PER_PAGE, unlinkedGuidelines.length)} of{" "}
-                      {unlinkedGuidelines.length} supplies
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={safeUnregPage <= 1}
-                        onClick={() => setUnregisteredPage((p) => Math.max(1, p - 1))}
-                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
-                      >
-                        Prev
-                      </button>
-                      <span className="text-[11px] font-bold text-slate-600 px-1">
-                        {safeUnregPage} / {totalUnregPages}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={safeUnregPage >= totalUnregPages}
-                        onClick={() =>
-                          setUnregisteredPage((p) => Math.min(totalUnregPages, p + 1))
-                        }
-                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
-                      >
-                        Next
-                      </button>
-                    </div>
+                    ))}
+                  </div>
+                ) : criticalDisplay.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-100 bg-white p-8 text-center text-sm text-slate-400 shadow-sm">
+                    No active inventory items yet. Add your first supply above.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {criticalDisplay.map((item) => (
+                      <CriticalStockCard
+                        key={item.item_id}
+                        item={item}
+                        metrics={itemMetrics[item.item_id]}
+                        onAdjust={() => setAdjustItem(item)}
+                        onViewHistory={() => setHistoryItem(item)}
+                      />
+                    ))}
                   </div>
                 )}
-              </div>
-            </div>
-          </section>
-        )}
+              </section>
+
+              {/* Collapsible Unregistered Supplies Alert Card */}
+              {unlinkedGuidelines.length > 0 && (
+                <section className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition-all">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-bold text-slate-800">
+                      Unregistered Growth Program Supplies
+                    </h3>
+
+                    <button
+                      type="button"
+                      onClick={() => setUnregisteredOpen((prev) => !prev)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200/80 border border-slate-200/60 transition-colors cursor-pointer shrink-0"
+                    >
+                      <span>{unregisteredOpen ? "Collapse" : `Review Supplies (${unlinkedGuidelines.length})`}</span>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-300 ${unregisteredOpen ? "rotate-180" : ""
+                          }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Smooth Animated Accordion Container (CSS Grid Transition) */}
+                  <div
+                    className={`grid transition-all duration-300 ease-in-out ${unregisteredOpen
+                      ? "grid-rows-[1fr] opacity-100 mt-3 pt-3 border-t border-slate-100"
+                      : "grid-rows-[0fr] opacity-0"
+                      }`}
+                  >
+                    <div className="overflow-hidden space-y-3">
+                      {/* 4 Items per page with fade transition */}
+                      <div key={safeUnregPage} className="space-y-2 animate-in fade-in duration-200">
+                        {paginatedUnregistered.map((g) => {
+                          const typeMap = {
+                            FEED: "Feed",
+                            MEDICATION: "Medication",
+                            SUPPLEMENT: "Supplements",
+                          };
+                          const mappedCat = typeMap[(g.activity_type || "").toUpperCase()] || "Feed";
+                          const progName = g.growth_programs?.name || "Growth Program";
+                          const catCfg = getCategoryIconConfig(mappedCat);
+                          const CatIcon = catCfg.Icon;
+                          return (
+                            <div
+                              key={g.guideline_id}
+                              className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-50/50 hover:bg-slate-50 border border-slate-100 shadow-2xs hover:border-slate-200 transition-all"
+                            >
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className={`w-8 h-8 rounded-lg ${catCfg.bg} border ${catCfg.border} flex items-center justify-center shrink-0`}>
+                                  <CatIcon className={`w-4 h-4 ${catCfg.color}`} />
+                                </div>
+                                <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-2">
+                                  <h4
+                                    className="text-xs sm:text-sm font-bold text-slate-900 truncate"
+                                    title={g.task_name}
+                                  >
+                                    {g.task_name}
+                                  </h4>
+                                  <span className="text-slate-300 hidden sm:inline">&bull;</span>
+                                  <p className="text-xs text-slate-500 font-medium truncate">
+                                    {progName} &bull; Day {g.days_after_birth}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditItem(null);
+                                  setPrefillSupply({
+                                    item_name: g.task_name,
+                                    category: mappedCat,
+                                    description: `Added from Growth Program "${progName}" (Day ${g.days_after_birth})`,
+                                    guideline: g,
+                                  });
+                                  setAddModal(true);
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 text-xs font-bold shadow-2xs shadow-emerald-600/20 transition-all shrink-0 cursor-pointer"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                Add to Inventory
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Pagination Controls (when more than 4 items) */}
+                      {totalUnregPages > 1 && (
+                        <div className="flex items-center justify-between pt-2 px-1 text-xs border-t border-slate-100/80">
+                          <span className="text-slate-400 font-medium text-[11px]">
+                            Showing {(safeUnregPage - 1) * UNREG_PER_PAGE + 1}–
+                            {Math.min(safeUnregPage * UNREG_PER_PAGE, unlinkedGuidelines.length)} of{" "}
+                            {unlinkedGuidelines.length} supplies
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={safeUnregPage <= 1}
+                              onClick={() => setUnregisteredPage((p) => Math.max(1, p - 1))}
+                              className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                            >
+                              Prev
+                            </button>
+                            <span className="text-[11px] font-bold text-slate-600 px-1">
+                              {safeUnregPage} / {totalUnregPages}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={safeUnregPage >= totalUnregPages}
+                              onClick={() =>
+                                setUnregisteredPage((p) => Math.min(totalUnregPages, p + 1))
+                              }
+                              className="px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              )}
             </div>
           </div>
         </div>
@@ -1539,13 +1569,12 @@ export default function InventoryManagement({ loggedInUser }) {
                                     </span>
                                   ) : m.upcomingDemandSubUnit > 0 ? (
                                     <span
-                                      className={`text-[10px] font-semibold mt-0.5 ${
-                                        m.hasUpcomingShortfall
+                                      className={`text-[10px] font-semibold mt-0.5 ${m.hasUpcomingShortfall
                                           ? "text-rose-600 font-bold"
                                           : m.willFallBelowThreshold
-                                          ? "text-amber-600"
-                                          : "text-slate-400"
-                                      }`}
+                                            ? "text-amber-600"
+                                            : "text-slate-400"
+                                        }`}
                                       title={`Scheduled in next 14 days for ${m.upcomingBatchesCount} batch(es)`}
                                     >
                                       {m.hasUpcomingShortfall

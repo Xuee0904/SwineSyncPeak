@@ -42,7 +42,7 @@ const formatLogDateTime = (dateStr) => {
   }
 };
 
-export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUnarchive, pigData, loggedInUser }) {
+export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUnarchive, onPromote, pigData, loggedInUser }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
@@ -1256,7 +1256,11 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
 
                 <div className="flex items-center gap-2.5">
                   {isArchived ? (
-                    onUnarchive && (
+                    (data.archive_reasoning || '').toLowerCase().includes('promot') ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100/80 border border-slate-200 text-slate-500 text-xs font-semibold select-none">
+                        Promoted to Breeding Herd
+                      </span>
+                    ) : onUnarchive ? (
                       <button
                         type="button"
                         onClick={() => onUnarchive(data)}
@@ -1265,9 +1269,23 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                         <RotateCcw className="w-3.5 h-3.5" />
                         <span>Unarchive Record</span>
                       </button>
-                    )
+                    ) : null
                   ) : (
                     <>
+                      {isBatch && onPromote && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onPromote(data);
+                          }}
+                          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-xs font-bold text-emerald-800 transition-colors cursor-pointer"
+                          title="Promote a pig from this batch to adult breeding herd"
+                        >
+                          <PigSnout className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Promote to Breeder</span>
+                        </button>
+                      )}
                       {onArchive && (
                         <button
                           type="button"

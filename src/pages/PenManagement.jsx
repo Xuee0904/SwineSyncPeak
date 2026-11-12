@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  PiggyBank,
-  Gauge,
   Grid3X3,
   ArrowRightLeft,
+  Users,
+  TrendingUp,
+  Sparkles,
 } from "lucide-react";
 import toast from "../utils/toast";
 import AddPenModal from "../components/PenManagement/AddPenModal";
@@ -22,26 +23,65 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
-function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
-  return (
-    <div className={`relative overflow-hidden rounded-2xl border border-slate-100 shadow-sm ${bg || "bg-white"} p-5 flex items-center gap-4 transition-all duration-200 hover:shadow-md`}>
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${accentColor || "bg-slate-50"}`}>
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          {loading ? (
-            <div className="h-7 w-16 bg-slate-100 animate-pulse rounded-md" />
-          ) : (
-            <h3 className="text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
-          )}
-          {badge && !loading && (
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeColor || "bg-slate-100 text-slate-600"}`}>
-              {badge}
-            </span>
-          )}
+function StatCard({
+  label,
+  value,
+  unit,
+  badge,
+  badgeColor,
+  icon,
+  iconBg,
+  iconColor,
+  alert,
+  alertBorder,
+  loading,
+}) {
+  if (loading) {
+    return (
+      <div className="bg-white border border-slate-200/70 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between min-h-[96px]">
+        <div className="flex items-center justify-between mb-2">
+          <div className="h-3 w-20 bg-slate-100 animate-pulse rounded" />
+          <div className="w-8 h-8 rounded-xl bg-slate-100 animate-pulse" />
         </div>
+        <div className="h-7 w-24 bg-slate-100 animate-pulse rounded mt-1" />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`bg-white border rounded-2xl p-4 sm:p-5 shadow-xs transition-all flex flex-col justify-between min-h-[96px] ${
+        alert
+          ? alertBorder || "border-rose-200/90 ring-1 ring-rose-100/70"
+          : "border-slate-200/70"
+      }`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">
+          {label}
+        </span>
+        <div
+          className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors shrink-0 ${
+            iconBg || (alert ? "bg-rose-50 text-rose-600" : "bg-slate-50 text-slate-500")
+          } ${iconColor || ""}`}
+        >
+          {icon}
+        </div>
+      </div>
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+          {value}
+        </span>
+        {unit && <span className="text-xs font-semibold text-slate-400">{unit}</span>}
+        {badge && (
+          <span
+            className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ml-1 shrink-0 ${
+              badgeColor || "text-slate-600 bg-slate-100 border border-slate-200"
+            }`}
+          >
+            {badge}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -57,6 +97,7 @@ export default function PenManagement({ loggedInUser }) {
   const [archivingPen, setArchivingPen] = useState(null);
   const [viewingPen, setViewingPen] = useState(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferSourcePenId, setTransferSourcePenId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [initializing, setInitializing] = useState(false);
 
@@ -88,12 +129,14 @@ export default function PenManagement({ loggedInUser }) {
   const totalCapacity = inServicePens.reduce((sum, p) => sum + Number(p.capacity || 0), 0);
   const totalOccupancy = inServicePens.reduce((sum, p) => sum + Number(p.occupancy || 0), 0);
   const utilization = totalCapacity ? Math.round((totalOccupancy / totalCapacity) * 100) : 0;
+  const availableSlots = Math.max(0, totalCapacity - totalOccupancy);
 
   const statusCounts = pens.reduce((acc, p) => {
     const k = getPenStatus(p).key;
     acc[k] = (acc[k] || 0) + 1;
     return acc;
   }, {});
+  const vacantPensCount = statusCounts["vacant"] || 0;
 
   /* ─── Handlers ─────────────────────────────────────────────── */
   const handleAddPen = async ({ code, section, capacity, onSuccess }) => {
@@ -247,61 +290,112 @@ export default function PenManagement({ loggedInUser }) {
 
   return (
     <div className="p-5 lg:p-6 space-y-5 animate-fade-in font-sans text-slate-800">
-      {/* Stats Grid at the very top */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* ─── LIVE STAT STRIP (Dashboard-Style 4-Card Grid) ─── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* 1. Pens In Service */}
         <StatCard
-          icon={<Grid3X3 className="w-6 h-6 text-emerald-600" />}
           label="Pens In Service"
-          value={`${inServicePens.length} / ${pens.length}`}
-          badge={outOfServiceCount > 0 ? `${outOfServiceCount} OUT` : "PENS"}
-          badgeColor={outOfServiceCount > 0 ? "bg-slate-200 text-slate-700" : "bg-emerald-100 text-emerald-700"}
-          accentColor="bg-emerald-50"
+          value={inServicePens.length}
+          unit={`/ ${pens.length} active`}
+          icon={<Grid3X3 className="w-4 h-4" />}
+          alert={outOfServiceCount > 0}
+          alertBorder="border-amber-200/90 ring-1 ring-amber-100/70"
+          badge={outOfServiceCount > 0 ? `${outOfServiceCount} maintenance` : null}
+          badgeColor="text-amber-700 bg-amber-50 border border-amber-200"
+          iconBg={outOfServiceCount > 0 ? "bg-amber-50 text-amber-600" : "bg-slate-50 text-slate-500"}
           loading={loading}
         />
+
+        {/* 2. Total Pigs Housed */}
         <StatCard
-          icon={<PiggyBank className="w-6 h-6 text-amber-500" />}
-          label="Pigs Housed / Capacity"
-          value={`${totalOccupancy} / ${totalCapacity}`}
-          badge="OCCUPANCY"
-          badgeColor="bg-amber-100 text-amber-600"
-          accentColor="bg-amber-50"
+          label="Pigs Housed"
+          value={totalOccupancy}
+          unit="heads"
+          badge={utilization >= 90 ? `${utilization}% near cap` : null}
+          badgeColor="text-rose-700 bg-rose-50 border border-rose-200"
+          icon={<Users className="w-4 h-4" />}
+          alert={utilization >= 90}
+          alertBorder="border-rose-200/90 ring-1 ring-rose-100/70"
+          iconBg={utilization >= 90 ? "bg-rose-50 text-rose-600" : "bg-slate-50 text-slate-500"}
           loading={loading}
         />
+
+        {/* 3. Available Capacity */}
         <StatCard
-          icon={<Gauge className={`w-6 h-6 ${utilization >= 90 ? "text-rose-600" : "text-indigo-600"}`} />}
-          label="Facility Utilization"
-          value={`${utilization}%`}
-          badge={utilization >= 90 ? "CRITICAL" : "OPTIMAL"}
-          badgeColor={utilization >= 90 ? "bg-rose-500 text-white" : "bg-indigo-100 text-indigo-700"}
-          accentColor={utilization >= 90 ? "bg-rose-50" : "bg-indigo-50"}
-          bg={utilization >= 90 ? "bg-rose-50/60" : "bg-white"}
+          label="Available Capacity"
+          value={availableSlots}
+          unit="slots free"
+          badge={availableSlots === 0 ? "at capacity" : null}
+          badgeColor="text-rose-700 bg-rose-50 border border-rose-200"
+          icon={<TrendingUp className="w-4 h-4" />}
+          alert={availableSlots === 0}
+          alertBorder="border-rose-200/90 ring-1 ring-rose-100/70"
+          iconBg={availableSlots === 0 ? "bg-rose-50 text-rose-600" : "bg-slate-50 text-slate-500"}
+          loading={loading}
+        />
+
+        {/* 4. Vacant Pens */}
+        <StatCard
+          label="Vacant Pens"
+          value={vacantPensCount}
+          unit="pens ready"
+          icon={<Sparkles className="w-4 h-4" />}
+          iconBg="bg-slate-50 text-slate-500"
           loading={loading}
         />
       </div>
 
-      {/* Streamlined Filter Chips & Actions */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        {/* Filter Rows */}
-        <div className="flex flex-col gap-2.5">
+      {/* Streamlined Filter Chips & Actions (Single-Row Consolidated Bar) */}
+      <div className="bg-white rounded-2xl border border-slate-200/70 shadow-xs p-3.5 sm:p-4 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3.5">
+        {/* Filters Container */}
+        <div className="flex flex-wrap items-center gap-y-2.5 gap-x-4">
+          {/* Pen Type */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 w-20 shrink-0">Pen type</span>
-            <button type="button" onClick={() => setActiveSection("ALL")} className={chipClass(activeSection === "ALL")}>
-              All Types
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 shrink-0 mr-0.5">
+              Type:
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveSection("ALL")}
+              className={chipClass(activeSection === "ALL")}
+            >
+              All
             </button>
             {Object.entries(SECTIONS).map(([key, s]) => (
-              <button key={key} type="button" onClick={() => setActiveSection(key)} className={chipClass(activeSection === key)}>
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveSection(key)}
+                className={chipClass(activeSection === key)}
+              >
                 {s.short}
               </button>
             ))}
           </div>
+
+          {/* Divider */}
+          <div className="hidden sm:block w-px h-5 bg-slate-200 shrink-0 mx-1" />
+
+          {/* Availability Status */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 w-20 shrink-0">Availability</span>
-            <button type="button" onClick={() => setStatusFilter("ALL")} className={chipClass(statusFilter === "ALL")}>
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 shrink-0 mr-0.5">
+              Status:
+            </span>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("ALL")}
+              className={chipClass(statusFilter === "ALL")}
+            >
               All
             </button>
             {STATUS_LEGEND.map((s) => (
-              <button key={s.key} type="button" onClick={() => setStatusFilter(s.key)} className={chipClass(statusFilter === s.key)}>
-                {s.label} ({statusCounts[s.key] || 0})
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setStatusFilter(s.key)}
+                className={chipClass(statusFilter === s.key)}
+              >
+                {s.label}
               </button>
             ))}
           </div>
@@ -311,10 +405,13 @@ export default function PenManagement({ loggedInUser }) {
         <button
           id="transfer-swine"
           type="button"
-          onClick={() => setShowTransferModal(true)}
-          className="self-start md:self-center flex items-center justify-center gap-1.5 px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shrink-0 shadow-sm"
+          onClick={() => {
+            setTransferSourcePenId("");
+            setShowTransferModal(true);
+          }}
+          className="self-start xl:self-center flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shrink-0 shadow-xs hover:shadow-sm"
         >
-          <ArrowRightLeft className="w-4 h-4" strokeWidth={2.5} /> Transfer Swine
+          <ArrowRightLeft className="w-3.5 h-3.5" strokeWidth={2.5} /> Transfer Swine
         </button>
       </div>
 
@@ -377,15 +474,24 @@ export default function PenManagement({ loggedInUser }) {
           setViewingPen(null);
           handleUnarchivePen(p.id, p.code);
         }}
+        onTransferSwine={(p) => {
+          setViewingPen(null);
+          setTransferSourcePenId(p.id);
+          setShowTransferModal(true);
+        }}
       />
 
       {showTransferModal && (
         <SwineTransferModal
           isOpen={showTransferModal}
-          onClose={() => setShowTransferModal(false)}
+          onClose={() => {
+            setShowTransferModal(false);
+            setTransferSourcePenId("");
+          }}
           pens={pens}
           onSuccess={fetchPens}
           user={loggedInUser}
+          initialSourcePenId={transferSourcePenId}
         />
       )}
     </div>

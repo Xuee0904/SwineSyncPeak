@@ -214,7 +214,7 @@ router.get('/api/breeding-logs', async (req, res) => {
           status = "action";
         }
       } else if (bStatus === 'pregnant') {
-        if (diffDays > 114) status = "action"; // Overdue
+        if (diffDays >= 100) status = "action"; // Day 100+ Pre-farrow prep & Farrowing
       }
 
       const expDateStr = b.expected_farrowing_date;

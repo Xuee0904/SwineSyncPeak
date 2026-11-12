@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, Loader2, CheckCircle2, Activity,
+  X, Loader2, CheckCircle2, CalendarCheck,
   ThumbsUp, ThumbsDown
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
@@ -118,14 +118,16 @@ export default function LogCheckModal({ isOpen, onClose, onSaved, loggedInUser, 
         {!isSuccess && (
           <div>
             {/* Header */}
-            <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-50">
+            <div className="px-6 pt-6 pb-4 flex items-center justify-between border-b border-slate-100">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-                  <Activity size={18} />
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
+                  <CalendarCheck size={18} />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">Log Milestone Check</h3>
-                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Sow #{initialData.tag}</p>
+                  <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                    Sow #{initialData.tag}{initialData.day !== undefined ? ` · Day ${initialData.day}` : ''}{initialData.pen_code ? ` · Pen ${initialData.pen_code}` : ''}
+                  </p>
                 </div>
               </div>
               <button type="button" onClick={handleClose} disabled={submitting} className="p-2 rounded-full text-slate-400 hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50">
@@ -141,36 +143,34 @@ export default function LogCheckModal({ isOpen, onClose, onSaved, loggedInUser, 
                 <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
                   Check Type
                 </label>
-                <div className="flex bg-slate-100 rounded-xl p-1">
-                  {initialData?.day < 25 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (containerRef.current) prevHeightRef.current = containerRef.current.offsetHeight;
-                        setCheckType('heat');
-                      }}
-                      className={`flex-1 text-[11px] font-bold py-2 rounded-lg transition-all ${
-                        checkType === 'heat' 
-                          ? 'bg-white text-indigo-700 shadow-sm' 
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      Heat Check (Day 18-24)
-                    </button>
-                  )}
+                <div className="grid grid-cols-2 bg-slate-100 rounded-xl p-1 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (containerRef.current) prevHeightRef.current = containerRef.current.offsetHeight;
+                      setCheckType('heat');
+                    }}
+                    className={`text-[11px] font-bold py-2 px-2 rounded-lg transition-all cursor-pointer outline-none focus:outline-none ${
+                      checkType === 'heat' 
+                        ? 'bg-white text-emerald-700 shadow-xs' 
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Heat Check (Day 18–24)
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
                       if (containerRef.current) prevHeightRef.current = containerRef.current.offsetHeight;
                       setCheckType('pregnancy');
                     }}
-                    className={`flex-1 text-[11px] font-bold py-2 rounded-lg transition-all ${
+                    className={`text-[11px] font-bold py-2 px-2 rounded-lg transition-all cursor-pointer outline-none focus:outline-none ${
                       checkType === 'pregnancy' 
-                        ? 'bg-white text-indigo-700 shadow-sm' 
+                        ? 'bg-white text-emerald-700 shadow-xs' 
                         : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
-                    Pregnancy Check (Day 28-35)
+                    Pregnancy Check (Day 28–35)
                   </button>
                 </div>
               </div>
@@ -187,14 +187,14 @@ export default function LogCheckModal({ isOpen, onClose, onSaved, loggedInUser, 
                       if (containerRef.current) prevHeightRef.current = containerRef.current.offsetHeight;
                       setOutcome('passed');
                     }}
-                    className={`px-3 py-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    className={`px-4 py-3.5 rounded-xl border-2 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer outline-none focus:outline-none active:scale-[0.98] ${
                       outcome === 'passed' 
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700' 
-                        : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-300'
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-xs ring-1 ring-emerald-500/20' 
+                        : 'border-slate-200 bg-slate-50/50 text-slate-600 hover:border-slate-300 hover:bg-slate-100/70'
                     }`}
                   >
-                    <ThumbsUp size={20} className={outcome === 'passed' ? 'text-emerald-500' : 'text-slate-400'} />
-                    <span className="text-[11px] font-bold">Passed / Confirmed</span>
+                    <ThumbsUp size={22} className={outcome === 'passed' ? 'text-emerald-600' : 'text-slate-400'} />
+                    <span className="text-xs font-bold">Passed / Confirmed</span>
                   </button>
                   <button
                     type="button"
@@ -202,26 +202,16 @@ export default function LogCheckModal({ isOpen, onClose, onSaved, loggedInUser, 
                       if (containerRef.current) prevHeightRef.current = containerRef.current.offsetHeight;
                       setOutcome('failed');
                     }}
-                    className={`px-3 py-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    className={`px-4 py-3.5 rounded-xl border-2 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer outline-none focus:outline-none active:scale-[0.98] ${
                       outcome === 'failed' 
-                        ? 'border-orange-500 bg-orange-50 text-orange-700' 
-                        : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-300'
+                        ? 'border-rose-500 bg-rose-50 text-rose-800 shadow-xs ring-1 ring-rose-500/20' 
+                        : 'border-slate-200 bg-slate-50/50 text-slate-600 hover:border-slate-300 hover:bg-slate-100/70'
                     }`}
                   >
-                    <ThumbsDown size={20} className={outcome === 'failed' ? 'text-orange-500' : 'text-slate-400'} />
-                    <span className="text-[11px] font-bold">Failed / Returned</span>
+                    <ThumbsDown size={22} className={outcome === 'failed' ? 'text-rose-600' : 'text-slate-400'} />
+                    <span className="text-xs font-bold">Failed / Returned</span>
                   </button>
                 </div>
-                {outcome === 'failed' && (
-                  <p className="mt-2 text-[10px] font-semibold text-orange-600 animate-in fade-in">
-                    ⚠️ The breeding status will be marked as Failed, and Sow #{initialData.tag} will be returned to 'Healthy' status.
-                  </p>
-                )}
-                {outcome === 'passed' && checkType === 'pregnancy' && (
-                  <p className="mt-2 text-[10px] font-semibold text-emerald-600 animate-in fade-in">
-                    ✅ The breeding status will be confirmed as Pregnant.
-                  </p>
-                )}
               </div>
 
               {/* Error banner */}
@@ -244,12 +234,12 @@ export default function LogCheckModal({ isOpen, onClose, onSaved, loggedInUser, 
                 <button
                   type="submit"
                   disabled={submitting || !outcome}
-                  className={`px-5 py-2.5 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-50 ${
-                    outcome === 'failed' ? 'bg-orange-600 hover:bg-orange-700 shadow-orange-600/20' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
+                  className={`px-5 py-2.5 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${
+                    outcome === 'failed' ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20'
                   }`}
                 >
                   {submitting && <Loader2 size={14} className="animate-spin" />}
-                  {submitting ? 'Saving...' : 'Confirm Outcome'}
+                  <span>{submitting ? 'Saving...' : 'Confirm Outcome'}</span>
                 </button>
               </div>
             </form>
@@ -259,7 +249,7 @@ export default function LogCheckModal({ isOpen, onClose, onSaved, loggedInUser, 
         {/* ══ SUCCESS ═════════════════════════════════════════════ */}
         {isSuccess && (
           <div className="p-8 text-center space-y-5">
-            <div className="mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm bg-indigo-50 border-indigo-100 text-indigo-600">
+            <div className="mx-auto w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm bg-emerald-50 border-emerald-100 text-emerald-600">
               <CheckCircle2 size={28} strokeWidth={2.5} />
             </div>
 
@@ -273,7 +263,7 @@ export default function LogCheckModal({ isOpen, onClose, onSaved, loggedInUser, 
             <button
               type="button"
               onClick={handleClose}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-600/20 transition-all cursor-pointer active:scale-95"
+              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer active:scale-95"
             >
               Done
             </button>

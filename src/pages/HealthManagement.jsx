@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useCallback, useLayoutEffect, useEffect } from "react";
 import {
   Search,
   Plus,
@@ -12,6 +12,13 @@ import {
   Archive,
   X,
   CheckCircle2,
+  Pill,
+  Scissors,
+  Sparkles,
+  Clock,
+  Calendar,
+  ClipboardList,
+  Package,
 } from "lucide-react";
 import { toast } from "../utils/toast";
 import VaccinationFormModal from "../components/HealthManagement/VaccinationFormModal";
@@ -139,26 +146,99 @@ function EventTypePill({ type }) {
   );
 }
 
-function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
+function getTaskActivityMeta(type) {
+  switch ((type || '').toUpperCase()) {
+    case 'VACCINATION':
+      return { Icon: Syringe };
+    case 'MEDICATION':
+      return { Icon: Pill };
+    case 'PROCEDURE':
+      return { Icon: Scissors };
+    case 'SUPPLEMENT':
+      return { Icon: Sparkles };
+    default:
+      return { Icon: ClipboardList };
+  }
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  unit,
+  unitColor,
+  subtext,
+  badge,
+  badgeColor,
+  isAlert = false,
+  isWarning = false,
+  loading = false,
+}) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl border border-slate-100 shadow-sm ${bg || 'bg-white'} p-5 flex items-center gap-4`}>
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${accentColor || 'bg-slate-50'}`}>
-        {icon}
+    <div
+      className={`bg-white border rounded-2xl p-4 sm:p-5 shadow-xs transition-all flex flex-col justify-between min-h-[106px] sm:min-h-[112px] ${isAlert
+          ? 'border-rose-200/90 ring-1 ring-rose-100/70'
+          : isWarning
+            ? 'border-amber-200/90 ring-1 ring-amber-100/70'
+            : 'border-slate-200/70'
+        }`}
+    >
+      <div className="flex items-center justify-between w-full mb-3">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">
+          {label}
+        </span>
+        <div
+          className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isAlert
+              ? 'bg-rose-50 text-rose-600'
+              : isWarning
+                ? 'bg-amber-50 text-amber-600'
+                : 'bg-slate-50 text-slate-500'
+            }`}
+        >
+          {Icon && (React.isValidElement(Icon) ? Icon : <Icon className="w-4 h-4" />)}
+        </div>
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
+
+      <div>
+        <div className="flex items-baseline gap-1.5 flex-wrap">
           {loading ? (
             <div className="h-7 w-16 bg-slate-100 animate-pulse rounded-md" />
           ) : (
-            <h3 className="text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
+            <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+              {value}
+            </span>
           )}
-          {badge && (
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeColor || 'bg-slate-100 text-slate-600'}`}>
+          {unit && !loading && (
+            <span
+              className={`text-xs font-semibold ${unitColor
+                  ? unitColor
+                  : isAlert
+                    ? 'text-rose-600 font-bold'
+                    : isWarning
+                      ? 'text-amber-600 font-bold'
+                      : 'text-slate-400'
+                }`}
+            >
+              {unit}
+            </span>
+          )}
+          {badge && !loading && (
+            <span
+              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ml-auto shrink-0 ${badgeColor || (isAlert
+                  ? 'text-rose-700 bg-rose-50 border border-rose-200'
+                  : 'text-slate-600 bg-slate-50 border border-slate-200')
+                }`}
+            >
               {badge}
             </span>
           )}
         </div>
+
+        {subtext && !loading && (
+          <p className="text-[11px] font-medium text-slate-400 mt-1 truncate">
+            {subtext}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -211,8 +291,15 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
   const [healthFiltersOpen, setHealthFiltersOpen] = useState(false);
 
   // Growth Tasks List
+  const [isTasksCollapsed, setIsTasksCollapsed] = useState(false);
+  const [showAllTasks, setShowAllTasks] = useState(false);
+  const [canScroll, setCanScroll] = useState(false);
+  const [collapsedHeight, setCollapsedHeight] = useState(null);
+  const innerTasksRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const animTimeoutRef = useRef(null);
   const [tasksPage, setTasksPage] = useState(1);
-  const TASKS_PER_PAGE = 5;
+  const TASKS_PER_PAGE = 8;
   const [taskQuery, setTaskQuery] = useState("");
   const [taskTypeFilter, setTaskTypeFilter] = useState("all");
   const [taskStatusFilter, setTaskStatusFilter] = useState("all");
@@ -244,6 +331,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
           pigType: v.pig_id ? "Individual" : "Batch",
           vaccineName: v.vaccine_name,
           dateGiven: new Date(v.administered_date).toLocaleDateString(),
+          rawAdministeredDate: v.administered_date,
           nextDue: v.booster_due_date ? (isOverdue ? "Overdue" : new Date(v.booster_due_date).toLocaleDateString()) : "N/A",
           nextDueDate: v.booster_due_date,
           vet: v.administered_by || "Unknown",
@@ -411,6 +499,22 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
   const totalOverdueCount = overdueVacCount + overdueTasksCount;
   const totalDueSoonCount = dueSoonVacCount + dueSoonTasksCount;
 
+  // Count vaccinations administered in the current calendar quarter
+  const vaccinationsThisQuarterCount = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentQuarter = Math.floor(now.getMonth() / 3);
+    const quarterStart = new Date(currentYear, currentQuarter * 3, 1, 0, 0, 0, 0);
+    const quarterEnd = new Date(currentYear, (currentQuarter + 1) * 3, 0, 23, 59, 59, 999);
+
+    return vaccinationRegistry.filter(r => {
+      const dateVal = r.rawAdministeredDate || r._raw?.administered_date;
+      if (!dateVal) return false;
+      const d = new Date(dateVal);
+      return d >= quarterStart && d <= quarterEnd;
+    }).length;
+  }, [vaccinationRegistry]);
+
   // Count unique pigs/batches whose most recent health log status is sick or monitoring
   const activeTreatmentsCount = useMemo(() => {
     const latestByEntity = new Map();
@@ -439,6 +543,10 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
       else if (taskStatusFilter === "upcoming") matchesStatus = !isOverdue;
 
       return matchesQuery && matchesType && matchesStatus;
+    }).sort((a, b) => {
+      const aDue = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+      const bDue = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+      return aDue - bDue;
     });
   }, [growthTasks, taskQuery, taskTypeFilter, taskStatusFilter]);
 
@@ -449,6 +557,156 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
     return filteredGrowthTasks.slice(start, start + TASKS_PER_PAGE);
   }, [filteredGrowthTasks, safeTasksPage]);
 
+  const renderGrowthTaskRow = (task) => {
+    const dueDate = task.due_date ? new Date(task.due_date) : null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isOverdue = dueDate ? dueDate < today : false;
+    const dueFormatted = dueDate
+      ? dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : 'Unscheduled';
+
+    const { Icon: ActivityIcon } = getTaskActivityMeta(task.activity_type);
+
+    return (
+      <div key={task.task_id} className="py-2.5 px-4 sm:px-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 hover:bg-slate-50/70 transition-colors">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border border-slate-200/70 bg-slate-50 text-slate-500">
+            <ActivityIcon className="w-3.5 h-3.5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight">{task.task_name}</p>
+              {task.inventory_items && (
+                <span className={`inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${Number(task.inventory_items.current_stock_level) > 0
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                  }`}>
+                  <Package className="w-2.5 h-2.5" /> Stock: {task.inventory_items.current_stock_level} {task.inventory_items.unit_of_measure}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 flex-wrap">
+              <span className="font-semibold text-slate-600 capitalize">
+                {task.activity_type?.toLowerCase()}
+              </span>
+              <span className="text-slate-300">&bull;</span>
+              <span className="font-medium text-slate-600">
+                Batch {task.piglet_batches?.batch_tag}
+                {task.piglet_batches?.current_count ? ` (${task.piglet_batches.current_count} head)` : ''}
+              </span>
+              {task.growth_programs?.name && (
+                <>
+                  <span className="text-slate-300">&bull;</span>
+                  <span className="text-slate-400 truncate max-w-xs">{task.growth_programs.name}</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
+          {isOverdue ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200/80 ring-1 ring-rose-500/10 shrink-0">
+              <Clock className="w-3 h-3 text-rose-500 shrink-0" />
+              <span>Overdue &bull; {dueFormatted}</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 shrink-0">
+              <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+              <span>Due {dueFormatted}</span>
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveGrowthTask(task);
+              if (task.activity_type === 'VACCINATION') {
+                setPrefillVac({
+                  targetType: 'batch',
+                  batch_id: task.batch_id,
+                  vaccine_name: task.task_name,
+                  item_id: task.item_id,
+                  inventoryItem: task.inventory_items,
+                  headCount: task.piglet_batches?.current_count || 1,
+                  administered_date: new Date().toISOString().split('T')[0]
+                });
+                setVacModal(true);
+              } else {
+                setPrefillHealth({
+                  targetType: 'batch',
+                  batch_id: task.batch_id,
+                  treatment: task.task_name,
+                  isProcedure: task.activity_type === 'PROCEDURE',
+                  isGrowthTask: true,
+                  activity_type: task.activity_type,
+                  medication_name: task.activity_type === 'MEDICATION' ? task.task_name : '',
+                  item_id: task.item_id,
+                  inventoryItem: task.inventory_items,
+                  headCount: task.piglet_batches?.current_count || 1,
+                  status: 'healthy',
+                  log_date: new Date().toISOString().split('T')[0] + 'T09:00'
+                });
+                setHealthModal(true);
+              }
+            }}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-600 hover:text-white border border-emerald-200/80 hover:border-emerald-600 rounded-xl transition-all shadow-2xs cursor-pointer"
+          >
+            <CheckCircle2 className="w-3 h-3" />
+            <span>Log Task</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  useLayoutEffect(() => {
+    if (!innerTasksRef.current) return;
+    const updateCollapsedHeight = () => {
+      const children = innerTasksRef.current?.children;
+      if (children && children.length >= 3) {
+        const thirdItem = children[2];
+        const innerRect = innerTasksRef.current.getBoundingClientRect();
+        const thirdRect = thirdItem.getBoundingClientRect();
+        const h = Math.ceil(thirdRect.bottom - innerRect.top);
+        if (h > 0) setCollapsedHeight(h);
+      } else {
+        setCollapsedHeight(null);
+      }
+    };
+
+    updateCollapsedHeight();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(updateCollapsedHeight);
+      observer.observe(innerTasksRef.current);
+      return () => observer.disconnect();
+    }
+  }, [filteredGrowthTasks]);
+
+  useEffect(() => {
+    return () => {
+      if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+    };
+  }, []);
+
+  const handleToggleAllTasks = useCallback(() => {
+    if (animTimeoutRef.current) clearTimeout(animTimeoutRef.current);
+    if (showAllTasks) {
+      setCanScroll(false);
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
+      setShowAllTasks(false);
+    } else {
+      setShowAllTasks(true);
+      animTimeoutRef.current = setTimeout(() => {
+        setCanScroll(true);
+      }, 300);
+    }
+  }, [showAllTasks]);
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="p-5 lg:p-6">
@@ -456,175 +714,185 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         {/* Stat cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            icon={<Syringe className="w-6 h-6 text-emerald-600" />}
-            label="Vaccinations logged"
-            value={String(vaccinationRegistry.length)}
-            badge="This quarter"
-            badgeColor="bg-emerald-100 text-emerald-700"
-            accentColor="bg-emerald-50"
+            icon={Syringe}
+            label="Vaccinations Logged"
+            value={vaccinationsThisQuarterCount}
+            unit="this quarter"
             loading={loading}
           />
           <StatCard
-            icon={<CalendarClock className="w-6 h-6 text-sky-600" />}
-            label="Upcoming schedules"
-            value={String(totalDueSoonCount)}
-            badge="Next 7 days"
-            badgeColor="bg-sky-100 text-sky-700"
-            accentColor="bg-sky-50"
+            icon={CalendarClock}
+            label="Upcoming Schedules"
+            value={totalDueSoonCount}
+            unit="due in 7 days"
+            unitColor={totalDueSoonCount > 0 ? "text-sky-600 font-semibold" : "text-slate-400"}
             loading={loading}
           />
           <StatCard
-            icon={<AlertTriangle className="w-6 h-6 text-rose-600" />}
-            label="Overdue alerts"
-            value={String(totalOverdueCount)}
-            badge="Needs attention"
-            badgeColor="bg-rose-100 text-rose-700"
-            accentColor="bg-rose-50"
+            icon={AlertTriangle}
+            label="Overdue Alerts"
+            value={totalOverdueCount}
+            unit={totalOverdueCount > 0 ? "needs attention" : "all clear"}
+            unitColor={totalOverdueCount > 0 ? "text-rose-600 font-bold" : "text-emerald-600 font-bold"}
+            isAlert={totalOverdueCount > 0}
             loading={loading}
           />
           <StatCard
-            icon={<Stethoscope className="w-6 h-6 text-amber-600" />}
-            label="Active treatments"
-            value={String(activeTreatmentsCount)}
-            badge="Currently ongoing"
-            badgeColor="bg-amber-100 text-amber-700"
-            accentColor="bg-amber-50"
+            icon={Stethoscope}
+            label="Active Treatments"
+            value={activeTreatmentsCount}
+            unit={activeTreatmentsCount > 0 ? "ongoing" : "none ongoing"}
+            unitColor="text-slate-400"
             loading={loading}
           />
         </div>
 
         {/* Growth Program Tasks (To-Do List) */}
         {growthTasks.length > 0 && (
-          <div className="mt-8 rounded-2xl border border-emerald-100 bg-white shadow-sm overflow-hidden">
-            <div className="bg-emerald-50/50 flex flex-col border-b border-emerald-100">
-              <div className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-emerald-800 shrink-0">
-                  <h3 className="font-semibold">Growth Program Tasks</h3>
-                  <span className="bg-emerald-200 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full ml-2">
-                    {filteredGrowthTasks.length} PENDING
-                  </span>
-                </div>
-              </div>
-              <div className="px-4 pb-4 flex flex-wrap items-center gap-3">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                  <input
-                    value={taskQuery}
-                    onChange={(e) => { setTaskQuery(e.target.value); setTasksPage(1); }}
-                    placeholder="Search tasks, batch..."
-                    className="w-48 rounded-lg border border-emerald-200 py-1.5 pl-8 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                  />
-                </div>
-                <select
-                  value={taskTypeFilter}
-                  onChange={(e) => { setTaskTypeFilter(e.target.value); setTasksPage(1); }}
-                  className="rounded-lg border border-emerald-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+          <div className="mt-8 rounded-2xl border border-slate-200/80 bg-white shadow-xs overflow-hidden transition-all">
+            {/* Panel Header */}
+            <div className={`bg-white px-5 py-3.5 ${!isTasksCollapsed ? 'border-b border-slate-100' : ''}`}>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div
+                  className="flex items-center gap-2.5 cursor-pointer select-none group"
+                  onClick={() => setIsTasksCollapsed(!isTasksCollapsed)}
                 >
-                  <option value="all">All Types</option>
-                  <option value="VACCINATION">Vaccination</option>
-                  <option value="MEDICATION">Medication</option>
-                  <option value="PROCEDURE">Procedure</option>
-                  <option value="SUPPLEMENT">Supplement</option>
-                </select>
-                <select
-                  value={taskStatusFilter}
-                  onChange={(e) => { setTaskStatusFilter(e.target.value); setTasksPage(1); }}
-                  className="rounded-lg border border-emerald-200 bg-white px-2 py-1.5 text-xs text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                >
-                  <option value="all">All Status</option>
-                  <option value="overdue">Overdue</option>
-                  <option value="upcoming">Upcoming</option>
-                </select>
-              </div>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {paginatedGrowthTasks.length === 0 ? (
-                <div className="p-8 text-center text-sm text-slate-500">
-                  No tasks match your filters.
-                </div>
-              ) : (
-                paginatedGrowthTasks.map(task => {
-                  const isOverdue = new Date(task.due_date) < new Date();
-                  const dueText = isOverdue ? 'Overdue' : 'Due ' + new Date(task.due_date).toLocaleDateString();
-
-                  return (
-                    <div key={task.task_id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                      <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 w-2 h-2 rounded-full ${isOverdue ? 'bg-rose-500' : 'bg-emerald-500'}`} />
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-semibold text-slate-900">{task.task_name}</p>
-                            {task.inventory_items && (
-                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                Number(task.inventory_items.current_stock_level) > 0
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-rose-50 text-rose-700 border border-rose-200'
-                              }`}>
-                                📦 Stock: {task.inventory_items.current_stock_level} {task.inventory_items.unit_of_measure}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            {task.activity_type} &middot; Batch: <span className="font-medium text-slate-700">{task.piglet_batches?.batch_tag}</span>
-                            {task.piglet_batches?.current_count ? ` (${task.piglet_batches.current_count} head)` : ''} &middot; Program: {task.growth_programs?.name}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className={`text-xs font-semibold ${isOverdue ? 'text-rose-600' : 'text-slate-500'}`}>
-                          {dueText}
+                  <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 group-hover:bg-emerald-100 transition-colors">
+                    <ClipboardList className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-bold text-slate-900 tracking-tight group-hover:text-emerald-700 transition-colors">Growth Program Tasks</h3>
+                      {overdueTasksCount >= filteredGrowthTasks.length && filteredGrowthTasks.length > 0 ? (
+                        <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          {overdueTasksCount} OVERDUE
                         </span>
-                        <button
-                          onClick={() => {
-                            setActiveGrowthTask(task);
-                            if (task.activity_type === 'VACCINATION') {
-                              setPrefillVac({
-                                targetType: 'batch',
-                                batch_id: task.batch_id,
-                                vaccine_name: task.task_name,
-                                item_id: task.item_id,
-                                inventoryItem: task.inventory_items,
-                                headCount: task.piglet_batches?.current_count || 1,
-                                administered_date: new Date().toISOString().split('T')[0]
-                              });
-                              setVacModal(true);
-                            } else {
-                              setPrefillHealth({
-                                targetType: 'batch',
-                                batch_id: task.batch_id,
-                                treatment: task.task_name,
-                                isProcedure: task.activity_type === 'PROCEDURE',
-                                isGrowthTask: true,
-                                activity_type: task.activity_type,
-                                medication_name: task.activity_type === 'MEDICATION' ? task.task_name : '',
-                                item_id: task.item_id,
-                                inventoryItem: task.inventory_items,
-                                headCount: task.piglet_batches?.current_count || 1,
-                                status: 'healthy',
-                                log_date: new Date().toISOString().split('T')[0] + 'T09:00'
-                              });
-                              setHealthModal(true);
-                            }
-                          }}
-                          className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
-                        >
-                          Log It
-                        </button>
-                      </div>
+                      ) : (
+                        <>
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            {filteredGrowthTasks.length} PENDING
+                          </span>
+                          {overdueTasksCount > 0 && (
+                            <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                              {overdueTasksCount} OVERDUE
+                            </span>
+                          )}
+                        </>
+                      )}
                     </div>
-                  );
-                }))}
+                    {isTasksCollapsed && (
+                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">Click to expand routine protocol tasks</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  <div className={`flex items-center gap-2 flex-wrap sm:flex-nowrap transition-all duration-300 ease-in-out ${
+                    isTasksCollapsed ? 'opacity-0 max-w-0 overflow-hidden pointer-events-none' : 'opacity-100 max-w-[650px]'
+                  }`}>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        value={taskQuery}
+                        onChange={(e) => { setTaskQuery(e.target.value); }}
+                        placeholder="Search tasks..."
+                        className="w-36 sm:w-44 rounded-xl border border-slate-200 bg-slate-50/50 py-1.5 pl-8 pr-3 text-xs text-slate-700 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/10 transition-all"
+                      />
+                    </div>
+                    <div className="relative">
+                      <select
+                        value={taskTypeFilter}
+                        onChange={(e) => { setTaskTypeFilter(e.target.value); }}
+                        className="appearance-none rounded-xl border border-slate-200 bg-white py-1.5 pl-2.5 pr-7 text-xs font-medium text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 cursor-pointer transition-all"
+                      >
+                        <option value="all">All Types</option>
+                        <option value="VACCINATION">Vaccination</option>
+                        <option value="MEDICATION">Medication</option>
+                        <option value="PROCEDURE">Procedure</option>
+                        <option value="SUPPLEMENT">Supplement</option>
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    </div>
+                    <div className="relative">
+                      <select
+                        value={taskStatusFilter}
+                        onChange={(e) => { setTaskStatusFilter(e.target.value); }}
+                        className="appearance-none rounded-xl border border-slate-200 bg-white py-1.5 pl-2.5 pr-7 text-xs font-medium text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 cursor-pointer transition-all"
+                      >
+                        <option value="all">All Status</option>
+                        <option value="overdue">Overdue</option>
+                        <option value="upcoming">Upcoming</option>
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsTasksCollapsed(!isTasksCollapsed)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/80 hover:bg-slate-50 text-slate-600 hover:text-slate-900 text-xs font-semibold transition-all cursor-pointer shrink-0 ml-auto sm:ml-0"
+                    title={isTasksCollapsed ? "Expand tasks panel" : "Collapse tasks panel"}
+                  >
+                    <span>{isTasksCollapsed ? "Show Tasks" : "Collapse"}</span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ease-in-out ${isTasksCollapsed ? '-rotate-90' : 'rotate-180'}`} />
+                  </button>
+                </div>
+              </div>
             </div>
-            {filteredGrowthTasks.length > TASKS_PER_PAGE && (
-              <Pagination
-                currentPage={safeTasksPage}
-                totalPages={totalTaskPages}
-                onPageChange={setTasksPage}
-                totalItems={filteredGrowthTasks.length}
-                itemsPerPage={TASKS_PER_PAGE}
-                itemName="tasks"
-              />
-            )}
+
+            {/* Panel Body (Smooth Accordion Animation on Collapse/Expand) */}
+            <div
+              className={`grid transition-all duration-300 ease-in-out ${
+                isTasksCollapsed ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+              }`}
+            >
+              <div className="overflow-hidden">
+                {filteredGrowthTasks.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400">
+                    No tasks match your filters.
+                  </div>
+                ) : (
+                  /* Single unified list: all tasks (1..22) scroll together with smooth sliding animation */
+                  <div
+                    ref={scrollContainerRef}
+                    style={{
+                      maxHeight: filteredGrowthTasks.length > 3
+                        ? (showAllTasks ? '380px' : `${collapsedHeight || 180}px`)
+                        : 'none'
+                    }}
+                    className={`transition-[max-height] duration-300 ease-in-out ${
+                      canScroll ? 'overflow-y-auto' : 'overflow-hidden'
+                    }`}
+                  >
+                    <div ref={innerTasksRef} className="divide-y divide-slate-100">
+                      {filteredGrowthTasks.map(renderGrowthTaskRow)}
+                    </div>
+                  </div>
+                )}
+
+                {/* View All / Show Less Footer Bar */}
+                {filteredGrowthTasks.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={handleToggleAllTasks}
+                    className="w-full py-2 px-5 bg-slate-50/70 hover:bg-emerald-50/50 border-t border-slate-100 text-slate-600 hover:text-emerald-700 text-xs font-semibold flex items-center justify-between transition-all cursor-pointer group"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span>
+                        {showAllTasks
+                          ? `Showing all ${filteredGrowthTasks.length} pending protocol tasks`
+                          : `+${filteredGrowthTasks.length - 3} more pending protocol tasks`}
+                      </span>
+                    </span>
+                    <span className="text-[11px] font-bold text-emerald-600 group-hover:text-emerald-700 inline-flex items-center gap-1">
+                      <span>{showAllTasks ? 'Show Top 3 Only' : 'View All Tasks'}</span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ease-in-out ${showAllTasks ? 'rotate-180' : ''}`} />
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -639,8 +907,8 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   type="button"
                   onClick={() => setShowArchived(false)}
                   className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${!showArchived
-                      ? 'bg-white shadow-sm text-slate-800'
-                      : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-white shadow-sm text-slate-800'
+                    : 'text-slate-500 hover:text-slate-700'
                     }`}
                 >
                   Active
@@ -649,8 +917,8 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   type="button"
                   onClick={() => setShowArchived(true)}
                   className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${showArchived
-                      ? 'bg-white shadow-sm text-slate-800'
-                      : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-white shadow-sm text-slate-800'
+                    : 'text-slate-500 hover:text-slate-700'
                     }`}
                 >
                   Archived
@@ -704,69 +972,69 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
             aria-hidden={!(filtersOpen && !showArchived)}
             className={`grid transition-all duration-300 ease-in-out ${filtersOpen && !showArchived ? "grid-rows-[1fr] opacity-100 visible" : "grid-rows-[0fr] opacity-0 invisible"}`}
           >
-          <div className="min-h-0 overflow-hidden">
-            <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-medium text-slate-500">Status</label>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                >
-                  <option value="all">All</option>
-                  <option value="logged">Logged</option>
-                  <option value="alert">Alert</option>
-                </select>
+            <div className="min-h-0 overflow-hidden">
+              <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-slate-500">Status</label>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                  >
+                    <option value="all">All</option>
+                    <option value="logged">Logged</option>
+                    <option value="alert">Alert</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-slate-500">Veterinarian</label>
+                  <select
+                    value={vetFilter}
+                    onChange={(e) => setVetFilter(e.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                  >
+                    <option value="all">All</option>
+                    {vets.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-slate-500">Date range</label>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                  />
+                  <span className="text-xs text-slate-400">to</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                  />
+                </div>
+                {(statusFilter !== "all" || vetFilter !== "all" || dateFrom || dateTo || query) && (
+                  <button
+                    onClick={() => {
+                      setStatusFilter("all");
+                      setVetFilter("all");
+                      setDateFrom("");
+                      setDateTo("");
+                      setQuery("");
+                    }}
+                    className="ml-auto flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+                    type="button"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Clear filters
+                  </button>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-medium text-slate-500">Veterinarian</label>
-                <select
-                  value={vetFilter}
-                  onChange={(e) => setVetFilter(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                >
-                  <option value="all">All</option>
-                  {vets.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-medium text-slate-500">Date range</label>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                />
-                <span className="text-xs text-slate-400">to</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                />
-              </div>
-              {(statusFilter !== "all" || vetFilter !== "all" || dateFrom || dateTo || query) && (
-                <button
-                  onClick={() => {
-                    setStatusFilter("all");
-                    setVetFilter("all");
-                    setDateFrom("");
-                    setDateTo("");
-                    setQuery("");
-                  }}
-                  className="ml-auto flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
-                  type="button"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  Clear filters
-                </button>
-              )}
             </div>
-          </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -905,8 +1173,8 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   type="button"
                   onClick={() => { setShowHealthArchived(false); setHealthPage(1); }}
                   className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${!showHealthArchived
-                      ? 'bg-white shadow-sm text-slate-800'
-                      : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-white shadow-sm text-slate-800'
+                    : 'text-slate-500 hover:text-slate-700'
                     }`}
                 >
                   Active
@@ -915,8 +1183,8 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   type="button"
                   onClick={() => { setShowHealthArchived(true); setHealthPage(1); }}
                   className={`rounded-md px-3 py-1 text-xs font-semibold transition-all ${showHealthArchived
-                      ? 'bg-white shadow-sm text-slate-800'
-                      : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-white shadow-sm text-slate-800'
+                    : 'text-slate-500 hover:text-slate-700'
                     }`}
                 >
                   Archived

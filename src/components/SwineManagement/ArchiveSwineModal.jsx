@@ -23,7 +23,6 @@ export default function ArchiveSwineModal({ isOpen, onClose, archiveData, onConf
   const reasonOptions = isBatch
     ? [
       'Sold Out',
-      'Transitioned to Breeding Herd (Gilts/Boars)',
       'Mortality',
       'Other (Specify below)',
     ]

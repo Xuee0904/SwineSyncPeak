@@ -10,6 +10,8 @@ import {
   Activity,
   LayoutGrid,
   List,
+  CalendarCheck,
+  Sparkles,
 } from "lucide-react";
 import AddBreedingLogModal from "../components/BreedingLogs/AddBreedingLogModal";
 import EditBreedingLogModal from "../components/BreedingLogs/EditBreedingLogModal";
@@ -97,26 +99,89 @@ function getMilestoneDate(matingDateStr, daysOffset) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function StatCard({ icon, label, value, badge, badgeColor, accentColor, bg, loading }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  unit,
+  unitColor,
+  subtext,
+  badge,
+  badgeColor,
+  isAlert = false,
+  isWarning = false,
+  loading = false,
+}) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl border border-slate-100 shadow-sm ${bg || "bg-white"} p-5 flex items-center gap-4 transition-all duration-200 hover:shadow-md`}>
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${accentColor || "bg-slate-50"}`}>
-        {icon}
+    <div
+      className={`bg-white border rounded-2xl p-4 sm:p-5 shadow-xs transition-all flex flex-col justify-between min-h-[106px] sm:min-h-[112px] ${
+        isAlert
+          ? 'border-rose-200/90 ring-1 ring-rose-100/70'
+          : isWarning
+            ? 'border-amber-200/90 ring-1 ring-amber-100/70'
+            : 'border-slate-200/70'
+      }`}
+    >
+      <div className="flex items-center justify-between w-full mb-3">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">
+          {label}
+        </span>
+        <div
+          className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+            isAlert
+              ? 'bg-rose-50 text-rose-600'
+              : isWarning
+                ? 'bg-amber-50 text-amber-600'
+                : 'bg-slate-50 text-slate-500'
+          }`}
+        >
+          {Icon && (React.isValidElement(Icon) ? Icon : <Icon className="w-4 h-4" />)}
+        </div>
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider truncate">{label}</p>
-        <div className="flex items-baseline gap-2 mt-0.5">
+
+      <div>
+        <div className="flex items-baseline gap-1.5 flex-wrap">
           {loading ? (
             <div className="h-7 w-16 bg-slate-100 animate-pulse rounded-md" />
           ) : (
-            <h3 className="text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
+            <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+              {value}
+            </span>
+          )}
+          {unit && !loading && (
+            <span
+              className={`text-xs font-semibold ${
+                unitColor
+                  ? unitColor
+                  : isAlert
+                    ? 'text-rose-600 font-bold'
+                    : isWarning
+                      ? 'text-amber-600 font-bold'
+                      : 'text-slate-400'
+              }`}
+            >
+              {unit}
+            </span>
           )}
           {badge && !loading && (
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${badgeColor || "bg-slate-100 text-slate-600"}`}>
+            <span
+              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ml-auto shrink-0 ${
+                badgeColor ||
+                (isAlert
+                  ? 'text-rose-700 bg-rose-50 border border-rose-200'
+                  : 'text-slate-600 bg-slate-50 border border-slate-200')
+              }`}
+            >
               {badge}
             </span>
           )}
         </div>
+
+        {subtext && !loading && (
+          <p className="text-[11px] font-medium text-slate-400 mt-1 truncate">
+            {subtext}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -264,19 +329,45 @@ export default function BreedingLogs({ loggedInUser }) {
     }
   };
 
-  const filtered = sows.filter((s) => {
-    const matchesFilter = filter === "ALL" || s.status === filter;
-    const q = query.trim().toLowerCase();
-    const matchesQuery =
-      q === "" ||
-      s.id.toLowerCase().includes(q) ||
-      s.breed.toLowerCase().includes(q) ||
-      (s.breeding_method && s.breeding_method.toLowerCase().includes(q)) ||
-      (s.boarTag && s.boarTag.toLowerCase().includes(q));
-    return matchesFilter && matchesQuery;
-  });
+  const filtered = sows
+    .filter((s) => {
+      const matchesFilter =
+        filter === "ALL" ||
+        s.status === filter ||
+        (filter === "pregnant" && (s.status === "pregnant" || s.breeding_status === "pregnant"));
+      const q = query.trim().toLowerCase();
+      const matchesQuery =
+        q === "" ||
+        s.id.toLowerCase().includes(q) ||
+        s.breed.toLowerCase().includes(q) ||
+        (s.breeding_method && s.breeding_method.toLowerCase().includes(q)) ||
+        (s.boarTag && s.boarTag.toLowerCase().includes(q)) ||
+        (s.pen_code && s.pen_code.toLowerCase().includes(q));
+      return matchesFilter && matchesQuery;
+    })
+    .sort((a, b) => {
+      if (activeTab === "active") {
+        // 1. Records that need action always appear at the very top
+        const aAction = a.status === "action" ? 1 : 0;
+        const bAction = b.status === "action" ? 1 : 0;
+        if (bAction !== aAction) {
+          return bAction - aAction;
+        }
 
-  const totalPregnant = sows.filter((s) => s.status === "pregnant").length;
+        // 2. Then sort by gestation day descending (closest to farrowing first)
+        if (b.day !== a.day) {
+          return b.day - a.day;
+        }
+
+        // 3. Fallback to newest mating date
+        return new Date(b.matingDate || 0) - new Date(a.matingDate || 0);
+      }
+
+      // History tab: newest mating date first
+      return new Date(b.matingDate || 0) - new Date(a.matingDate || 0);
+    });
+
+  const totalPregnant = sows.filter((s) => s.status === "pregnant" || s.breeding_status === "pregnant").length;
   const dueThisMonth = sows.filter((s) => s.day >= 90 && s.day <= GESTATION_DAYS).length;
   const actionRequired = sows.filter((s) => s.status === "action").length;
   const activeMatings = sows.length;
@@ -398,39 +489,36 @@ export default function BreedingLogs({ loggedInUser }) {
       `}</style>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <StatCard
-          icon={<Heart className="w-6 h-6 text-emerald-600" />}
+          icon={Heart}
           label="Pregnant Sows"
           value={totalPregnant}
-          badge="HEALTHY"
-          badgeColor="bg-emerald-100 text-emerald-700"
-          accentColor="bg-emerald-50"
+          unit={totalPregnant === 1 ? "sow" : "sows"}
+          loading={loading}
         />
         <StatCard
-          icon={<CalendarClock className="w-6 h-6 text-amber-500" />}
+          icon={CalendarClock}
           label="Upcoming Farrowings"
           value={dueThisMonth}
-          badge="PENDING"
-          badgeColor="bg-amber-100 text-amber-700"
-          accentColor="bg-amber-50"
+          unit={dueThisMonth === 1 ? "due this month" : "due this month"}
+          unitColor={dueThisMonth > 0 ? "text-amber-600 font-semibold" : "text-slate-400"}
+          loading={loading}
         />
         <StatCard
-          icon={<AlertTriangle className={`w-6 h-6 ${actionRequired ? "text-rose-600" : "text-slate-400"}`} />}
+          icon={AlertTriangle}
           label="Needs Action"
           value={actionRequired}
-          badge={actionRequired ? "CRITICAL" : "OK"}
-          badgeColor={actionRequired ? "bg-rose-500 text-white" : "bg-slate-100 text-slate-600"}
-          accentColor={actionRequired ? "bg-rose-50" : "bg-slate-50"}
-          bg={actionRequired ? "bg-rose-50/60" : "bg-white"}
+          unit={actionRequired > 0 ? (actionRequired === 1 ? "action due" : "actions due") : "all normal"}
+          unitColor={actionRequired > 0 ? "text-rose-600 font-bold" : "text-emerald-600 font-bold"}
+          isAlert={actionRequired > 0}
+          loading={loading}
         />
         <StatCard
-          icon={<Activity className="w-6 h-6 text-indigo-500" />}
+          icon={Dna}
           label="Active Matings"
           value={activeMatings}
-          badge="TOTAL"
-          badgeColor="bg-indigo-100 text-indigo-700"
-          accentColor="bg-indigo-50"
+          unit={activeMatings === 1 ? "cycle" : "cycles"}
           loading={loading}
         />
       </div>
@@ -561,7 +649,7 @@ export default function BreedingLogs({ loggedInUser }) {
                               </span>
                             )}
                           </div>
-                          <p className="brl-table-sub">Parity: {sow.parity} • {sow.breed}</p>
+                          <p className="brl-table-sub">Parity: {sow.parity} • {sow.breed} • Pen: {sow.pen_code || 'Unassigned'}</p>
                         </td>
                         <td>
                           <span className="font-bold text-slate-800 text-sm">Day {overdue ? GESTATION_DAYS : sow.day}</span>
@@ -588,16 +676,44 @@ export default function BreedingLogs({ loggedInUser }) {
                         <td>
                           <span className="brl-status-pill" style={{ background: meta.tint, color: meta.color }}>
                             {sow.status === "action" && <span className="brl-pulse-dot" />}
-                            {meta.label}
+                            {sow.status === "action" && sow.day >= 100
+                              ? (sow.day > GESTATION_DAYS ? "Farrowing Overdue" : "Pre-Farrow Action")
+                              : meta.label}
                           </span>
                         </td>
                         <td style={{ textAlign: "right", position: "relative" }}>
-                          <button className="brl-menu-btn ml-auto" onClick={() => {
-                            const id = sow.breeding_id || sow.id;
-                            setOpenMenu(openMenu === id ? null : id);
-                          }}>
-                            <MoreVertical size={16} />
-                          </button>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                            {sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
+                              <button
+                                onClick={() => { setFarrowLogData(sow); setShowFarrowModal(true); }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
+                                title="Log Farrowing"
+                              >
+                                <Sparkles size={13} />
+                                Log Farrowing
+                              </button>
+                            )}
+                            {!(sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action')) && sow.status !== 'pregnant' && sow.day >= 21 && (
+                              <button
+                                onClick={() => { setCheckLogData(sow); setShowCheckModal(true); }}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-xs transition-colors cursor-pointer ${
+                                  sow.status === 'action'
+                                    ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                                    : 'bg-slate-800 hover:bg-slate-900 text-white'
+                                }`}
+                                title={sow.day >= 25 ? 'Log Pregnancy Confirmation Check' : 'Log Heat Return Check'}
+                              >
+                                <CalendarCheck size={13} />
+                                {sow.day >= 25 ? 'Log Preg Check' : 'Log Heat Check'}
+                              </button>
+                            )}
+                            <button className="brl-menu-btn" onClick={() => {
+                              const id = sow.breeding_id || sow.id;
+                              setOpenMenu(openMenu === id ? null : id);
+                            }}>
+                              <MoreVertical size={16} />
+                            </button>
+                          </div>
                           {openMenu === (sow.breeding_id || sow.id) && (
                             <div className="brl-menu" style={{ right: 20, ...(isNearBottom ? { bottom: 40, top: 'auto' } : { top: 40 }) }}>
                               {sow.status !== 'pregnant' && sow.day >= 21 && (
@@ -681,12 +797,40 @@ export default function BreedingLogs({ loggedInUser }) {
                             </span>
                           )}
                         </div>
-                        <p className="brl-sow-sub">{sow.parity === 1 ? "1st" : sow.parity === 2 ? "2nd" : sow.parity === 3 ? "3rd" : `${sow.parity}th`} parity · {sow.breed}</p>
+                        <p className="brl-sow-sub">{sow.parity === 1 ? "1st" : sow.parity === 2 ? "2nd" : sow.parity === 3 ? "3rd" : `${sow.parity}th`} parity · {sow.breed} · Pen: {sow.pen_code || 'Unassigned'}</p>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        {/* ── Inline Quick Action Button ── */}
+                        {sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
+                          <button
+                            onClick={() => { setFarrowLogData(sow); setShowFarrowModal(true); }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
+                            title="Log Farrowing Delivery"
+                          >
+                            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                            Log Farrowing
+                          </button>
+                        )}
+                        {!(sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action')) && sow.status !== 'pregnant' && sow.day >= 21 && (
+                          <button
+                            onClick={() => { setCheckLogData(sow); setShowCheckModal(true); }}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-xs ${
+                              sow.status === 'action'
+                                ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                                : 'bg-slate-800 hover:bg-slate-900 text-white'
+                            }`}
+                            title={sow.day >= 25 ? 'Log Pregnancy Confirmation Check' : 'Log Heat Return Check'}
+                          >
+                            <CalendarCheck className="w-3.5 h-3.5 shrink-0" />
+                            {sow.day >= 25 ? 'Log Preg Check' : 'Log Heat Check'}
+                          </button>
+                        )}
+
                         <span className="brl-status-pill" style={{ background: meta.tint, color: meta.color }}>
                           {sow.status === "action" && <span className="brl-pulse-dot" />}
-                          {meta.label}
+                          {sow.status === "action" && sow.day >= 100
+                            ? (sow.day > GESTATION_DAYS ? "Farrowing Overdue" : "Pre-Farrow Action")
+                            : meta.label}
                         </span>
                         {activeTab === 'active' && (
                           <div style={{ position: "relative" }}>
