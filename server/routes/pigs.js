@@ -123,6 +123,14 @@ router.get('/api/pigs/breeding-logs', async (req, res) => {
   }
 });
 
+const getBatchHeads = (b) => {
+  const c = Number(b.current_count);
+  if (!isNaN(c) && c >= 0 && b.current_count !== null && b.current_count !== '') return c;
+  const t = Number(b.total_born_alive);
+  if (!isNaN(t) && t > 0) return t;
+  return 0;
+};
+
 // GET /api/pigs/stats – aggregate counts for summary cards
 router.get('/api/pigs/stats', async (req, res) => {
   try {
@@ -138,14 +146,6 @@ router.get('/api/pigs/stats', async (req, res) => {
     const batchesList = batchesRes.data || [];
     const pigsCount = pigsList.length;
     const batchesCount = batchesList.length;
-
-    const getBatchHeads = (b) => {
-      const c = Number(b.current_count);
-      if (!isNaN(c) && c > 0) return c;
-      const t = Number(b.total_born_alive);
-      if (!isNaN(t) && t > 0) return t;
-      return 1;
-    };
 
     const pigletCount = batchesList.reduce((sum, b) => sum + getBatchHeads(b), 0);
     const sickBatchHeads = batchesList
@@ -176,6 +176,247 @@ router.get('/api/pigs/stats', async (req, res) => {
       quarantine: quarCount,
       healthWatch: sickCount + quarCount,
       pregnant: femalePigs
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/pigs/analytics – structured herd composition, health, breed & batch survivability metrics
+router.get('/api/pigs/analytics', async (req, res) => {
+  try {
+    const db = supabaseAdmin || supabase;
+    const [pigsRes, batchesRes, salesRes] = await Promise.all([
+      db.from('pigs')
+        .select('pig_id, pig_tag, gender, status, weight, date_of_birth, breed_id, created_at, breeds(name)')
+        .eq('is_archived', false),
+      db.from('piglet_batches')
+        .select('batch_id, batch_tag, status, average_weight, date_of_birth, total_born_alive, current_count, stillborn_count, mummy_count, breed_id, created_at, breeds(name)')
+        .eq('is_archived', false),
+      db.from('growth_activities')
+        .select('batch_id, amount_given')
+        .eq('activity_type', 'SALE'),
+    ]);
+
+    if (pigsRes.error) throw pigsRes.error;
+    if (batchesRes.error) throw batchesRes.error;
+
+    const pigsList = pigsRes.data || [];
+    const batchesList = batchesRes.data || [];
+    const salesList = salesRes.data || [];
+
+    const salesByBatch = {};
+    for (const s of salesList) {
+      if (!s.batch_id) continue;
+      salesByBatch[s.batch_id] = (salesByBatch[s.batch_id] || 0) + (Number(s.amount_given) || 0);
+    }
+
+    // 1. Composition by Production Stage (in heads)
+    let sowHeads = 0;
+    let boarHeads = 0;
+    const stageCounts = {};
+
+    for (const p of pigsList) {
+      const g = (p.gender || '').toLowerCase();
+      if (g.startsWith('f') || g === 'female' || g === 'sow') sowHeads += 1;
+      else boarHeads += 1;
+    }
+
+    for (const b of batchesList) {
+      const heads = getBatchHeads(b);
+      const rawStage = (b.status || 'suckling').trim().toLowerCase();
+      const stageKey = ['sick', 'quarantine', 'healthy', 'inactive', 'cull'].includes(rawStage)
+        ? 'piglets_other'
+        : rawStage;
+      stageCounts[stageKey] = (stageCounts[stageKey] || 0) + heads;
+    }
+
+    const STAGE_META = {
+      sow: { label: 'Sows', color: '#059669', filterCat: 'sow' },
+      boar: { label: 'Boars', color: '#0284c7', filterCat: 'boar' },
+      suckling: { label: 'Suckling Piglets', color: '#f59e0b', filterCat: 'piglet_batch' },
+      weaned: { label: 'Weaned Piglets', color: '#8b5cf6', filterCat: 'piglet_batch' },
+      nursery: { label: 'Nursery', color: '#0d9488', filterCat: 'piglet_batch' },
+      grower: { label: 'Grower', color: '#6366f1', filterCat: 'piglet_batch' },
+      fattening: { label: 'Fattening', color: '#ec4899', filterCat: 'piglet_batch' },
+      finisher: { label: 'Finisher', color: '#ec4899', filterCat: 'piglet_batch' },
+      piglets_other: { label: 'Other Batches', color: '#64748b', filterCat: 'piglet_batch' },
+    };
+
+    const composition = [];
+    if (sowHeads > 0) composition.push({ key: 'sow', count: sowHeads, ...STAGE_META.sow });
+    if (boarHeads > 0) composition.push({ key: 'boar', count: boarHeads, ...STAGE_META.boar });
+
+    const stageFallbackColors = ['#f59e0b', '#8b5cf6', '#0d9488', '#6366f1', '#64748b'];
+    Object.entries(stageCounts)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([key, count], idx) => {
+        if (count <= 0) return;
+        const meta = STAGE_META[key] || {
+          label: `${key.charAt(0).toUpperCase() + key.slice(1)} Piglets`,
+          color: stageFallbackColors[idx % stageFallbackColors.length],
+          filterCat: 'piglet_batch',
+        };
+        composition.push({ key, count, ...meta });
+      });
+
+    // 2. Health Status Breakdown (in heads)
+    const healthBuckets = {
+      healthy: 0,
+      pregnant: 0,
+      sick: 0,
+      quarantine: 0,
+      other: 0,
+    };
+
+    for (const p of pigsList) {
+      const st = (p.status || 'healthy').toLowerCase();
+      if (st === 'sick') healthBuckets.sick += 1;
+      else if (st === 'quarantine') healthBuckets.quarantine += 1;
+      else if (st === 'pregnant') healthBuckets.pregnant += 1;
+      else if (st === 'inactive' || st === 'cull') healthBuckets.other += 1;
+      else healthBuckets.healthy += 1;
+    }
+
+    for (const b of batchesList) {
+      const heads = getBatchHeads(b);
+      const st = (b.status || 'suckling').toLowerCase();
+      if (st === 'sick') healthBuckets.sick += heads;
+      else if (st === 'quarantine') healthBuckets.quarantine += heads;
+      else if (st === 'inactive' || st === 'cull') healthBuckets.other += heads;
+      else healthBuckets.healthy += heads;
+    }
+
+    const healthBreakdown = [
+      { key: 'healthy', label: 'Healthy', count: healthBuckets.healthy, color: '#059669', filterStatus: 'healthy' },
+      { key: 'pregnant', label: 'Pregnant', count: healthBuckets.pregnant, color: '#6366f1', filterStatus: 'all' },
+      { key: 'sick', label: 'Sick', count: healthBuckets.sick, color: '#f59e0b', filterStatus: 'sick' },
+      { key: 'quarantine', label: 'Quarantine', count: healthBuckets.quarantine, color: '#e11d48', filterStatus: 'quarantine' },
+      { key: 'other', label: 'Inactive / Cull', count: healthBuckets.other, color: '#64748b', filterStatus: 'all' },
+    ].filter((item) => item.count > 0 || ['healthy', 'sick', 'quarantine'].includes(item.key));
+
+    // 3. Breed Distribution & Weight Averages
+    const breedMap = {};
+    const addToBreed = (breedName, heads, weightVal) => {
+      const name = (breedName || '').trim() || 'Unassigned';
+      if (!breedMap[name]) {
+        breedMap[name] = { breed: name, heads: 0, records: 0, weightSum: 0, weightCount: 0 };
+      }
+      breedMap[name].heads += heads;
+      breedMap[name].records += 1;
+      const w = Number(weightVal);
+      if (!isNaN(w) && w > 0) {
+        breedMap[name].weightSum += w;
+        breedMap[name].weightCount += 1;
+      }
+    };
+
+    for (const p of pigsList) addToBreed(p.breeds?.name, 1, p.weight);
+    for (const b of batchesList) addToBreed(b.breeds?.name, getBatchHeads(b), b.average_weight);
+
+    const sortedBreeds = Object.values(breedMap)
+      .sort((a, b) => b.heads - a.heads || b.records - a.records);
+
+    const topBreeds = sortedBreeds.slice(0, 6).map((b) => ({
+      breed: b.breed,
+      heads: b.heads,
+      records: b.records,
+      avgWeight: b.weightCount > 0 ? Math.round((b.weightSum / b.weightCount) * 10) / 10 : null,
+      filterable: b.breed !== 'Unassigned',
+    }));
+
+    if (sortedBreeds.length > 6) {
+      const rest = sortedBreeds.slice(6);
+      const restWeightSum = rest.reduce((s, r) => s + r.weightSum, 0);
+      const restWeightCount = rest.reduce((s, r) => s + r.weightCount, 0);
+      topBreeds.push({
+        breed: 'Other Breeds',
+        heads: rest.reduce((s, r) => s + r.heads, 0),
+        records: rest.reduce((s, r) => s + r.records, 0),
+        avgWeight: restWeightCount > 0 ? Math.round((restWeightSum / restWeightCount) * 10) / 10 : null,
+        filterable: false,
+      });
+    }
+
+    // 4. Batch Survivability & Loss Overview (up to 6 most recent batches)
+    let totalBornAliveAll = 0;
+    let totalSurvivedAll = 0;
+    let totalLossAll = 0;
+    let weighedBatchCount = 0;
+    let batchWeightSum = 0;
+
+    const batchPerformanceAll = batchesList
+      .map((b) => {
+        const currentCount = getBatchHeads(b);
+        const soldCount = salesByBatch[b.batch_id] || 0;
+        const rawBorn = Number(b.total_born_alive);
+        const bornAlive = !isNaN(rawBorn) && rawBorn > 0 ? rawBorn : currentCount + soldCount;
+        const mortalityLoss = Math.max(0, bornAlive - currentCount - soldCount);
+        const accountedHeads = currentCount + soldCount;
+        const survivabilityRate = bornAlive > 0
+          ? Math.min(100, Math.round((accountedHeads / bornAlive) * 1000) / 10)
+          : 100;
+
+        totalBornAliveAll += bornAlive;
+        totalSurvivedAll += accountedHeads;
+        totalLossAll += mortalityLoss;
+
+        const avgW = Number(b.average_weight);
+        if (!isNaN(avgW) && avgW > 0) {
+          weighedBatchCount += 1;
+          batchWeightSum += avgW;
+        }
+
+        const refDate = b.date_of_birth || b.created_at;
+        const ageWeeks = b.date_of_birth
+          ? Math.max(0, Math.floor((Date.now() - new Date(b.date_of_birth)) / 604800000))
+          : null;
+
+        return {
+          batchId: b.batch_id,
+          batchTag: b.batch_tag,
+          status: b.status || 'suckling',
+          bornAlive,
+          currentCount,
+          soldCount,
+          mortalityLoss,
+          stillborn: Number(b.stillborn_count) || 0,
+          mummy: Number(b.mummy_count) || 0,
+          survivabilityRate,
+          ageWeeks,
+          averageWeight: !isNaN(avgW) && avgW > 0 ? Math.round(avgW * 10) / 10 : null,
+          _sortTime: refDate ? new Date(refDate).getTime() : 0,
+        };
+      })
+      .sort((a, b) => b._sortTime - a._sortTime);
+
+    const recentBatches = batchPerformanceAll
+      .slice(0, 6)
+      .reverse()
+      .map(({ _sortTime, ...rest }) => rest);
+
+    const pigletHeads = batchesList.reduce((sum, b) => sum + getBatchHeads(b), 0);
+    const totalHeads = pigsList.length + pigletHeads;
+
+    res.json({
+      summary: {
+        totalHeads,
+        breedingHeads: sowHeads + boarHeads,
+        pigletHeads,
+        activeRecords: pigsList.length + batchesList.length,
+        avgSurvivabilityRate: totalBornAliveAll > 0
+          ? Math.min(100, Math.round((totalSurvivedAll / totalBornAliveAll) * 1000) / 10)
+          : 100,
+        totalMortalityLoss: totalLossAll,
+        avgBatchWeight: weighedBatchCount > 0
+          ? Math.round((batchWeightSum / weighedBatchCount) * 10) / 10
+          : null,
+        weighedBatches: weighedBatchCount,
+      },
+      composition,
+      healthBreakdown,
+      breedDistribution: topBreeds,
+      batchPerformance: recentBatches,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

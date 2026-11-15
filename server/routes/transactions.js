@@ -390,51 +390,153 @@ router.get('/api/transactions/summary', async (req, res) => {
     const netIncome = totalSales - totalExpenses;
     const profitMargin = totalSales > 0 ? Math.round((netIncome / totalSales) * 100) : 0;
 
-    // ─── 8-Week Trend Calculation ─────────────────────────
-    const weekLabels = [];
-    const weeklySales = [];
-    const weeklyExpenses = [];
-
+    // ─── Multi-Timeframe Trend Calculation (Weekly, Monthly, Quarterly, Yearly) ───
     const now = new Date();
-    for (let i = 7; i >= 0; i--) {
-      const weekEnd = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000);
-      const weekStart = new Date(weekEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const label = weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      weekLabels.push(label);
 
-      let wSales = 0;
-      let wExp = 0;
+    function getTotalsInRange(startDate, endDate) {
+      let rSales = 0;
+      let rExp = 0;
 
       sales.forEach((s) => {
         const d = new Date(s.transaction_date || s.created_at);
-        if (d >= weekStart && d <= weekEnd) {
-          wSales += Number(s.total_price) || 0;
+        if (d >= startDate && d <= endDate) {
+          rSales += Number(s.total_price) || 0;
         }
       });
 
       expenses.forEach((e) => {
         const d = new Date(e.date_incurred || e.created_at);
-        if (d >= weekStart && d <= weekEnd) {
-          wExp += Number(e.amount) || 0;
+        if (d >= startDate && d <= endDate) {
+          rExp += Number(e.amount) || 0;
         }
       });
 
-      // Express in thousands for graph readability (or raw)
-      weeklySales.push(Math.round(wSales / 1000));
-      weeklyExpenses.push(Math.round(wExp / 1000));
+      return {
+        sales: Math.round(rSales / 1000),
+        expenses: Math.round(rExp / 1000),
+      };
+    }
+
+    // 1. Weekly (8 weeks)
+    const weekLabels = [];
+    const weeklySales = [];
+    const weeklyExpenses = [];
+    for (let i = 7; i >= 0; i--) {
+      const weekEnd = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000);
+      const weekStart = new Date(weekEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+      weekLabels.push(weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+      const { sales: s, expenses: e } = getTotalsInRange(weekStart, weekEnd);
+      weeklySales.push(s);
+      weeklyExpenses.push(e);
+    }
+
+    // 2. Monthly (last 6 months)
+    const monthLabels = [];
+    const monthlySales = [];
+    const monthlyExpenses = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mStart = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+      const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+      monthLabels.push(d.toLocaleDateString('en-US', { month: 'short' }));
+      const { sales: s, expenses: e } = getTotalsInRange(mStart, mEnd);
+      monthlySales.push(s);
+      monthlyExpenses.push(e);
+    }
+
+    // 3. Quarterly (last 4 quarters)
+    const quarterLabels = [];
+    const quarterlySales = [];
+    const quarterlyExpenses = [];
+    const currentQIdx = now.getFullYear() * 4 + Math.floor(now.getMonth() / 3);
+    for (let i = 3; i >= 0; i--) {
+      const targetQ = currentQIdx - i;
+      const yr = Math.floor(targetQ / 4);
+      const qNum = (targetQ % 4) + 1;
+      const qStart = new Date(yr, (qNum - 1) * 3, 1, 0, 0, 0, 0);
+      const qEnd = new Date(yr, qNum * 3, 0, 23, 59, 59, 999);
+      quarterLabels.push(`Q${qNum} ${yr}`);
+      const { sales: s, expenses: e } = getTotalsInRange(qStart, qEnd);
+      quarterlySales.push(s);
+      quarterlyExpenses.push(e);
+    }
+
+    // 4. Yearly (last 4 years)
+    const yearLabels = [];
+    const yearlySales = [];
+    const yearlyExpenses = [];
+    for (let i = 3; i >= 0; i--) {
+      const yr = now.getFullYear() - i;
+      const yStart = new Date(yr, 0, 1, 0, 0, 0, 0);
+      const yEnd = new Date(yr, 11, 31, 23, 59, 59, 999);
+      yearLabels.push(String(yr));
+      const { sales: s, expenses: e } = getTotalsInRange(yStart, yEnd);
+      yearlySales.push(s);
+      yearlyExpenses.push(e);
     }
 
     res.json({
       stats: [
-        { label: 'Total sales', value: `₱${totalSales.toLocaleString('en-PH')}`, note: 'Current period', icon: 'trendUp', tone: 'emerald' },
-        { label: 'Total expenses', value: `₱${totalExpenses.toLocaleString('en-PH')}`, note: 'Current period', icon: 'trendDown', tone: 'slate' },
-        { label: 'Net income', value: `₱${netIncome.toLocaleString('en-PH')}`, note: `${profitMargin}% profit margin`, icon: 'wallet', tone: 'emerald' },
-        { label: 'Pending payments', value: `₱${pendingPayments.toLocaleString('en-PH')}`, note: `${pendingCount} transaction${pendingCount === 1 ? '' : 's'}`, icon: 'clock', tone: 'amber' },
+        {
+          label: 'Total Sales',
+          value: `₱${totalSales.toLocaleString('en-PH')}`,
+          unit: 'revenue',
+          icon: 'trendUp',
+          tone: 'emerald',
+          isAlert: false,
+        },
+        {
+          label: 'Total Expenses',
+          value: `₱${totalExpenses.toLocaleString('en-PH')}`,
+          unit: 'expenses',
+          icon: 'trendDown',
+          tone: 'slate',
+          isAlert: false,
+        },
+        {
+          label: 'Net Income',
+          value: `₱${netIncome.toLocaleString('en-PH')}`,
+          unit: `${profitMargin}% margin`,
+          icon: 'wallet',
+          tone: netIncome >= 0 ? 'emerald' : 'rose',
+          isAlert: false,
+        },
+        {
+          label: 'Pending Payments',
+          value: `₱${pendingPayments.toLocaleString('en-PH')}`,
+          unit: pendingCount === 1 ? '1 pending' : `${pendingCount} pending`,
+          icon: 'clock',
+          tone: 'amber',
+          isAlert: pendingPayments > 0,
+          alertTone: 'amber',
+        },
       ],
       trend: {
         labels: weekLabels,
         sales: weeklySales,
         expenses: weeklyExpenses,
+      },
+      trends: {
+        weekly: {
+          labels: weekLabels,
+          sales: weeklySales,
+          expenses: weeklyExpenses,
+        },
+        monthly: {
+          labels: monthLabels,
+          sales: monthlySales,
+          expenses: monthlyExpenses,
+        },
+        quarterly: {
+          labels: quarterLabels,
+          sales: quarterlySales,
+          expenses: quarterlyExpenses,
+        },
+        yearly: {
+          labels: yearLabels,
+          sales: yearlySales,
+          expenses: yearlyExpenses,
+        },
       },
       raw: {
         totalSales,

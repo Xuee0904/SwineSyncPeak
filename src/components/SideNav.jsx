@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   LayoutDashboard, Users, TrendingUp,
-  ClipboardList, Receipt, Settings, LogOut, X, ChevronRight,
+  ClipboardList, Receipt, Settings, X, ChevronRight,
   Grid3X3, HeartPulse, Dna,
 } from 'lucide-react';
 import PigSnout from './common/PigSnout';
@@ -24,32 +24,13 @@ export const NAV_ITEMS = [
   { id: 'admin', label: 'Admin Settings', icon: Settings },
 ];
 
-export default function SideNav({ activeTab, onTabChange, onClose, onLogout, loggedInUser, mobileOpen }) {
+export default function SideNav({ activeTab, onTabChange, onClose, loggedInUser, mobileOpen }) {
   const [expanded, setExpanded] = useState(() => {
     const parentWithActiveChild = NAV_ITEMS.find(item =>
       item.children?.some(child => child.id === activeTab)
     );
     return parentWithActiveChild ? { [parentWithActiveChild.id]: true } : {};
   });
-
-  const getInitials = () => {
-    if (!loggedInUser) return '?';
-    if (typeof loggedInUser === 'string') return loggedInUser.charAt(0).toUpperCase();
-    if (typeof loggedInUser === 'object') {
-      const name = loggedInUser.name || loggedInUser.user_metadata?.full_name || loggedInUser.email || '';
-      return name.charAt(0).toUpperCase() || '?';
-    }
-    return '?';
-  };
-
-  const getDisplayName = () => {
-    if (!loggedInUser) return '';
-    if (typeof loggedInUser === 'string') return loggedInUser;
-    if (typeof loggedInUser === 'object') {
-      return loggedInUser.name || loggedInUser.user_metadata?.full_name || loggedInUser.email || 'Staff';
-    }
-    return '';
-  };
 
   const getUserRole = () => {
     if (!loggedInUser) return 'Staff';
@@ -90,7 +71,7 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
       >
         <div>
           {/* Brand */}
-          <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800/80 shrink-0">
+          <div className="flex items-center justify-between px-4 h-16 border-b border-slate-800/80 shrink-0">
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <img
                 src={farmLogo}
@@ -240,45 +221,6 @@ export default function SideNav({ activeTab, onTabChange, onClose, onLogout, log
               );
             })}
           </nav>
-        </div>
-
-        {/* Bottom User Chip & Logout */}
-        <div className="px-3 py-3.5 border-t border-slate-800/80 shrink-0">
-          {loggedInUser ? (
-            <div className="flex items-center justify-between gap-2.5 p-2 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/15 transition-colors">
-              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-sm shadow-emerald-950/40">
-                  {getInitials()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-slate-100 truncate leading-tight" title={getDisplayName()}>
-                    {getDisplayName()}
-                  </p>
-                  <p className="text-[10px] text-slate-400 font-semibold tracking-wide truncate mt-0.5">
-                    {getUserRole()?.toLowerCase() === 'admin' ? 'Administrator' : 'Staff Portal'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={onLogout}
-                className="p-2 rounded-lg text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 transition-all cursor-pointer shrink-0"
-                title="Logout"
-                aria-label="Logout"
-                id="sidenav-logout-btn"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={onLogout}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 transition-all cursor-pointer"
-              id="sidenav-logout-btn"
-            >
-              <LogOut className="w-4 h-4 shrink-0" />
-              Logout
-            </button>
-          )}
         </div>
       </aside>
 

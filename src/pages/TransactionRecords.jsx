@@ -1,26 +1,50 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import RecordTransactionModal from "../components/Transactions/RecordTransactionModal";
 import ExportDropdown from "../components/common/ExportDropdown";
-import { Loader2, CheckCircle2, Printer } from "lucide-react";
+import { Loader2, CheckCircle2, Printer, TrendingUp, TrendingDown, Wallet, Clock } from "lucide-react";
 import toast from "../utils/toast";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+
+const ICON_MAP = {
+  trendUp: TrendingUp,
+  trendDown: TrendingDown,
+  wallet: Wallet,
+  clock: Clock,
+};
 
 /* -------------------------------------------------------------------------- */
 /*  Fallback / Initial Data                                                   */
 /* -------------------------------------------------------------------------- */
 
 const DEFAULT_STATS = [
-  { label: "Total sales", value: "₱482,500", note: "Current period", icon: "trendUp", tone: "emerald" },
-  { label: "Total expenses", value: "₱196,350", note: "Current period", icon: "trendDown", tone: "slate" },
-  { label: "Net income", value: "₱286,150", note: "59% profit margin", icon: "wallet", tone: "emerald" },
-  { label: "Pending payments", value: "₱67,850", note: "2 transactions", icon: "clock", tone: "amber" },
+  { label: "Total Sales", value: "₱482,500", unit: "revenue", icon: "trendUp", tone: "emerald", isAlert: false },
+  { label: "Total Expenses", value: "₱196,350", unit: "expenses", icon: "trendDown", tone: "slate", isAlert: false },
+  { label: "Net Income", value: "₱286,150", unit: "59% margin", icon: "wallet", tone: "emerald", isAlert: false },
+  { label: "Pending Payments", value: "₱67,850", unit: "2 pending", icon: "clock", tone: "amber", isAlert: true, alertTone: "amber" },
 ];
 
-const DEFAULT_TREND = {
-  labels: ["Sep 19", "Sep 26", "Oct 3", "Oct 10", "Oct 17", "Oct 24", "Oct 31", "Nov 7"],
-  sales: [210, 260, 240, 310, 290, 380, 350, 420], // in thousands
-  expenses: [140, 150, 170, 160, 185, 175, 190, 196],
+const DEFAULT_TRENDS = {
+  weekly: {
+    labels: ["Sep 19", "Sep 26", "Oct 3", "Oct 10", "Oct 17", "Oct 24", "Oct 31", "Nov 7"],
+    sales: [210, 260, 240, 310, 290, 380, 350, 420], // in thousands
+    expenses: [140, 150, 170, 160, 185, 175, 190, 196],
+  },
+  monthly: {
+    labels: ["Jun", "Jul", "Aug", "Sep", "Oct", "Nov"],
+    sales: [780, 890, 940, 1020, 1150, 1280],
+    expenses: [520, 560, 610, 640, 690, 710],
+  },
+  quarterly: {
+    labels: ["Q1 2026", "Q2 2026", "Q3 2026", "Q4 2026"],
+    sales: [2450, 2800, 3110, 3450],
+    expenses: [1680, 1790, 1940, 2090],
+  },
+  yearly: {
+    labels: ["2023", "2024", "2025", "2026"],
+    sales: [7200, 9100, 11400, 13800],
+    expenses: [5100, 6200, 7600, 8900],
+  },
 };
 
 const DEFAULT_TRANSACTIONS = [
@@ -167,116 +191,331 @@ const EXPORT_COLUMNS = [
 ];
 
 /* -------------------------------------------------------------------------- */
-/*  Stat Card                                                                 */
+/*  Stat Card (Matching Swine Management Quick Stats Design)                 */
 /* -------------------------------------------------------------------------- */
 
-function StatCard({ label, value, note, icon, tone }) {
+function StatCard({
+  icon: IconComponent,
+  iconName,
+  label,
+  value,
+  unit,
+  note,
+  unitColor,
+  subtext,
+  badge,
+  isAlert = false,
+  alertTone = "amber",
+  tone = "emerald",
+  loading = false,
+}) {
+  const alertBorder = alertTone === "rose"
+    ? "border-rose-200/90 ring-1 ring-rose-100/70"
+    : "border-amber-200/90 ring-1 ring-amber-100/70";
+
+  const alertIconBg = alertTone === "rose"
+    ? "bg-rose-50 text-rose-600"
+    : "bg-amber-50 text-amber-600";
+
+  const defaultIconBg = tone === "emerald"
+    ? "bg-emerald-50 text-emerald-600"
+    : tone === "slate"
+    ? "bg-slate-50 text-slate-500"
+    : tone === "amber"
+    ? "bg-amber-50 text-amber-600"
+    : "bg-slate-50 text-slate-500";
+
+  const displayUnit = unit || note;
+
+  // Resolve icon component cleanly (supporting string keys like 'trendUp' or component references)
+  let ResolvedIcon = Wallet;
+  if (typeof IconComponent === "function") {
+    ResolvedIcon = IconComponent;
+  } else if (typeof iconName === "string" && ICON_MAP[iconName]) {
+    ResolvedIcon = ICON_MAP[iconName];
+  } else if (typeof IconComponent === "string" && ICON_MAP[IconComponent]) {
+    ResolvedIcon = ICON_MAP[IconComponent];
+  }
+
   return (
-    <div className={`${card} flex items-center gap-4 p-5`}>
-      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${TONE_STYLES[tone]}`}>
-        <Icon name={icon} className="h-5 w-5" />
+    <div
+      className={`bg-white border rounded-2xl p-4 sm:p-5 shadow-xs transition-all flex flex-col justify-between min-h-[106px] sm:min-h-[112px] ${
+        isAlert ? alertBorder : "border-slate-200/70"
+      }`}
+    >
+      <div className="flex items-center justify-between w-full mb-3">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">
+          {label}
+        </span>
+        <div
+          className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+            isAlert ? alertIconBg : defaultIconBg
+          }`}
+        >
+          <ResolvedIcon className="w-4 h-4" />
+        </div>
       </div>
-      <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
-        <p className="mt-0.5 text-2xl font-bold tabular-nums text-slate-900">{value}</p>
-        <p className="mt-0.5 truncate text-xs text-slate-500">{note}</p>
+
+      <div>
+        <div className="flex items-baseline gap-1.5 flex-wrap">
+          {loading ? (
+            <div className="h-7 w-24 bg-slate-100 animate-pulse rounded-md" />
+          ) : (
+            <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+              {value}
+            </span>
+          )}
+          {displayUnit && !loading && (
+            <span
+              className={`text-xs font-semibold ${
+                unitColor
+                  ? unitColor
+                  : isAlert
+                  ? alertTone === "rose"
+                    ? "text-rose-600 font-bold"
+                    : "text-amber-700 font-bold"
+                  : "text-slate-400"
+              }`}
+            >
+              {displayUnit}
+            </span>
+          )}
+          {badge && !loading && (
+            <span className="text-[10px] font-extrabold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full ml-auto shrink-0">
+              {badge}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Trend Chart (Plain SVG based on live weekly totals)                       */
+/*  Trend Chart (Multi-Timeframe SVG)                                         */
 /* -------------------------------------------------------------------------- */
 
-function TrendChart({ trend }) {
-  const W = 800, H = 280;
-  const pad = { l: 48, r: 16, t: 16, b: 32 };
+const TIMEFRAMES = [
+  { id: "weekly", label: "Weekly", sub: "Weekly totals for the last 8 weeks" },
+  { id: "monthly", label: "Monthly", sub: "Monthly totals for the last 6 months" },
+  { id: "quarterly", label: "Quarterly", sub: "Quarterly totals for recent quarters" },
+  { id: "yearly", label: "Yearly", sub: "Annual totals over recent years" },
+];
 
-  const labels = trend?.labels || DEFAULT_TREND.labels;
-  const sales = trend?.sales || DEFAULT_TREND.sales;
-  const expenses = trend?.expenses || DEFAULT_TREND.expenses;
+function TrendChart({ trend, activeTypeTab = "All" }) {
+  const W = 880, H = 210;
+  const pad = { l: 52, r: 20, t: 20, b: 32 };
+
+  const labels = trend?.labels || DEFAULT_TRENDS.weekly.labels;
+  const sales = trend?.sales || DEFAULT_TRENDS.weekly.sales;
+  const expenses = trend?.expenses || DEFAULT_TRENDS.weekly.expenses;
 
   const maxVal = Math.max(50, ...sales, ...expenses);
-  const max = Math.ceil(maxVal / 100) * 100 || 500;
+  const max = Math.ceil(maxVal / 50) * 50 || 200;
   const n = labels.length;
 
-  const x = (i) => pad.l + (i * (W - pad.l - pad.r)) / Math.max(1, n - 1);
-  const y = (v) => pad.t + (1 - (v || 0) / max) * (H - pad.t - pad.b);
-
-  const toPoints = (arr) => arr.map((v, i) => [x(i), y(v)]);
-  const smooth = (pts) =>
-    pts.reduce((d, [px, py], i) => {
-      if (i === 0) return `M${px},${py}`;
-      const [qx, qy] = pts[i - 1];
-      const cx = (qx + px) / 2;
-      return `${d} C${cx},${qy} ${cx},${py} ${px},${py}`;
-    }, "");
-
-  const salesPts = toPoints(sales);
-  const expPts = toPoints(expenses);
+  const chartW = W - pad.l - pad.r;
+  const chartH = H - pad.t - pad.b;
   const baseY = H - pad.b;
-  const salesArea = `${smooth(salesPts)} L${x(n - 1)},${baseY} L${x(0)},${baseY} Z`;
 
-  const step = max / 5;
-  const ticks = [0, step, step * 2, step * 3, step * 4, max].map((v) => Math.round(v));
+  const groupWidth = chartW / Math.max(1, n);
+  const barW = Math.min(22, Math.max(10, groupWidth * 0.24));
+  const barGap = 3;
+
+  const step = max / 4;
+  const ticks = [0, step, step * 2, step * 3, max].map((v) => Math.round(v));
+
+  const formatTick = (val) => {
+    if (val === 0) return "0";
+    if (val >= 1000) return `₱${(val / 1000).toFixed(val % 1000 === 0 ? 0 : 1)}M`;
+    return `₱${val}k`;
+  };
+
+  const isSalesDimmed = activeTypeTab === "Expenses";
+  const isExpDimmed = activeTypeTab === "Sales";
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Sales and expenses over the last 8 weeks">
-      <defs>
-        <linearGradient id="salesFill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#10b981" stopOpacity="0.22" />
-          <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-        </linearGradient>
-      </defs>
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full select-none" role="img" aria-label="Sales and expenses grouped bar chart">
+      {/* Horizontal gridlines & Y-axis labels */}
+      {ticks.map((t) => {
+        const y = pad.t + (1 - (t || 0) / max) * chartH;
+        return (
+          <g key={t}>
+            <line
+              x1={pad.l}
+              x2={W - pad.r}
+              y1={y}
+              y2={y}
+              stroke="#e2e8f0"
+              strokeDasharray={t === 0 ? "0" : "3 4"}
+              strokeWidth={t === 0 ? "1.5" : "1"}
+            />
+            <text x={pad.l - 10} y={y + 3.5} textAnchor="end" className="fill-slate-400 font-semibold" fontSize="10">
+              {formatTick(t)}
+            </text>
+          </g>
+        );
+      })}
 
-      {ticks.map((t) => (
-        <g key={t}>
-          <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="#e2e8f0" strokeDasharray={t === 0 ? "0" : "3 4"} />
-          <text x={pad.l - 10} y={y(t) + 4} textAnchor="end" className="fill-slate-400" fontSize="11">
-            {t === 0 ? "0" : `₱${t}k`}
-          </text>
-        </g>
-      ))}
+      {/* Bar Groups */}
+      {labels.map((l, i) => {
+        const groupCenterX = pad.l + (i + 0.5) * groupWidth;
+        const salesVal = sales[i] || 0;
+        const expVal = expenses[i] || 0;
+        const netVal = (salesVal - expVal) * 1000;
 
-      <path d={salesArea} fill="url(#salesFill)" />
-      <path d={smooth(expPts)} fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="5 5" strokeLinecap="round" />
-      <path d={smooth(salesPts)} fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" />
+        const salesH = (salesVal / max) * chartH;
+        const expH = (expVal / max) * chartH;
 
-      {salesPts.map(([px, py], i) => (
-        <circle key={i} cx={px} cy={py} r={i === n - 1 ? 5 : 3} fill="#fff" stroke="#059669" strokeWidth="2" />
-      ))}
+        const salesX = groupCenterX - barW - barGap / 2;
+        const expX = groupCenterX + barGap / 2;
 
-      {labels.map((l, i) => (
-        <text key={l + i} x={x(i)} y={H - 8} textAnchor="middle" className="fill-slate-400" fontSize="11">
-          {l}
-        </text>
-      ))}
+        const salesY = baseY - salesH;
+        const expY = baseY - expH;
+
+        return (
+          <g key={l + i} className="group cursor-pointer">
+            {/* Interactive hover column highlight */}
+            <rect
+              x={groupCenterX - groupWidth / 2 + 2}
+              y={pad.t}
+              width={groupWidth - 4}
+              height={chartH}
+              rx="6"
+              fill="#f1f5f9"
+              className="opacity-0 group-hover:opacity-60 transition-opacity"
+            />
+
+            {/* Sales Bar */}
+            {salesVal > 0 ? (
+              <rect
+                x={salesX}
+                y={salesY}
+                width={barW}
+                height={Math.max(3, salesH)}
+                rx="3"
+                ry="3"
+                fill="#059669"
+                className={`transition-all duration-200 group-hover:fill-emerald-500 ${
+                  isSalesDimmed ? "opacity-25" : "opacity-100"
+                }`}
+              />
+            ) : (
+              <rect
+                x={salesX}
+                y={baseY - 2}
+                width={barW}
+                height="2"
+                rx="1"
+                fill="#e2e8f0"
+                className={isSalesDimmed ? "opacity-25" : "opacity-100"}
+              />
+            )}
+
+            {/* Expense Bar */}
+            {expVal > 0 ? (
+              <rect
+                x={expX}
+                y={expY}
+                width={barW}
+                height={Math.max(3, expH)}
+                rx="3"
+                ry="3"
+                fill="#94a3b8"
+                className={`transition-all duration-200 group-hover:fill-slate-500 ${
+                  isExpDimmed ? "opacity-25" : "opacity-100"
+                }`}
+              />
+            ) : (
+              <rect
+                x={expX}
+                y={baseY - 2}
+                width={barW}
+                height="2"
+                rx="1"
+                fill="#e2e8f0"
+                className={isExpDimmed ? "opacity-25" : "opacity-100"}
+              />
+            )}
+
+            {/* X-axis label */}
+            <text
+              x={groupCenterX}
+              y={H - 8}
+              textAnchor="middle"
+              className="fill-slate-400 group-hover:fill-slate-700 font-semibold transition-colors"
+              fontSize="11"
+            >
+              {l}
+            </text>
+
+            {/* Native SVG Tooltip */}
+            <title>
+              {`${l}\n• Sales: ₱${(salesVal * 1000).toLocaleString("en-PH")}\n• Expenses: ₱${(expVal * 1000).toLocaleString("en-PH")}\n• Net: ${netVal >= 0 ? "+" : ""}₱${netVal.toLocaleString("en-PH")}`}
+            </title>
+          </g>
+        );
+      })}
     </svg>
   );
 }
 
-function TrendCard({ trend }) {
+function TrendCard({ trends, trend, activeTypeTab = "All" }) {
+  const [timeframe, setTimeframe] = useState("weekly");
+
+  const currentTrend =
+    trends?.[timeframe] ||
+    (timeframe === "weekly" ? trend : null) ||
+    DEFAULT_TRENDS[timeframe] ||
+    trend ||
+    DEFAULT_TRENDS.weekly;
+
+  const currentMeta = TIMEFRAMES.find((t) => t.id === timeframe) || TIMEFRAMES[0];
+
   return (
-    <section className={`${card} p-6`}>
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <section className="rounded-2xl bg-white border border-slate-200/70 p-5 sm:p-6 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-slate-900">Sales vs. expenses</h2>
-          <p className="mt-0.5 text-sm text-slate-500">Weekly totals for the last 8 weeks</p>
+          <h2 className="text-base font-bold text-slate-900 tracking-tight">Sales vs. Expenses</h2>
+          <p className="mt-0.5 text-xs text-slate-500 font-medium">{currentMeta.sub}</p>
         </div>
-        <div className="flex items-center gap-5">
-          <div className="flex items-center gap-4 text-xs font-medium text-slate-600">
+
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Legend */}
+          <div className="flex items-center gap-3.5 text-xs font-semibold text-slate-600">
             <span className="flex items-center gap-1.5">
-              <span className="h-0.5 w-4 rounded bg-emerald-600" /> Sales
+              <span className="h-2.5 w-2.5 rounded-sm bg-emerald-600" /> Sales
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-0.5 w-4 rounded border-t-2 border-dashed border-slate-400" /> Expenses
+              <span className="h-2.5 w-2.5 rounded-sm bg-slate-400" /> Expenses
             </span>
+          </div>
+
+          {/* Timeframe Tabs: Weekly, Monthly, Quarterly, Yearly */}
+          <div className="inline-flex rounded-xl bg-slate-100/80 p-1 border border-slate-200/60">
+            {TIMEFRAMES.map((tab) => {
+              const active = timeframe === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setTimeframe(tab.id)}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all cursor-pointer ${
+                    active
+                      ? "bg-white text-emerald-700 shadow-xs"
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/40"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
+
       <div className="mt-5">
-        <TrendChart trend={trend} />
+        <TrendChart trend={currentTrend} activeTypeTab={activeTypeTab} />
       </div>
     </section>
   );
@@ -699,14 +938,15 @@ export default function TransactionRecords({ loggedInUser }) {
   const [dateRangeFilter, setDateRangeFilter] = useState("All");
 
   const [stats, setStats] = useState(DEFAULT_STATS);
-  const [trend, setTrend] = useState(DEFAULT_TREND);
+  const [trend, setTrend] = useState(DEFAULT_TRENDS.weekly);
+  const [trends, setTrends] = useState(DEFAULT_TRENDS);
   const [transactions, setTransactions] = useState(DEFAULT_TRANSACTIONS);
   const [selectedId, setSelectedId] = useState(DEFAULT_TRANSACTIONS[0]?.id || null);
 
   const [loading, setLoading] = useState(false);
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
 
-  // Fetch Summary KPIs & 8-week Trend
+  // Fetch Summary KPIs & Multi-Timeframe Trends
   const fetchSummary = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/transactions/summary`);
@@ -714,6 +954,7 @@ export default function TransactionRecords({ loggedInUser }) {
         const data = await res.json();
         if (data.stats) setStats(data.stats);
         if (data.trend) setTrend(data.trend);
+        if (data.trends) setTrends(data.trends);
       }
     } catch (err) {
       console.warn("Could not load transactions summary, using fallback:", err.message);
@@ -780,14 +1021,14 @@ export default function TransactionRecords({ loggedInUser }) {
   return (
     <div className="space-y-6 bg-slate-50 p-6 min-h-screen">
       {/* 4 Top KPI Cards */}
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {stats.map((s) => (
           <StatCard key={s.label} {...s} />
         ))}
       </div>
 
-      {/* 8-Week Trend Chart */}
-      <TrendCard trend={trend} />
+      {/* Multi-Timeframe Trend Chart (Weekly, Monthly, Quarterly, Yearly) */}
+      <TrendCard trends={trends} trend={trend} activeTypeTab={tab} />
 
       {/* Main Transactions Grid */}
       <div className={`grid items-start gap-6 ${selected ? "xl:grid-cols-[minmax(0,1fr)_380px]" : ""}`}>

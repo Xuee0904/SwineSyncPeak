@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import SideNav, { NAV_ITEMS } from '../components/SideNav';
 import Admin from './Admin';
 import SwineManagement from './SwineManagement';
@@ -8,7 +8,6 @@ import GrowthProgramManagement from './GrowthProgramManagement';
 import HealthManagement from './HealthManagement';
 import InventoryManagement from './InventoryManagement';
 import TransactionRecords from './TransactionRecords';
-import DailyFeedingPanel from '../components/Feeding/DailyFeedingPanel';
 import PigSnout from '../components/common/PigSnout';
 import { supabase } from '../supabaseClient';
 import { toast } from '../utils/toast';
@@ -16,21 +15,30 @@ import {
   computeInventoryMetrics,
   getStockStatus,
   getStockPercent,
-  hasSubUnit,
   getShortUnit,
-  formatSubUnitEquivalent,
 } from '../components/Inventory/inventoryUtils';
 import {
-  Sparkles, Database, ArrowUpRight, ChevronRight,
+  Sparkles, Database, ChevronRight,
   AlertTriangle,
-  ChevronLeft, Menu,
+  ChevronLeft, Menu, Bell,
   Users, HeartPulse, Grid3X3, ArrowRight,
   CheckCircle2, RefreshCw, Calendar, Check,
   Dna, TrendingUp, Activity, MapPin, Plus, Syringe,
-  Wheat, Package, ArrowDownLeft, Receipt, Wallet,
+  Wheat, Package, ChevronDown, LogOut,
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+const getModuleIcon = (tabId) => {
+  for (const item of NAV_ITEMS) {
+    if (item.id === tabId) return item.icon;
+    if (item.children) {
+      const child = item.children.find(c => c.id === tabId);
+      if (child) return child.icon;
+    }
+  }
+  return Calendar;
+};
 
 const EVENT_COLORS = {
   breeding: 'bg-purple-500',
@@ -121,8 +129,8 @@ function SectionCard({ title, action, actionLabel, children, id }) {
   const hasArrow = typeof actionLabel === 'string' && actionLabel.includes('→');
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/60 shadow-xs hover:shadow-sm transition-all duration-300 overflow-hidden" id={id}>
-      <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-50">
+    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-sm transition-all duration-300 overflow-hidden" id={id}>
+      <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100">
         <h3 className="text-sm font-bold text-slate-800 tracking-tight">{title}</h3>
         {action && (
           <button
@@ -164,9 +172,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   const [rawEvents, setRawEvents] = useState([]);
   const [dashboardInventory, setDashboardInventory] = useState([]);
   const [inventoryLoading, setInventoryLoading] = useState(true);
-  const [recentTransactions, setRecentTransactions] = useState([]);
-  const [transactionSummary, setTransactionSummary] = useState(null);
-  const [transactionsLoading, setTransactionsLoading] = useState(true);
 
   // Calendar State (Defaults to current local date)
   const [calMonth, setCalMonth] = useState(() => {
@@ -178,11 +183,32 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   // Action Center pagination toggle
   const [showAllActions, setShowAllActions] = useState(false);
 
+  // Header profile dropdown menu
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const handleClickOutside = (e) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setProfileMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [profileMenuOpen]);
+
   // ─── Parallel Live Data Synchronizer ───
   const loadDashboardData = async () => {
     setDashboardLoading(true);
     setInventoryLoading(true);
-    setTransactionsLoading(true);
 
     try {
       const [
@@ -196,8 +222,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         txRes,
         sickPigsRes,
         sickBatchesRes,
-        financeTxRes,
-        financeSummaryRes,
       ] = await Promise.allSettled([
         fetch(`${API_BASE}/api/pigs/stats`).then(r => r.ok ? r.json() : null).catch(() => null),
         fetch(`${API_BASE}/api/pens`).then(r => r.ok ? r.json() : null).catch(() => null),
@@ -209,8 +233,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         supabase.from('inventory_transactions').select('*').order('created_at', { ascending: false }),
         supabase.from('pigs').select('pig_id, pig_tag, gender, status, pen_id, pens(pen_code)').in('status', ['sick', 'quarantine', 'Sick', 'Quarantine']).eq('is_archived', false),
         supabase.from('piglet_batches').select('batch_id, batch_tag, status, current_count, pen_id, pens(pen_code)').in('status', ['sick', 'quarantine', 'Sick', 'Quarantine']).eq('is_archived', false),
-        fetch(`${API_BASE}/api/transactions?limit=5`).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`${API_BASE}/api/transactions/summary`).then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
 
       const today = new Date();
@@ -520,6 +542,50 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         return 4;
       };
       tasks.sort((a, b) => urgencyWeight(a.urgency) - urgencyWeight(b.urgency));
+
+      // Pin Today's Daily Feeding at the top of Live Action Center
+      const fedBatchesCount = activeBatches.filter(b => b.current_feed?.fed_today).length;
+      const totalBatchesCount = activeBatches.length;
+      const breederHeadCount = breederSummary?.total_breeders || 0;
+      const hasBreeder = !!breederSummary && breederHeadCount > 0;
+      const totalFeedGroups = totalBatchesCount + (hasBreeder ? 1 : 0);
+      const fedFeedGroups = fedBatchesCount + (hasBreeder && breederSummary.breeder_fed_today ? 1 : 0);
+
+      if (totalFeedGroups > 0) {
+        const allFedToday = fedFeedGroups >= totalFeedGroups;
+        const unfedBatchesKg = activeBatches.reduce((sum, b) => (
+          b.current_feed && !b.current_feed.fed_today
+            ? sum + (Number(b.current_feed.total_daily_feed_kg) || 0)
+            : sum
+        ), 0);
+        let savedBreederRate = 2.0;
+        try {
+          const saved = localStorage.getItem('swinesync_breeder_rate_per_head');
+          if (saved) savedBreederRate = parseFloat(saved) || 2.0;
+        } catch {
+          // ignore storage access issues
+        }
+        const unfedBreederKg = hasBreeder && !breederSummary.breeder_fed_today
+          ? Number((breederHeadCount * savedBreederRate).toFixed(1))
+          : 0;
+        const totalRemainingKg = Number((unfedBatchesKg + unfedBreederKg).toFixed(1));
+        const groupsLabel = `${totalFeedGroups} ${totalFeedGroups === 1 ? 'group' : 'groups'}`;
+
+        tasks.unshift({
+          id: 'daily_feeding_pinned',
+          text: "Today's Daily Feeding",
+          pen: null,
+          sub: allFedToday
+            ? `All ${groupsLabel} fed today • Routine feeding complete`
+            : `${fedFeedGroups} of ${totalFeedGroups} fed${totalRemainingKg > 0 ? ` • ${totalRemainingKg.toFixed(1)} kg remaining` : ' • Action needed today'}`,
+          urgency: allFedToday ? 'ALL FED' : 'DUE TODAY',
+          actionLabel: allFedToday ? 'View Log' : 'Feed Herd',
+          targetTab: 'growth',
+          category: 'Feeding',
+          completed: allFedToday,
+        });
+      }
+
       setActionItems(tasks);
 
       // 7. Calendar Events Synthesis
@@ -664,22 +730,11 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         .slice(0, 5);
 
       setDashboardInventory(enrichedInv);
-
-      // 9. Recent Finance Transactions & Summary
-      const txData = financeTxRes.status === 'fulfilled' ? financeTxRes.value : null;
-      const txList = Array.isArray(txData?.data) ? txData.data : (Array.isArray(txData) ? txData : []);
-      setRecentTransactions(txList.slice(0, 5));
-
-      const summaryData = financeSummaryRes.status === 'fulfilled' ? financeSummaryRes.value : null;
-      if (summaryData) {
-        setTransactionSummary(summaryData);
-      }
     } catch (err) {
       console.warn('[Dashboard] Error syncing live modules:', err);
     } finally {
       setDashboardLoading(false);
       setInventoryLoading(false);
-      setTransactionsLoading(false);
     }
   };
 
@@ -751,6 +806,25 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
     return upcoming.length > 0 ? upcoming.slice(0, 5) : currentMonthEvents.slice(0, 5);
   }, [currentMonthEvents, selectedDay, calMonth]);
 
+  const getInitials = () => {
+    if (!loggedInUser) return '?';
+    if (typeof loggedInUser === 'string') return loggedInUser.charAt(0).toUpperCase();
+    if (typeof loggedInUser === 'object') {
+      const name = loggedInUser.name || loggedInUser.user_metadata?.full_name || loggedInUser.email || '';
+      return name.charAt(0).toUpperCase() || '?';
+    }
+    return '?';
+  };
+
+  const getDisplayName = () => {
+    if (!loggedInUser) return '';
+    if (typeof loggedInUser === 'string') return loggedInUser;
+    if (typeof loggedInUser === 'object') {
+      return loggedInUser.name || loggedInUser.user_metadata?.full_name || loggedInUser.email || 'Staff';
+    }
+    return '';
+  };
+
   const getUserRole = () => {
     if (!loggedInUser) return 'Staff';
     if (typeof loggedInUser === 'string') return loggedInUser;
@@ -762,6 +836,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
 
   const now = new Date();
   const isCurrentMonthView = calMonth.year === now.getFullYear() && calMonth.month === now.getMonth();
+  const pendingActionCount = actionItems.filter(item => !item.completed).length;
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden" id="staff-portal">
@@ -769,14 +844,13 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onClose={() => setMobileNav(false)}
-        onLogout={onLogout}
         loggedInUser={loggedInUser}
         mobileOpen={mobileNav}
       />
 
       <div className="flex-1 flex flex-col ml-0 lg:ml-64 min-w-0 overflow-hidden">
-        <header className="sticky top-0 z-10 bg-white border-b border-slate-100 px-5 py-3.5 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
+        <header className={`sticky top-0 ${profileMenuOpen ? 'z-30' : 'z-10'} h-16 bg-white border-b border-slate-200/80 px-5 lg:px-6 flex items-center justify-between gap-4 shrink-0`}>
+          <div className="flex items-center gap-3 min-w-0">
             <button
               className="lg:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-50 cursor-pointer"
               onClick={() => setMobileNav(true)}
@@ -784,7 +858,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             >
               <Menu className="w-5 h-5" />
             </button>
-            <h1 className="text-sm font-extrabold text-slate-900 tracking-tight">
+            <h1 className="text-base font-extrabold text-slate-900 tracking-tight truncate">
               {(() => {
                 for (const item of NAV_ITEMS) {
                   if (item.id === activeTab) return item.label;
@@ -796,6 +870,85 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                 return 'Dashboard';
               })()}
             </h1>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button
+              type="button"
+              className="relative p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Notifications"
+              title="Notifications"
+            >
+              <Bell className="w-5 h-5" />
+              <span
+                className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white"
+                aria-hidden="true"
+              />
+            </button>
+
+            <div className="hidden sm:block h-6 w-px bg-slate-200/80" aria-hidden="true" />
+
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                type="button"
+                id="header-profile-menu-btn"
+                onClick={() => setProfileMenuOpen(prev => !prev)}
+                aria-expanded={profileMenuOpen}
+                aria-haspopup="menu"
+                aria-label="Account menu"
+                className={`flex items-center gap-2.5 p-1 pr-2 rounded-xl border transition-all cursor-pointer ${
+                  profileMenuOpen
+                    ? 'bg-slate-50 border-slate-200 shadow-2xs'
+                    : 'border-transparent hover:bg-slate-50 hover:border-slate-200/80'
+                }`}
+              >
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-xs shadow-emerald-600/20 select-none">
+                  {getInitials()}
+                </div>
+                <div className="hidden sm:block min-w-0 text-left">
+                  <p className="text-xs font-bold text-slate-800 truncate max-w-[140px] leading-tight" title={getDisplayName() || 'Staff'}>
+                    {getDisplayName() || 'Staff'}
+                  </p>
+                  <p className="text-[10px] text-slate-400 font-semibold tracking-wide truncate mt-0.5">
+                    {getUserRole()?.toLowerCase() === 'admin' ? 'Administrator' : 'Staff Portal'}
+                  </p>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-200 ${profileMenuOpen ? 'rotate-180 text-slate-600' : ''}`} />
+              </button>
+
+              {profileMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 mt-2 w-56 rounded-2xl bg-white border border-slate-200/90 shadow-lg shadow-slate-900/10 py-1.5 z-50 origin-top-right"
+                >
+                  <div className="px-3.5 py-2.5 border-b border-slate-100">
+                    <p className="text-xs font-bold text-slate-900 truncate">
+                      {getDisplayName() || 'Staff'}
+                    </p>
+                    <p className="text-[11px] font-medium text-slate-400 truncate mt-0.5">
+                      {typeof loggedInUser === 'object' && loggedInUser?.email
+                        ? loggedInUser.email
+                        : (getUserRole()?.toLowerCase() === 'admin' ? 'Administrator' : 'Staff Portal')}
+                    </p>
+                  </div>
+                  <div className="p-1.5">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      id="header-logout-btn"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        onLogout?.();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 active:bg-rose-100/70 transition-colors cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4 shrink-0" />
+                      <span>Logout</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -898,15 +1051,10 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                 </button>
               </div>
 
-              {/* ─── ROW 2: TODAY'S FEEDING PANEL (Full Width to Prevent Table Clipping) ─── */}
-              <div id="daily-feeding-container">
-                <DailyFeedingPanel variant="dashboard" onUpdated={loadDashboardData} />
-              </div>
-
-              {/* ─── ROW 3: SPLIT OPERATIONAL GRID ─── */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-                {/* ── LEFT COLUMN: Actionable Alerts & To-Do (2/3 width) ── */}
-                <div className="lg:col-span-2 space-y-5">
+              {/* ─── ROW 2: SPLIT OPERATIONAL GRID ─── */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                {/* ── LEFT COLUMN: Actionable Alerts, Tasks & Compact Inventory (7/12 width) ── */}
+                <div className="lg:col-span-7 space-y-5">
                   {/* Active Health Alerts */}
                   <SectionCard
                     title={`Active Health Alerts ${healthAlerts.length > 0 ? `(${healthAlerts.length})` : ''}`}
@@ -934,47 +1082,59 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                     ) : (
                       <div>
                         <div className="space-y-2">
-                          {healthAlerts.slice(0, 4).map((alert) => (
-                            <div
-                              key={alert.id}
-                              onClick={() => setActiveTab('health_management')}
-                              className={`group w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all cursor-pointer text-left ${alert.severity === 'high'
-                                ? 'hover:border-rose-300'
-                                : 'hover:border-amber-300'
-                                }`}
-                            >
-                              <div className={`w-8 h-8 rounded-lg shrink-0 flex items-center justify-center transition-colors ${alert.severity === 'high'
-                                ? 'bg-rose-50 text-rose-600 group-hover:bg-rose-100'
-                                : 'bg-amber-50 text-amber-600 group-hover:bg-amber-100'
-                                }`}>
-                                {alert.severity === 'high' ? (
-                                  <HeartPulse className="w-4 h-4" />
-                                ) : (
-                                  <Activity className="w-4 h-4" />
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-xs font-bold text-slate-900 group-hover:text-rose-700 transition-colors truncate">
-                                    {alert.tag}
-                                  </span>
-                                  {alert.pen && (
-                                    <span className="inline-flex items-center gap-1 font-semibold text-slate-600 bg-slate-50 border border-slate-200/70 px-1.5 py-0.5 rounded text-[10px]">
-                                      <MapPin className="w-2.5 h-2.5 text-slate-400" />
-                                      {alert.pen}
-                                    </span>
+                          {healthAlerts.slice(0, 4).map((alert) => {
+                            const isHigh = alert.severity === 'high';
+                            return (
+                              <div
+                                key={alert.id}
+                                onClick={() => setActiveTab('health_management')}
+                                className={`group w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border shadow-2xs hover:shadow-xs transition-all cursor-pointer text-left ${isHigh
+                                  ? 'bg-rose-50/80 border-rose-200/90 hover:bg-rose-50 hover:border-rose-300'
+                                  : 'bg-amber-50/75 border-amber-200/90 hover:bg-amber-50 hover:border-amber-300'
+                                  }`}
+                              >
+                                <div className={`w-8 h-8 rounded-lg shrink-0 flex items-center justify-center border transition-colors ${isHigh
+                                  ? 'bg-white border-rose-200/80 text-rose-600 group-hover:bg-rose-100/70'
+                                  : 'bg-white border-amber-200/80 text-amber-600 group-hover:bg-amber-100/70'
+                                  }`}>
+                                  {isHigh ? (
+                                    <HeartPulse className="w-4 h-4" />
+                                  ) : (
+                                    <Activity className="w-4 h-4" />
                                   )}
                                 </div>
-                                <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                                  {alert.summary || alert.desc}
-                                </p>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`text-xs font-bold transition-colors truncate ${isHigh
+                                      ? 'text-rose-950 group-hover:text-rose-700'
+                                      : 'text-amber-950 group-hover:text-amber-800'
+                                      }`}>
+                                      {alert.tag}
+                                    </span>
+                                    {alert.pen && (
+                                      <span className={`inline-flex items-center gap-1 font-semibold bg-white/90 border px-1.5 py-0.5 rounded text-[10px] ${isHigh
+                                        ? 'text-rose-800 border-rose-200/70'
+                                        : 'text-amber-800 border-amber-200/70'
+                                        }`}>
+                                        <MapPin className={`w-2.5 h-2.5 ${isHigh ? 'text-rose-400' : 'text-amber-500'}`} />
+                                        {alert.pen}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className={`text-[11px] truncate mt-0.5 ${isHigh ? 'text-rose-800/80' : 'text-amber-800/80'}`}>
+                                    {alert.summary || alert.desc}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Pill color={isHigh ? 'red' : 'yellow'}>{alert.status}</Pill>
+                                  <ChevronRight className={`w-4 h-4 group-hover:translate-x-0.5 transition-all ${isHigh
+                                    ? 'text-rose-300 group-hover:text-rose-600'
+                                    : 'text-amber-300 group-hover:text-amber-600'
+                                    }`} />
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <Pill color={alert.severity === 'high' ? 'red' : 'yellow'}>{alert.status}</Pill>
-                                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-rose-600 group-hover:translate-x-0.5 transition-all" />
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
 
                         {/* Top-4 Cap: Footer Banner when more alerts exist */}
@@ -1002,7 +1162,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
 
                   {/* Live Action Center (Operational Action Feed) */}
                   <SectionCard
-                    title={`Live Action Center ${actionItems.length > 0 ? `(${actionItems.length})` : ''}`}
+                    title={`Live Action Center ${pendingActionCount > 0 ? `(${pendingActionCount})` : ''}`}
                     id="todo-card"
                   >
                     {actionItems.length === 0 ? (
@@ -1019,25 +1179,13 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                       <div>
                         <div className="space-y-2">
                           {(showAllActions ? actionItems : actionItems.slice(0, 4)).map((item) => {
-                            const cat = item.category || 'Operations';
-
-                            let iconNode = <Calendar className="w-4 h-4" />;
-                            let boxClass = 'bg-slate-50 text-slate-600 group-hover:bg-slate-100 group-hover:text-slate-700';
-
-                            if (cat === 'Breeding') {
-                              iconNode = <Dna className="w-4 h-4" />;
-                              boxClass = 'bg-purple-50 text-purple-600 group-hover:bg-purple-100 group-hover:text-purple-700';
-                            } else if (cat === 'Veterinary') {
-                              iconNode = <Syringe className="w-4 h-4" />;
-                              boxClass = 'bg-teal-50 text-teal-600 group-hover:bg-teal-100 group-hover:text-teal-700';
-                            } else if (cat === 'Growth' || cat === 'Weaning') {
-                              iconNode = <TrendingUp className="w-4 h-4" />;
-                              boxClass = 'bg-blue-50 text-blue-600 group-hover:bg-blue-100 group-hover:text-blue-700';
-                            }
+                            const ModuleIcon = getModuleIcon(item.targetTab);
 
                             const u = String(item.urgency || '').toUpperCase();
                             let urgencyClass = 'bg-slate-50 text-slate-600 border-slate-200/80 font-bold';
-                            if (u === 'OVERDUE') {
+                            if (u === 'ALL FED' || u === 'DONE') {
+                              urgencyClass = 'bg-emerald-50 text-emerald-700 border-emerald-200/80 font-bold';
+                            } else if (u === 'OVERDUE') {
                               urgencyClass = 'bg-rose-50 text-rose-700 border-rose-200/80 font-bold';
                             } else if (u === 'DUE TODAY' || u === 'TODAY' || u === 'ACTION' || u === 'ACTION DUE') {
                               urgencyClass = 'bg-amber-50 text-amber-700 border-amber-200/80 font-bold';
@@ -1051,8 +1199,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                                 onClick={() => item.targetTab && setActiveTab(item.targetTab)}
                                 className="group w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-xs hover:border-emerald-300 transition-all cursor-pointer text-left"
                               >
-                                <div className={`w-8 h-8 rounded-lg shrink-0 flex items-center justify-center transition-colors ${boxClass}`}>
-                                  {iconNode}
+                                <div className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center bg-slate-100/80 text-slate-600 group-hover:bg-slate-200/70 group-hover:text-slate-900 transition-colors">
+                                  <ModuleIcon className="w-4 h-4" />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
@@ -1108,7 +1256,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                     )}
                   </SectionCard>
 
-                  {/* Inventory Watch Card (With 14-Day Burn-Rate Forecast) */}
+                  {/* Inventory Watch Card (Compact Top 3 Overview) */}
                   <SectionCard
                     title="Inventory Watch"
                     actionLabel="Manage →"
@@ -1116,19 +1264,19 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                     id="inventory-card"
                   >
                     {inventoryLoading ? (
-                      <div className="space-y-4">
+                      <div className="space-y-3">
                         {[1, 2, 3].map(i => (
-                          <div key={i} className="space-y-2 animate-pulse">
+                          <div key={i} className="space-y-1.5 animate-pulse">
                             <div className="flex justify-between">
                               <div className="h-3.5 w-32 bg-slate-100 rounded" />
-                              <div className="h-3.5 w-12 bg-slate-100 rounded" />
+                              <div className="h-3.5 w-16 bg-slate-100 rounded" />
                             </div>
                             <div className="h-2 w-full bg-slate-100 rounded-full" />
                           </div>
                         ))}
                       </div>
                     ) : dashboardInventory.length === 0 ? (
-                      <div className="text-center py-6 space-y-2">
+                      <div className="text-center py-5 space-y-2">
                         <p className="text-xs text-slate-400">No active inventory supplies registered yet.</p>
                         <button
                           onClick={() => setActiveTab('inventory')}
@@ -1138,8 +1286,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                         </button>
                       </div>
                     ) : (
-                      <div className="space-y-2.5">
-                        {dashboardInventory.map((item) => {
+                      <div className="space-y-2">
+                        {dashboardInventory.slice(0, 3).map((item) => {
                           const isOut = item.status.key === 'out_of_stock' || Number(item.current) <= 0;
                           const isLowStock =
                             isOut ||
@@ -1147,65 +1295,57 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                             item.status.key === 'low_stock' ||
                             (item.threshold != null && Number(item.current) <= Number(item.threshold)) ||
                             item.percent <= 10;
-                          const isAtRisk = !isLowStock && item.daysUntilLow != null && item.daysUntilLow <= 7;
                           const catCfg = getInventoryCategoryConfig(item.category, item.name);
                           const CatIcon = catCfg.Icon;
-                          const subUnitText = hasSubUnit(item.unit) ? formatSubUnitEquivalent(item.current, item.unit) : null;
                           const thresholdRatio = item.threshold && item.ideal > 0 ? (item.threshold / item.ideal) : 0.25;
 
                           return (
                             <div
                               key={item.id}
                               onClick={() => setActiveTab('inventory')}
-                              className={`group w-full p-3 rounded-xl bg-white border transition-all cursor-pointer space-y-2 text-left shadow-2xs hover:shadow-xs ${
+                              className={`group w-full px-3 py-2.5 rounded-xl border transition-all cursor-pointer space-y-1.5 text-left shadow-2xs hover:shadow-xs ${
                                 isLowStock
-                                  ? 'border-rose-200/90 hover:border-rose-300'
-                                  : 'border-slate-200/80 hover:border-emerald-300'
+                                  ? 'bg-rose-50/25 border-rose-200/90 hover:border-rose-300'
+                                  : 'bg-white border-slate-200/80 hover:border-emerald-300'
                               }`}
                             >
-                              {/* Row Header: Category Icon + Name & Subunit + Stock/Capacity + % Badge */}
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
                                     isLowStock ? 'bg-rose-50 border border-rose-100 text-rose-600' : `${catCfg.bg} border ${catCfg.border}`
                                   }`}>
-                                    <CatIcon className={`w-4 h-4 ${isLowStock ? 'text-rose-600' : catCfg.color}`} />
+                                    <CatIcon className={`w-3.5 h-3.5 ${isLowStock ? 'text-rose-600' : catCfg.color}`} />
                                   </div>
-                                  <div className="min-w-0">
-                                    <p className={`text-xs font-bold transition-colors truncate ${
-                                      isLowStock ? 'text-slate-900 group-hover:text-rose-700' : 'text-slate-900 group-hover:text-emerald-700'
-                                    }`}>
-                                      {item.name}
-                                    </p>
-                                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                                      {catCfg.label}
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-xs font-bold text-slate-800">
-                                    {formatCleanNumber(item.current)}{' '}
-                                    <span className="text-slate-400 font-normal">
-                                      / {formatCleanNumber(item.ideal)} {getShortUnit(item.unit)}
+                                  <span className={`text-xs font-bold truncate transition-colors ${
+                                    isLowStock ? 'text-slate-900 group-hover:text-rose-700' : 'text-slate-900 group-hover:text-emerald-700'
+                                  }`}>
+                                    {item.name}
+                                  </span>
+                                  {isLowStock && (
+                                    <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200/80 shrink-0">
+                                      {isOut ? 'Empty' : 'Low Stock'}
                                     </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-[11px] font-semibold text-slate-500">
+                                    <strong className="text-slate-800 font-bold">{formatCleanNumber(item.current)}</strong> / {formatCleanNumber(item.ideal)} {getShortUnit(item.unit)}
                                   </span>
                                   <span
-                                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                                      isLowStock
-                                        ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200/80'
+                                    className={`text-[11px] font-extrabold min-w-[34px] text-right ${
+                                      isLowStock ? 'text-rose-600' : 'text-emerald-600'
                                     }`}
                                   >
-                                    {isOut ? 'Empty' : isLowStock ? `Low • ${item.percent}%` : `${item.percent}%`}
+                                    {item.percent}%
                                   </span>
                                 </div>
                               </div>
 
-                              {/* Progress Bar with Synced Reorder Threshold Marker */}
-                              <div className="relative h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                              <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                                 <div
                                   className={`h-full rounded-full transition-all duration-500 ${
-                                    isLowStock ? 'bg-rose-500' : 'bg-emerald-500'
+                                    isLowStock ? 'bg-rose-500' : 'bg-emerald-600'
                                   }`}
                                   style={{ width: `${Math.min(item.percent, 100)}%` }}
                                 />
@@ -1217,46 +1357,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                                   title={`Reorder threshold: ${Math.round(thresholdRatio * 100)}%`}
                                 />
                               </div>
-
-                              {/* Context Line: 2-State (Good Buffer vs Low Stock/Depleted) */}
-                              <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
-                                {isOut ? (
-                                  <div className="flex items-center gap-1.5 text-rose-700 font-medium truncate">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
-                                    <span className="truncate">Stock depleted • Immediate restock required</span>
-                                  </div>
-                                ) : isLowStock ? (
-                                  <div className="flex items-center gap-1.5 text-rose-700 font-medium truncate">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
-                                    <span className="truncate">
-                                      Below reorder threshold ({formatCleanNumber(item.threshold)} {getShortUnit(item.unit)})
-                                      {item.daysUntilEmpty != null ? ` • Est. ${item.daysUntilEmpty}d until empty` : ''}
-                                    </span>
-                                  </div>
-                                ) : isAtRisk ? (
-                                  <div className="flex items-center gap-1.5 text-slate-600 font-medium truncate">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
-                                    <span className="truncate">
-                                      Est. <strong className="text-slate-800 font-bold">{item.daysUntilLow} {item.daysUntilLow === 1 ? 'day' : 'days'}</strong> to reorder threshold
-                                      {item.dailyBurnRate > 0 && ` (~${formatCleanNumber(item.dailyBurnRate)} ${getShortUnit(item.unit)}/day)`}
-                                    </span>
-                                  </div>
-                                ) : item.dailyBurnRate > 0 ? (
-                                  <div className="flex items-center gap-1.5 text-slate-500 truncate">
-                                    <span className="truncate">Burn rate: ~{formatCleanNumber(item.dailyBurnRate)} {getShortUnit(item.unit)}/day</span>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center gap-1.5 text-slate-400 text-[10px]">
-                                    <span>Stable stock buffer</span>
-                                  </div>
-                                )}
-
-                                {subUnitText && (
-                                  <span className="text-[10px] text-slate-400 font-medium shrink-0 ml-2">
-                                    {subUnitText}
-                                  </span>
-                                )}
-                              </div>
                             </div>
                           );
                         })}
@@ -1265,8 +1365,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                   </SectionCard>
                 </div>
 
-                {/* ── RIGHT COLUMN: Farm Schedule (1/3 width) ── */}
-                <div className="space-y-5">
+                {/* ── RIGHT COLUMN: Larger Farm Schedule (5/12 width) ── */}
+                <div className="lg:col-span-5 space-y-5">
                   {/* Farm Schedule Calendar */}
                   <SectionCard
                     title="Farm Schedule"
@@ -1274,81 +1374,141 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                     action={!isCurrentMonthView ? jumpToToday : undefined}
                     actionLabel={!isCurrentMonthView ? "Jump to Today" : undefined}
                   >
-                    <div className="flex items-center justify-between mb-4">
-                      <button
-                        onClick={prevMonth}
-                        className="p-1.5 rounded-lg hover:bg-slate-50 text-slate-400 cursor-pointer transition-colors"
-                        aria-label="Previous Month"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
-                      <span className="text-xs font-bold text-slate-800">
-                        {MONTH_NAMES[calMonth.month]} {calMonth.year}
+                    <div className="flex items-center justify-between mb-3.5">
+                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Monthly Overview
                       </span>
-                      <button
-                        onClick={nextMonth}
-                        className="p-1.5 rounded-lg hover:bg-slate-50 text-slate-400 cursor-pointer transition-colors"
-                        aria-label="Next Month"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
+                      <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200/90 bg-slate-50/70 p-0.5">
+                        <button
+                          onClick={prevMonth}
+                          className="p-1.5 rounded-lg hover:bg-white hover:shadow-2xs text-slate-500 hover:text-slate-800 cursor-pointer transition-all"
+                          aria-label="Previous Month"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="text-xs font-bold text-slate-800 px-2 min-w-[110px] text-center">
+                          {MONTH_NAMES[calMonth.month]} {calMonth.year}
+                        </span>
+                        <button
+                          onClick={nextMonth}
+                          className="p-1.5 rounded-lg hover:bg-white hover:shadow-2xs text-slate-500 hover:text-slate-800 cursor-pointer transition-all"
+                          aria-label="Next Month"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-7 mb-1">
-                      {DAY_LABELS.map(d => (
-                        <div key={d} className="text-center text-[9px] font-bold text-slate-400 py-1">{d}</div>
-                      ))}
-                    </div>
+                    {(() => {
+                      const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+                      const trailingDays = totalCells - (firstDay + daysInMonth);
+                      const todayObj = new Date();
 
-                    <div className="grid grid-cols-7 gap-y-1">
-                      {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
-                      {Array.from({ length: daysInMonth }).map((_, i) => {
-                        const day = i + 1;
-                        const dayEvts = currentMonthEvents.filter(e => e.day === day);
-                        const hasEvt = dayEvts.length > 0;
-                        const todayObj = new Date();
-                        const isToday = day === todayObj.getDate() && calMonth.month === todayObj.getMonth() && calMonth.year === todayObj.getFullYear();
-                        const isSelected = selectedDay === day;
+                      return (
+                        <div className="rounded-xl border border-slate-200/90 overflow-hidden bg-white">
+                          <div className="grid grid-cols-7 bg-slate-50/90 border-b border-slate-200/80">
+                            {DAY_LABELS.map((d, idx) => (
+                              <div
+                                key={d}
+                                className={`text-center text-[10px] font-bold text-slate-500 py-2 tracking-wider ${
+                                  idx < 6 ? 'border-r border-slate-200/60' : ''
+                                }`}
+                              >
+                                {d}
+                              </div>
+                            ))}
+                          </div>
 
-                        const dayStyle = isSelected
-                          ? (isToday
-                              ? 'bg-emerald-600 text-white font-bold ring-2 ring-emerald-300 ring-offset-1'
-                              : 'bg-emerald-50 text-emerald-800 font-bold border-2 border-emerald-500 shadow-2xs')
-                          : (isToday
-                              ? 'bg-emerald-600 text-white font-bold'
-                              : 'text-slate-600 group-hover:bg-slate-100 font-medium');
+                          <div className="grid grid-cols-7">
+                            {Array.from({ length: firstDay }).map((_, i) => (
+                              <div
+                                key={`lead-${i}`}
+                                className={`min-h-[48px] sm:min-h-[54px] lg:min-h-[58px] bg-slate-50/40 border-b border-slate-200/70 ${
+                                  i % 7 !== 6 ? 'border-r' : ''
+                                }`}
+                              />
+                            ))}
 
-                        return (
-                          <button
-                            key={day}
-                            type="button"
-                            onClick={() => setSelectedDay(prev => prev === day ? null : day)}
-                            className="flex flex-col items-center py-0.5 cursor-pointer group"
-                            aria-label={`Day ${day}${hasEvt ? `, ${dayEvts.length} event(s)` : ''}`}
-                          >
-                            <span className={`text-[11px] w-6 h-6 flex items-center justify-center rounded-full transition-colors ${dayStyle}`}>
-                              {day}
-                            </span>
-                            <div className="flex items-center justify-center gap-0.5 h-1.5 mt-1">
-                              {hasEvt ? (
-                                dayEvts.length === 1 ? (
-                                  <span className={`w-1.5 h-1.5 rounded-full ${EVENT_COLORS[dayEvts[0].type] || 'bg-teal-500'}`} />
-                                ) : (
-                                  dayEvts.slice(0, 3).map((e, idx) => (
+                            {Array.from({ length: daysInMonth }).map((_, i) => {
+                              const day = i + 1;
+                              const cellIndex = firstDay + i;
+                              const isLastCol = cellIndex % 7 === 6;
+                              const isLastRow = cellIndex >= totalCells - 7;
+                              const dayEvts = currentMonthEvents.filter(e => e.day === day);
+                              const hasEvt = dayEvts.length > 0;
+                              const isToday = day === todayObj.getDate() && calMonth.month === todayObj.getMonth() && calMonth.year === todayObj.getFullYear();
+                              const isSelected = selectedDay === day;
+
+                              return (
+                                <button
+                                  key={day}
+                                  type="button"
+                                  onClick={() => setSelectedDay(prev => prev === day ? null : day)}
+                                  className={[
+                                    'min-h-[48px] sm:min-h-[54px] lg:min-h-[58px] p-1.5 flex flex-col justify-between items-start text-left transition-colors cursor-pointer group relative',
+                                    !isLastCol ? 'border-r border-slate-200/70' : '',
+                                    !isLastRow ? 'border-b border-slate-200/70' : '',
+                                    isSelected
+                                      ? 'bg-emerald-50/95 ring-2 ring-inset ring-emerald-500 z-10'
+                                      : isToday
+                                        ? 'bg-emerald-50/60 ring-1 ring-inset ring-emerald-400/80'
+                                        : 'bg-white hover:bg-slate-50/90',
+                                  ].join(' ')}
+                                  aria-label={`Day ${day}${hasEvt ? `, ${dayEvts.length} event(s)` : ''}`}
+                                >
+                                  <div className="w-full flex items-center justify-between gap-1">
                                     <span
-                                      key={idx}
-                                      className={`w-1 h-1 rounded-full ${EVENT_COLORS[e.type] || 'bg-teal-500'}`}
-                                    />
-                                  ))
-                                )
-                              ) : (
-                                <span className="w-1.5 h-1.5 opacity-0" />
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                                      className={[
+                                        'text-[11px] leading-none flex items-center justify-center transition-colors',
+                                        isToday
+                                          ? 'w-5 h-5 rounded-md bg-emerald-600 text-white font-bold shadow-2xs'
+                                          : isSelected
+                                            ? 'font-bold text-emerald-800'
+                                            : 'font-semibold text-slate-700 group-hover:text-slate-900',
+                                      ].join(' ')}
+                                    >
+                                      {day}
+                                    </span>
+                                    {isToday && (
+                                      <span className="hidden xl:inline-block text-[8px] font-extrabold uppercase tracking-wider text-emerald-700">
+                                        Today
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-1 flex-wrap mt-1">
+                                    {hasEvt && dayEvts.slice(0, 3).map((e, idx) => (
+                                      <span
+                                        key={idx}
+                                        className={`w-1.5 h-1.5 rounded-full ${EVENT_COLORS[e.type] || 'bg-teal-500'}`}
+                                      />
+                                    ))}
+                                    {dayEvts.length > 3 && (
+                                      <span className="text-[8px] font-bold text-slate-400 leading-none">
+                                        +{dayEvts.length - 3}
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+
+                            {Array.from({ length: trailingDays }).map((_, i) => {
+                              const cellIndex = firstDay + daysInMonth + i;
+                              const isLastCol = cellIndex % 7 === 6;
+                              return (
+                                <div
+                                  key={`trail-${i}`}
+                                  className={`min-h-[48px] sm:min-h-[54px] lg:min-h-[58px] bg-slate-50/40 ${
+                                    !isLastCol ? 'border-r border-slate-200/70' : ''
+                                  }`}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Dynamic Agenda Section with Smooth Height & Content Transitions */}
                     <div className="mt-3 pt-3.5 border-t border-slate-100 space-y-2.5">
@@ -1428,158 +1588,13 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                       </div>
                     </div>
                   </SectionCard>
-
-                  {/* ─── Recent Farm Transactions Card ─── */}
-                  <SectionCard
-                    title="Recent Transactions"
-                    id="recent-transactions"
-                    action={() => setActiveTab('transactions')}
-                    actionLabel="View Ledger →"
-                  >
-                    {/* Cashflow Summary Strip (3-Column Balance) */}
-                    <div className="grid grid-cols-3 gap-1 p-2 rounded-xl bg-slate-50 border border-slate-100 mb-3 text-center">
-                      <div className="flex flex-col items-center justify-center py-0.5">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Sales</span>
-                        <span className="text-xs font-black text-emerald-700">
-                          ₱{(transactionSummary?.raw?.totalSales || 0).toLocaleString('en-PH')}
-                        </span>
-                      </div>
-
-                      <div className="flex flex-col items-center justify-center py-0.5 border-x border-slate-200">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Net Margin</span>
-                        <span className={`text-xs font-black ${
-                          (transactionSummary?.raw?.totalSales || 0) >= (transactionSummary?.raw?.totalExpenses || 0)
-                            ? 'text-emerald-700'
-                            : 'text-rose-700'
-                        }`}>
-                          {(transactionSummary?.raw?.totalSales || 0) >= (transactionSummary?.raw?.totalExpenses || 0) ? '+' : ''}
-                          ₱{((transactionSummary?.raw?.totalSales || 0) - (transactionSummary?.raw?.totalExpenses || 0)).toLocaleString('en-PH')}
-                        </span>
-                      </div>
-
-                      <div className="flex flex-col items-center justify-center py-0.5">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Expenses</span>
-                        <span className="text-xs font-black text-slate-700">
-                          ₱{(transactionSummary?.raw?.totalExpenses || 0).toLocaleString('en-PH')}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Transactions Feed */}
-                    {transactionsLoading ? (
-                      <div className="space-y-2 py-1 animate-pulse">
-                        {[1, 2, 3].map(i => (
-                          <div key={i} className="h-12 bg-slate-100/80 rounded-xl" />
-                        ))}
-                      </div>
-                    ) : recentTransactions.length === 0 ? (
-                      <div className="w-full flex flex-col items-center justify-center py-6 px-4 text-center rounded-xl bg-slate-50/60 border border-slate-100">
-                        <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-1.5">
-                          <Receipt className="w-3.5 h-3.5" />
-                        </div>
-                        <p className="text-[11px] font-semibold text-slate-700">No transactions recorded yet</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5 max-w-[210px] leading-relaxed">
-                          Sales and farm expenses will appear here once logged.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-slate-100 rounded-xl border border-slate-100 bg-white overflow-hidden">
-                        {recentTransactions.map((tx) => {
-                          const isSale = (tx.type || '').toLowerCase() === 'sale';
-                          const isPending = (tx.status || '').toLowerCase() === 'pending';
-                          const amt = Number(tx.amount || 0);
-
-                          let partyTitle = tx.party || tx.category || 'Transaction';
-
-                          // 1. If generic "Inventory Delivery" or "General Supplier", extract real supply item name from notes
-                          if (partyTitle === 'Inventory Delivery' || partyTitle === 'General Supplier') {
-                            if (tx.notes && /^Restock(?:ed)?\b/i.test(tx.notes)) {
-                              const matchItem = tx.notes.match(/^Restock(?:ed)?\s+\d+(?:\.\d+)?\s*(?:sacks?|vials?|packs?|bags?|bottles?|doses?|kg)?\s*(?:\([^\)]+\)\s*)?(?:of\s+)?(.+)/i);
-                              if (matchItem && matchItem[1]) {
-                                partyTitle = matchItem[1].trim();
-                              }
-                            } else if (tx.items?.[0]?.name) {
-                              partyTitle = tx.items[0].name.replace(/^Restock(?:ed)?\s+\d+.*?(?:of\s+)?/i, '').trim();
-                            } else {
-                              partyTitle = tx.category || 'Supply Purchase';
-                            }
-                          } else if (partyTitle === 'Initial Inventory Setup') {
-                            if (tx.notes) {
-                              const matchFor = tx.notes.match(/for\s+(.+)/i);
-                              if (matchFor && matchFor[1]) {
-                                partyTitle = matchFor[1].trim();
-                              }
-                            }
-                          }
-
-                          // 2. Strip redundant trailing words like "Restock" or "Setup" to keep pure item names
-                          partyTitle = partyTitle.replace(/\s+(Restock|Setup)$/i, '').trim();
-
-                          // Timestamp formatting: e.g. "Nov 10, 2026 • 9:05 PM"
-                          const timeString = tx.time || '';
-                          const dateDetails = tx.date ? (timeString ? `${tx.date} • ${timeString}` : tx.date) : 'Recent';
-
-                          const formattedAmt = amt === 0
-                            ? '₱0'
-                            : `${isSale ? '+' : '-'}₱${amt.toLocaleString('en-PH')}`;
-
-                          return (
-                            <div
-                              key={tx.id || tx.rawId}
-                              onClick={() => setActiveTab('transactions')}
-                              className="group w-full flex items-center justify-between gap-3 p-2.5 hover:bg-slate-50/90 transition-colors cursor-pointer text-left"
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                                  isSale
-                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100/80'
-                                    : 'bg-slate-50 text-slate-500 border border-slate-200/60'
-                                }`}>
-                                  {isSale ? (
-                                    <ArrowUpRight className="w-4 h-4" />
-                                  ) : (
-                                    <ArrowDownLeft className="w-4 h-4" />
-                                  )}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-xs font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">
-                                    {partyTitle}
-                                  </p>
-                                  <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                    {dateDetails}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="text-right shrink-0">
-                                <span className={`text-xs font-black block ${
-                                  amt === 0
-                                    ? 'text-slate-400 font-semibold'
-                                    : isSale
-                                      ? 'text-emerald-700'
-                                      : 'text-slate-700'
-                                }`}>
-                                  {formattedAmt}
-                                </span>
-                                {isPending && (
-                                  <span className="text-[9px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded-full inline-block mt-0.5">
-                                    Pending
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </SectionCard>
                 </div>
               </div>
             </main>
           )}
 
           {activeTab === 'admin' && (
-            <main className="p-5 lg:p-6">
+            <main>
               <Admin loggedInUser={loggedInUser} />
             </main>
           )}
