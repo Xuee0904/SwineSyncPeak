@@ -28,9 +28,6 @@ function generateTxCode(prefix = 'TX') {
   return `${prefix}-${num}`;
 }
 
-// In-memory fallback cache so sales display and calculate even if Postgres table grant is pending
-const localSalesFallback = [];
-
 // Format date into "Nov 6, 2026"
 function formatDateDisplay(d) {
   if (!d) return '—';
@@ -146,6 +143,7 @@ router.get('/api/transactions', async (req, res) => {
         receipt_no,
         payment_method,
         description,
+        status,
         created_at,
         inventory_purchases (
           purchase_id,
@@ -192,6 +190,9 @@ router.get('/api/transactions', async (req, res) => {
       Promise.resolve(expQuery).catch((e) => ({ data: null, error: e })),
       Promise.resolve(salesQuery).catch((e) => ({ data: null, error: e })),
     ]);
+
+    const loadError = expRes.error || salesRes.error;
+    if (loadError) throw new Error(loadError.message || 'Failed to load transactions');
 
     const rawExpenses = expRes.data || [];
     const rawSales = salesRes.data || [];
@@ -274,10 +275,7 @@ router.get('/api/transactions', async (req, res) => {
       };
     });
 
-    // Merge fallback sales (avoiding duplicates)
-    const dbSaleIds = new Set(mappedSales.map((s) => s.id));
-    const uniqueFallbacks = localSalesFallback.filter((s) => !dbSaleIds.has(s.id));
-    let merged = [...mappedSales, ...uniqueFallbacks, ...mappedExpenses];
+    let merged = [...mappedSales, ...mappedExpenses];
 
     // Filter by Tab (All, Sales, Expenses)
     if (tab === 'Sales') merged = merged.filter((t) => t.type === 'Sale');
@@ -341,26 +339,19 @@ router.get('/api/transactions', async (req, res) => {
 });
 
 // ─── GET /api/transactions/summary ──────────────────────────────────────────
-// Computes metrics: Total Sales, Total Expenses, Net Income, Pending Payments, and 8-week trend
+// Computes metrics: Total Sales, Total Expenses, Net Income, Pending Payments, and trend series
 router.get('/api/transactions/summary', async (req, res) => {
   try {
     const [expRes, salesRes] = await Promise.all([
-      Promise.resolve(db.from('expenses').select('amount, date_incurred, status, created_at')).catch(() => ({ data: [] })),
-      Promise.resolve(db.from('sales_transactions').select('total_price, transaction_date, status, created_at')).catch(() => ({ data: [] })),
+      Promise.resolve(db.from('expenses').select('amount, date_incurred, status, created_at')).catch((e) => ({ data: null, error: e })),
+      Promise.resolve(db.from('sales_transactions').select('total_price, transaction_date, status, created_at')).catch((e) => ({ data: null, error: e })),
     ]);
 
+    const summaryError = expRes.error || salesRes.error;
+    if (summaryError) throw new Error(summaryError.message || 'Failed to load summary');
+
     const expenses = expRes.data || [];
-    const dbSaleIds = new Set((salesRes.data || []).map((s) => s.receipt_no));
-    const fallbackForSummary = localSalesFallback.filter((s) => !dbSaleIds.has(s.id));
-    const sales = [
-      ...(salesRes.data || []),
-      ...fallbackForSummary.map((s) => ({
-        total_price: s.amount,
-        transaction_date: s.rawDate,
-        status: s.status,
-        created_at: s.rawDate,
-      })),
-    ];
+    const sales = salesRes.data || [];
 
     let totalSales = 0;
     let totalExpenses = 0;
@@ -412,8 +403,8 @@ router.get('/api/transactions/summary', async (req, res) => {
       });
 
       return {
-        sales: Math.round(rSales / 1000),
-        expenses: Math.round(rExp / 1000),
+        sales: Math.round(rSales),
+        expenses: Math.round(rExp),
       };
     }
 
@@ -511,11 +502,6 @@ router.get('/api/transactions/summary', async (req, res) => {
           alertTone: 'amber',
         },
       ],
-      trend: {
-        labels: weekLabels,
-        sales: weeklySales,
-        expenses: weeklyExpenses,
-      },
       trends: {
         weekly: {
           labels: weekLabels,
@@ -755,17 +741,15 @@ router.post('/api/transactions/sale', async (req, res) => {
       .single();
 
     if (saleErr) {
-      console.warn('[Transactions] Warning: sales_transactions insert failed:', saleErr.message);
-      console.warn('[Transactions] Run "GRANT ALL ON TABLE public.sales_transactions, public.sold_swine TO anon, authenticated, service_role;" in Supabase SQL editor.');
-    } else {
-      saleData = insertedSale;
+      console.error('Error inserting sales_transactions:', saleErr.message);
+      return res.status(500).json({ error: `Could not save the sale: ${saleErr.message}` });
     }
+    saleData = insertedSale;
 
-    const createdSaleId = saleData?.sale_id;
+    const createdSaleId = saleData.sale_id;
 
     // 2. Insert line items into sold_swine & update herd records
     for (const line of validatedLines) {
-      // Insert line item if table is accessible
       if (createdSaleId) {
         try {
           await db.from('sold_swine').insert({
@@ -845,37 +829,6 @@ router.post('/api/transactions/sale', async (req, res) => {
       }
     }
 
-    // 3. Fallback record if Postgres table had permission block
-    const fallbackRecord = {
-      id: resolvedReceipt,
-      rawId: createdSaleId || `temp-${Date.now()}`,
-      date: formatDateDisplay(resolvedDate),
-      time: formatTimeDisplay(new Date()),
-      createdAt: new Date().toISOString(),
-      rawDate: resolvedDate,
-      type: 'Sale',
-      party: buyerName.trim(),
-      category: resolvedCategory,
-      amount: totalPrice,
-      status: paymentStatus || 'Completed',
-      method: paymentMethod || 'Cash',
-      items: validatedLines.map((l) => ({
-        name: l.itemDescription,
-        qty: l.quantitySold,
-        price: l.unitPrice,
-        subtotal: l.subtotal,
-        weight: l.saleWeight,
-      })),
-      linked: validatedLines
-        .map((l) => (l.batchId ? `${l.quantitySold} head(s) deducted from batch` : 'Sow archived as sold'))
-        .join(', '),
-      notes: notes || '',
-    };
-
-    if (!createdSaleId) {
-      localSalesFallback.unshift(fallbackRecord);
-    }
-
     // 4. Log in activity_logs
     try {
       await db.from('activity_logs').insert({
@@ -888,7 +841,7 @@ router.post('/api/transactions/sale', async (req, res) => {
       });
     } catch (_) {}
 
-    res.json({ message: 'Swine sale recorded successfully', data: saleData || fallbackRecord });
+    res.json({ message: 'Swine sale recorded successfully', data: saleData });
   } catch (err) {
     console.error('Error recording sale:', err.message);
     res.status(500).json({ error: err.message });

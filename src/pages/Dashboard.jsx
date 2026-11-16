@@ -183,6 +183,43 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   // Action Center pagination toggle
   const [showAllActions, setShowAllActions] = useState(false);
 
+  // Header notification bell dropdown
+  const NOTIF_LIMIT = 10;
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef(null);
+  const [readNotifIds, setReadNotifIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('swinesync_read_notifications') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const persistReadIds = (ids) => {
+    setReadNotifIds(ids);
+    try {
+      localStorage.setItem('swinesync_read_notifications', JSON.stringify(ids.slice(-200)));
+    } catch {
+      // ignore storage issues
+    }
+  };
+
+  useEffect(() => {
+    if (!notifOpen) return;
+    const handleClickOutside = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setNotifOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [notifOpen]);
+
   // Header profile dropdown menu
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef(null);
@@ -633,8 +670,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         if (v.is_archived || !v.booster_due_date) return;
         const targetName = v.pigs?.pig_tag
           ? (v.pigs.pig_tag.toLowerCase().startsWith('sow-') || v.pigs.pig_tag.toLowerCase().startsWith('boar-')
-              ? v.pigs.pig_tag.toUpperCase()
-              : `#${v.pigs.pig_tag}`)
+            ? v.pigs.pig_tag.toUpperCase()
+            : `#${v.pigs.pig_tag}`)
           : v.piglet_batches?.batch_tag
             ? `Batch ${v.piglet_batches.batch_tag}`
             : 'Herd Animal';
@@ -838,6 +875,35 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   const isCurrentMonthView = calMonth.year === now.getFullYear() && calMonth.month === now.getMonth();
   const pendingActionCount = actionItems.filter(item => !item.completed).length;
 
+  // Notifications: derived from live health alerts + pending action items (most urgent first)
+  const allNotifications = [
+    ...healthAlerts.map(a => ({
+      id: `health_${a.id}`,
+      title: `${a.tag} • ${a.status}`,
+      sub: [a.pen, a.summary || a.desc].filter(Boolean).join(' • '),
+      targetTab: 'health_management',
+      level: a.severity === 'high' ? 'high' : 'medium',
+    })),
+    ...actionItems
+      .filter(item => !item.completed)
+      .map(item => ({
+        id: `action_${item.id}`,
+        title: item.text,
+        sub: [item.urgency, item.sub].filter(Boolean).join(' • '),
+        targetTab: item.targetTab,
+        level: String(item.urgency || '').toUpperCase() === 'OVERDUE' ? 'high' : 'normal',
+      })),
+  ];
+  const notifications = allNotifications.slice(0, NOTIF_LIMIT);
+  const hiddenNotifCount = Math.max(0, allNotifications.length - notifications.length);
+  const unreadCount = allNotifications.filter(n => !readNotifIds.includes(n.id)).length;
+  const markNotifRead = (id) => {
+    if (!readNotifIds.includes(id)) persistReadIds([...readNotifIds, id]);
+  };
+  const markAllNotifsRead = () => {
+    persistReadIds([...new Set([...readNotifIds, ...allNotifications.map(n => n.id)])]);
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden" id="staff-portal">
       <SideNav
@@ -849,7 +915,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
       />
 
       <div className="flex-1 flex flex-col ml-0 lg:ml-64 min-w-0 overflow-hidden">
-        <header className={`sticky top-0 ${profileMenuOpen ? 'z-30' : 'z-10'} h-16 bg-white border-b border-slate-200/80 px-5 lg:px-6 flex items-center justify-between gap-4 shrink-0`}>
+        <header className={`sticky top-0 ${profileMenuOpen || notifOpen ? 'z-30' : 'z-10'} h-16 bg-white border-b border-slate-200/80 px-5 lg:px-6 flex items-center justify-between gap-4 shrink-0`}>
           <div className="flex items-center gap-3 min-w-0">
             <button
               className="lg:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-50 cursor-pointer"
@@ -873,18 +939,87 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <button
-              type="button"
-              className="relative p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-              aria-label="Notifications"
-              title="Notifications"
-            >
-              <Bell className="w-5 h-5" />
-              <span
-                className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white"
-                aria-hidden="true"
-              />
-            </button>
+            <div className="relative" ref={notifRef}>
+              <button
+                type="button"
+                onClick={() => { setNotifOpen(prev => !prev); setProfileMenuOpen(false); }}
+                className={`relative p-2 rounded-xl transition-colors cursor-pointer ${notifOpen ? 'bg-slate-100 text-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`}
+                aria-label="Notifications"
+                aria-expanded={notifOpen}
+                title="Notifications"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 ring-2 ring-white text-white text-[10px] font-bold flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 mt-2 w-[380px] max-w-[calc(100vw-2rem)] rounded-2xl bg-white border border-slate-200/90 shadow-lg shadow-slate-900/10 z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                    <p className="text-sm font-bold text-slate-900">
+                      Notifications{unreadCount > 0 ? ` (${unreadCount})` : ''}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={markAllNotifsRead}
+                      disabled={unreadCount === 0}
+                      className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 disabled:text-slate-300 disabled:cursor-default cursor-pointer"
+                    >
+                      Mark all as read
+                    </button>
+                  </div>
+
+                  {notifications.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-500 mb-2" />
+                      <p className="text-xs font-semibold text-slate-700">You're all caught up</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">No alerts or pending tasks right now.</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100">
+                      {notifications.map((n) => {
+                        const NIcon = getModuleIcon(n.targetTab);
+                        const isRead = readNotifIds.includes(n.id);
+                        return (
+                          <button
+                            key={n.id}
+                            type="button"
+                            onClick={() => {
+                              markNotifRead(n.id);
+                              setNotifOpen(false);
+                              if (n.targetTab) setActiveTab(n.targetTab);
+                            }}
+                            className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors cursor-pointer ${isRead ? 'bg-white hover:bg-slate-50' : 'bg-rose-50/40 hover:bg-rose-50/70'}`}
+                          >
+                            <div className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center bg-slate-100/80 text-slate-600">
+                              <NIcon className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs truncate ${isRead ? 'font-semibold text-slate-600' : 'font-bold text-slate-900'}`}>
+                                {n.title}
+                              </p>
+                              <p className="text-[11px] text-slate-500 truncate mt-0.5">{n.sub}</p>
+                            </div>
+                            {!isRead && (
+                              <span className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${n.level === 'high' ? 'bg-rose-500' : 'bg-emerald-500'}`} aria-label="Unread" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {hiddenNotifCount > 0 && (
+                    <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/70 text-[11px] font-semibold text-slate-500 text-center">
+                      Showing latest {NOTIF_LIMIT} • +{hiddenNotifCount} more
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="hidden sm:block h-6 w-px bg-slate-200/80" aria-hidden="true" />
 
@@ -892,15 +1027,14 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
               <button
                 type="button"
                 id="header-profile-menu-btn"
-                onClick={() => setProfileMenuOpen(prev => !prev)}
+                onClick={() => { setProfileMenuOpen(prev => !prev); setNotifOpen(false); }}
                 aria-expanded={profileMenuOpen}
                 aria-haspopup="menu"
                 aria-label="Account menu"
-                className={`flex items-center gap-2.5 p-1 pr-2 rounded-xl border transition-all cursor-pointer ${
-                  profileMenuOpen
+                className={`flex items-center gap-2.5 p-1 pr-2 rounded-xl border transition-all cursor-pointer ${profileMenuOpen
                     ? 'bg-slate-50 border-slate-200 shadow-2xs'
                     : 'border-transparent hover:bg-slate-50 hover:border-slate-200/80'
-                }`}
+                  }`}
               >
                 <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-xs shadow-emerald-600/20 select-none">
                   {getInitials()}
@@ -979,7 +1113,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                     </div>
                   </div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl sm:text-3xl font-black text-slate-900">{pigStats.total}</span>
+                    <span className="text-2xl sm:text-3xl font-bold text-slate-900">{pigStats.total}</span>
                     <span className="text-xs font-semibold text-slate-400">heads</span>
                   </div>
                 </button>
@@ -987,26 +1121,19 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                 {/* 2. Herd Health Status */}
                 <button
                   onClick={() => setActiveTab('health_management')}
-                  className={`bg-white border rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all text-left cursor-pointer group flex flex-col justify-between ${pigStats.sick > 0 || pigStats.quarantine > 0
-                    ? 'border-rose-200/90 hover:border-rose-300 ring-1 ring-rose-100/70'
-                    : 'border-slate-200/70 hover:border-emerald-300'
-                    }`}
+                  className="bg-white border border-slate-200/70 hover:border-emerald-300 rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all text-left cursor-pointer group flex flex-col justify-between"
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Herd Health</span>
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${pigStats.sick > 0 || pigStats.quarantine > 0
-                      ? 'bg-rose-50 text-rose-600 group-hover:bg-rose-100/80'
-                      : 'bg-slate-50 group-hover:bg-emerald-50 text-slate-500 group-hover:text-emerald-600'
-                      }`}>
+                    <div className="w-8 h-8 rounded-xl bg-slate-50 group-hover:bg-emerald-50 text-slate-500 group-hover:text-emerald-600 flex items-center justify-center transition-colors">
                       <HeartPulse className="w-4 h-4" />
                     </div>
                   </div>
                   <div className="flex items-baseline gap-1.5 flex-wrap">
-                    <span className="text-2xl sm:text-3xl font-black text-slate-900">{pigStats.healthy}</span>
-                    <span className={`text-xs font-semibold ${pigStats.sick > 0 || pigStats.quarantine > 0 ? 'text-slate-400' : 'text-emerald-600'
-                      }`}>healthy</span>
+                    <span className="text-2xl sm:text-3xl font-bold text-slate-900">{pigStats.healthy}</span>
+                    <span className="text-xs font-semibold text-slate-400">healthy</span>
                     {(pigStats.sick > 0 || pigStats.quarantine > 0) && (
-                      <span className="text-[10px] font-extrabold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full ml-1 shrink-0">
+                      <span className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-full ml-1 shrink-0">
                         {pigStats.sick + pigStats.quarantine} under watch
                       </span>
                     )}
@@ -1020,12 +1147,12 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Breeding Pipeline</span>
-                    <div className="w-8 h-8 rounded-xl bg-slate-50 group-hover:bg-purple-50 text-slate-500 group-hover:text-purple-600 flex items-center justify-center transition-colors">
+                    <div className="w-8 h-8 rounded-xl bg-slate-50 group-hover:bg-emerald-50 text-slate-500 group-hover:text-emerald-600 flex items-center justify-center transition-colors">
                       <Dna className="w-4 h-4" />
                     </div>
                   </div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl sm:text-3xl font-black text-slate-900">{breedingStats.activeCount}</span>
+                    <span className="text-2xl sm:text-3xl font-bold text-slate-900">{breedingStats.activeCount}</span>
                     <span className="text-xs font-semibold text-slate-400">active sows</span>
                   </div>
                 </button>
@@ -1045,8 +1172,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                     </div>
                   </div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl sm:text-3xl font-black text-slate-900">{marketStats.total}</span>
-                    <span className="text-xs font-semibold text-emerald-600">heads</span>
+                    <span className="text-2xl sm:text-3xl font-bold text-slate-900">{marketStats.total}</span>
+                    <span className="text-xs font-semibold text-slate-400">heads</span>
                   </div>
                 </button>
               </div>
@@ -1057,7 +1184,16 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                 <div className="lg:col-span-7 space-y-5">
                   {/* Active Health Alerts */}
                   <SectionCard
-                    title={`Active Health Alerts ${healthAlerts.length > 0 ? `(${healthAlerts.length})` : ''}`}
+                    title={
+                      <span className="inline-flex items-center gap-2">
+                        Active Health Alerts
+                        {healthAlerts.length > 0 && (
+                          <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-bold inline-flex items-center justify-center">
+                            {healthAlerts.length}
+                          </span>
+                        )}
+                      </span>
+                    }
                     id="health-alerts-card"
                     action={() => setActiveTab('health_management')}
                     actionLabel="Manage Health →"
@@ -1188,9 +1324,9 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                             } else if (u === 'OVERDUE') {
                               urgencyClass = 'bg-rose-50 text-rose-700 border-rose-200/80 font-bold';
                             } else if (u === 'DUE TODAY' || u === 'TODAY' || u === 'ACTION' || u === 'ACTION DUE') {
-                              urgencyClass = 'bg-amber-50 text-amber-700 border-amber-200/80 font-bold';
+                              urgencyClass = 'bg-slate-800 text-white border-slate-800 font-bold';
                             } else if (u.includes('1 DAY') || u === 'DUE SOON' || u === 'SOON') {
-                              urgencyClass = 'bg-amber-50/70 text-amber-700 border-amber-200/70 font-bold';
+                              urgencyClass = 'bg-slate-50 text-slate-600 border-slate-200 font-bold';
                             }
 
                             return (
@@ -1303,22 +1439,19 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                             <div
                               key={item.id}
                               onClick={() => setActiveTab('inventory')}
-                              className={`group w-full px-3 py-2.5 rounded-xl border transition-all cursor-pointer space-y-1.5 text-left shadow-2xs hover:shadow-xs ${
-                                isLowStock
+                              className={`group w-full px-3 py-2.5 rounded-xl border transition-all cursor-pointer space-y-1.5 text-left shadow-2xs hover:shadow-xs ${isLowStock
                                   ? 'bg-rose-50/25 border-rose-200/90 hover:border-rose-300'
                                   : 'bg-white border-slate-200/80 hover:border-emerald-300'
-                              }`}
+                                }`}
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
-                                    isLowStock ? 'bg-rose-50 border border-rose-100 text-rose-600' : `${catCfg.bg} border ${catCfg.border}`
-                                  }`}>
+                                  <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isLowStock ? 'bg-rose-50 border border-rose-100 text-rose-600' : `${catCfg.bg} border ${catCfg.border}`
+                                    }`}>
                                     <CatIcon className={`w-3.5 h-3.5 ${isLowStock ? 'text-rose-600' : catCfg.color}`} />
                                   </div>
-                                  <span className={`text-xs font-bold truncate transition-colors ${
-                                    isLowStock ? 'text-slate-900 group-hover:text-rose-700' : 'text-slate-900 group-hover:text-emerald-700'
-                                  }`}>
+                                  <span className={`text-xs font-bold truncate transition-colors ${isLowStock ? 'text-slate-900 group-hover:text-rose-700' : 'text-slate-900 group-hover:text-emerald-700'
+                                    }`}>
                                     {item.name}
                                   </span>
                                   {isLowStock && (
@@ -1333,9 +1466,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                                     <strong className="text-slate-800 font-bold">{formatCleanNumber(item.current)}</strong> / {formatCleanNumber(item.ideal)} {getShortUnit(item.unit)}
                                   </span>
                                   <span
-                                    className={`text-[11px] font-extrabold min-w-[34px] text-right ${
-                                      isLowStock ? 'text-rose-600' : 'text-emerald-600'
-                                    }`}
+                                    className={`text-[11px] font-extrabold min-w-[34px] text-right ${isLowStock ? 'text-rose-600' : 'text-emerald-600'
+                                      }`}
                                   >
                                     {item.percent}%
                                   </span>
@@ -1344,15 +1476,13 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
 
                               <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                                 <div
-                                  className={`h-full rounded-full transition-all duration-500 ${
-                                    isLowStock ? 'bg-rose-500' : 'bg-emerald-600'
-                                  }`}
+                                  className={`h-full rounded-full transition-all duration-500 ${isLowStock ? 'bg-rose-500' : 'bg-emerald-600'
+                                    }`}
                                   style={{ width: `${Math.min(item.percent, 100)}%` }}
                                 />
                                 <div
-                                  className={`absolute top-0 bottom-0 w-[2px] z-10 -translate-x-1/2 ${
-                                    isLowStock ? 'bg-rose-300' : 'bg-slate-300'
-                                  }`}
+                                  className={`absolute top-0 bottom-0 w-[2px] z-10 -translate-x-1/2 ${isLowStock ? 'bg-rose-300' : 'bg-slate-300'
+                                    }`}
                                   style={{ left: `${Math.min(Math.max(thresholdRatio * 100, 0), 100)}%` }}
                                   title={`Reorder threshold: ${Math.round(thresholdRatio * 100)}%`}
                                 />
@@ -1410,9 +1540,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                             {DAY_LABELS.map((d, idx) => (
                               <div
                                 key={d}
-                                className={`text-center text-[10px] font-bold text-slate-500 py-2 tracking-wider ${
-                                  idx < 6 ? 'border-r border-slate-200/60' : ''
-                                }`}
+                                className={`text-center text-[10px] font-bold text-slate-500 py-2 tracking-wider ${idx < 6 ? 'border-r border-slate-200/60' : ''
+                                  }`}
                               >
                                 {d}
                               </div>
@@ -1423,9 +1552,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                             {Array.from({ length: firstDay }).map((_, i) => (
                               <div
                                 key={`lead-${i}`}
-                                className={`min-h-[48px] sm:min-h-[54px] lg:min-h-[58px] bg-slate-50/40 border-b border-slate-200/70 ${
-                                  i % 7 !== 6 ? 'border-r' : ''
-                                }`}
+                                className={`min-h-[48px] sm:min-h-[54px] lg:min-h-[58px] bg-slate-50/40 border-b border-slate-200/70 ${i % 7 !== 6 ? 'border-r' : ''
+                                  }`}
                               />
                             ))}
 
@@ -1499,9 +1627,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                               return (
                                 <div
                                   key={`trail-${i}`}
-                                  className={`min-h-[48px] sm:min-h-[54px] lg:min-h-[58px] bg-slate-50/40 ${
-                                    !isLastCol ? 'border-r border-slate-200/70' : ''
-                                  }`}
+                                  className={`min-h-[48px] sm:min-h-[54px] lg:min-h-[58px] bg-slate-50/40 ${!isLastCol ? 'border-r border-slate-200/70' : ''
+                                    }`}
                                 />
                               );
                             })}

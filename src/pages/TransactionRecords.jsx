@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import RecordTransactionModal from "../components/Transactions/RecordTransactionModal";
 import ExportDropdown from "../components/common/ExportDropdown";
 import { Loader2, CheckCircle2, Printer, TrendingUp, TrendingDown, Wallet, Clock } from "lucide-react";
@@ -14,100 +14,10 @@ const ICON_MAP = {
 };
 
 /* -------------------------------------------------------------------------- */
-/*  Fallback / Initial Data                                                   */
+/*  Constants                                                                 */
 /* -------------------------------------------------------------------------- */
 
-const DEFAULT_STATS = [
-  { label: "Total Sales", value: "₱482,500", unit: "revenue", icon: "trendUp", tone: "emerald", isAlert: false },
-  { label: "Total Expenses", value: "₱196,350", unit: "expenses", icon: "trendDown", tone: "slate", isAlert: false },
-  { label: "Net Income", value: "₱286,150", unit: "59% margin", icon: "wallet", tone: "emerald", isAlert: false },
-  { label: "Pending Payments", value: "₱67,850", unit: "2 pending", icon: "clock", tone: "amber", isAlert: true, alertTone: "amber" },
-];
-
-const DEFAULT_TRENDS = {
-  weekly: {
-    labels: ["Sep 19", "Sep 26", "Oct 3", "Oct 10", "Oct 17", "Oct 24", "Oct 31", "Nov 7"],
-    sales: [210, 260, 240, 310, 290, 380, 350, 420], // in thousands
-    expenses: [140, 150, 170, 160, 185, 175, 190, 196],
-  },
-  monthly: {
-    labels: ["Jun", "Jul", "Aug", "Sep", "Oct", "Nov"],
-    sales: [780, 890, 940, 1020, 1150, 1280],
-    expenses: [520, 560, 610, 640, 690, 710],
-  },
-  quarterly: {
-    labels: ["Q1 2026", "Q2 2026", "Q3 2026", "Q4 2026"],
-    sales: [2450, 2800, 3110, 3450],
-    expenses: [1680, 1790, 1940, 2090],
-  },
-  yearly: {
-    labels: ["2023", "2024", "2025", "2026"],
-    sales: [7200, 9100, 11400, 13800],
-    expenses: [5100, 6200, 7600, 8900],
-  },
-};
-
-const DEFAULT_TRANSACTIONS = [
-  {
-    id: "TX-94821", date: "Nov 6, 2026", rawDate: "2026-11-06", type: "Sale", party: "Green Valley Organics",
-    category: "Finisher hogs", amount: 156000, status: "Completed", method: "Bank transfer",
-    items: [{ name: "Finisher hog (~100 kg)", qty: 12, price: 13000 }],
-    linked: "12 finishers removed from Pen 4 inventory",
-    notes: "Picked up by buyer’s truck at 7:30 AM. Weighed on farm scale.",
-  },
-  {
-    id: "TX-94820", date: "Nov 5, 2026", rawDate: "2026-11-05", type: "Expense", party: "AgriMax Feeds Supply",
-    category: "Feeds", amount: 66000, status: "Completed", method: "Bank transfer",
-    items: [{ name: "Starter feed, 50 kg sack", qty: 40, price: 1650 }],
-    linked: "+40 sacks added to Feed stock",
-    notes: "Delivered to the main feed storage. Batch no. S-1105.",
-  },
-  {
-    id: "TX-94819", date: "Nov 5, 2026", rawDate: "2026-11-05", type: "Sale", party: "Southern Feeders Ltd.",
-    category: "Breeding sows", amount: 55500, status: "Pending", method: "Check",
-    items: [{ name: "Breeding sow", qty: 3, price: 18500 }],
-    linked: "#SOW-11012025, #SOW-08152025, #SOW-08152024",
-    notes: "Check expected to clear within 3 banking days.",
-  },
-  {
-    id: "TX-94818", date: "Nov 4, 2026", rawDate: "2026-11-04", type: "Expense", party: "Dr. Reyes Veterinary Clinic",
-    category: "Veterinary", amount: 8600, status: "Completed", method: "Cash",
-    items: [
-      { name: "Hog cholera vaccine dose", qty: 60, price: 85 },
-      { name: "Farm visit fee", qty: 1, price: 3500 },
-    ],
-    linked: "Health log updated for Pen 2 and Pen 3",
-    notes: "",
-  },
-  {
-    id: "TX-94817", date: "Nov 3, 2026", rawDate: "2026-11-03", type: "Sale", party: "Peak Livestock",
-    category: "Piglets", amount: 70000, status: "Completed", method: "GCash",
-    items: [{ name: "Weaned piglet", qty: 25, price: 2800 }],
-    linked: "#BTC-09012026 (25 of 31 piglets)",
-    notes: "Buyer requested health records for the batch.",
-  },
-  {
-    id: "TX-94816", date: "Nov 2, 2026", rawDate: "2026-11-02", type: "Expense", party: "Nueva Ecija Power Coop",
-    category: "Utilities", amount: 12350, status: "Overdue", method: "Over the counter",
-    items: [{ name: "Electricity, October billing", qty: 1, price: 12350 }],
-    linked: "",
-    notes: "Due date was Nov 1. Pay before the disconnection notice.",
-  },
-  {
-    id: "TX-94815", date: "Nov 1, 2026", rawDate: "2026-11-01", type: "Expense", party: "Farm payroll",
-    category: "Labor", amount: 38000, status: "Completed", method: "Cash",
-    items: [{ name: "Farmhand, semi-monthly pay", qty: 4, price: 9500 }],
-    linked: "",
-    notes: "",
-  },
-  {
-    id: "TX-94814", date: "Oct 31, 2026", rawDate: "2026-10-31", type: "Sale", party: "Mang Tonio’s Lechon",
-    category: "Finisher hogs", amount: 50000, status: "Completed", method: "Cash",
-    items: [{ name: "Finisher hog (~90 kg)", qty: 4, price: 12500 }],
-    linked: "4 finishers removed from Pen 4 inventory",
-    notes: "",
-  },
-];
+const EMPTY_TREND = { labels: [], sales: [], expenses: [] };
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers & Styles                                                          */
@@ -127,21 +37,11 @@ const TYPE_STYLES = {
   Expense: "bg-slate-100 text-slate-600 ring-slate-500/20",
 };
 
-const TONE_STYLES = {
-  emerald: "bg-emerald-50 text-emerald-600",
-  slate: "bg-slate-100 text-slate-500",
-  amber: "bg-amber-50 text-amber-600",
-};
-
 const ICONS = {
   search: <><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></>,
   download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></>,
   plus: <><path d="M5 12h14" /><path d="M12 5v14" /></>,
   x: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
-  trendUp: <><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></>,
-  trendDown: <><polyline points="22 17 13.5 8.5 8.5 13.5 2 7" /><polyline points="16 17 22 17 22 11" /></>,
-  wallet: <><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></>,
-  clock: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
   eye: <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></>,
   left: <path d="m15 18-6-6 6-6" />,
   right: <path d="m9 18 6-6-6-6" />,
@@ -191,108 +91,50 @@ const EXPORT_COLUMNS = [
 ];
 
 /* -------------------------------------------------------------------------- */
-/*  Stat Card (Matching Swine Management Quick Stats Design)                 */
+/*  Stat Card                                                                 */
 /* -------------------------------------------------------------------------- */
 
-function StatCard({
-  icon: IconComponent,
-  iconName,
-  label,
-  value,
-  unit,
-  note,
-  unitColor,
-  subtext,
-  badge,
-  isAlert = false,
-  alertTone = "amber",
-  tone = "emerald",
-  loading = false,
-}) {
-  const alertBorder = alertTone === "rose"
-    ? "border-rose-200/90 ring-1 ring-rose-100/70"
-    : "border-amber-200/90 ring-1 ring-amber-100/70";
+const TONE_ICON_BG = {
+  emerald: "bg-emerald-50 text-emerald-600",
+  slate: "bg-slate-50 text-slate-500",
+  amber: "bg-amber-50 text-amber-600",
+  rose: "bg-rose-50 text-rose-600",
+};
 
-  const alertIconBg = alertTone === "rose"
-    ? "bg-rose-50 text-rose-600"
-    : "bg-amber-50 text-amber-600";
-
-  const defaultIconBg = tone === "emerald"
-    ? "bg-emerald-50 text-emerald-600"
-    : tone === "slate"
-    ? "bg-slate-50 text-slate-500"
-    : tone === "amber"
-    ? "bg-amber-50 text-amber-600"
-    : "bg-slate-50 text-slate-500";
-
-  const displayUnit = unit || note;
-
-  // Resolve icon component cleanly (supporting string keys like 'trendUp' or component references)
-  let ResolvedIcon = Wallet;
-  if (typeof IconComponent === "function") {
-    ResolvedIcon = IconComponent;
-  } else if (typeof iconName === "string" && ICON_MAP[iconName]) {
-    ResolvedIcon = ICON_MAP[iconName];
-  } else if (typeof IconComponent === "string" && ICON_MAP[IconComponent]) {
-    ResolvedIcon = ICON_MAP[IconComponent];
-  }
+function StatCard({ icon, label, value, unit, tone = "emerald", isAlert = false, loading = false }) {
+  const Icon = ICON_MAP[icon] || Wallet;
 
   return (
     <div
-      className={`bg-white border rounded-2xl p-4 sm:p-5 shadow-xs transition-all flex flex-col justify-between min-h-[106px] sm:min-h-[112px] ${
-        isAlert ? alertBorder : "border-slate-200/70"
+      className={`bg-white border rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between min-h-[106px] sm:min-h-[112px] ${
+        isAlert ? "border-amber-200/90 ring-1 ring-amber-100/70" : "border-slate-200/70"
       }`}
     >
       <div className="flex items-center justify-between w-full mb-3">
-        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">
-          {label}
-        </span>
-        <div
-          className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-            isAlert ? alertIconBg : defaultIconBg
-          }`}
-        >
-          <ResolvedIcon className="w-4 h-4" />
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">{label}</span>
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${TONE_ICON_BG[tone] || TONE_ICON_BG.slate}`}>
+          <Icon className="w-4 h-4" />
         </div>
       </div>
 
-      <div>
-        <div className="flex items-baseline gap-1.5 flex-wrap">
-          {loading ? (
-            <div className="h-7 w-24 bg-slate-100 animate-pulse rounded-md" />
-          ) : (
-            <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              {value}
-            </span>
-          )}
-          {displayUnit && !loading && (
-            <span
-              className={`text-xs font-semibold ${
-                unitColor
-                  ? unitColor
-                  : isAlert
-                  ? alertTone === "rose"
-                    ? "text-rose-600 font-bold"
-                    : "text-amber-700 font-bold"
-                  : "text-slate-400"
-              }`}
-            >
-              {displayUnit}
-            </span>
-          )}
-          {badge && !loading && (
-            <span className="text-[10px] font-extrabold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full ml-auto shrink-0">
-              {badge}
-            </span>
-          )}
-        </div>
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        {loading ? (
+          <div className="h-7 w-24 bg-slate-100 animate-pulse rounded-md" />
+        ) : (
+          <>
+            <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">{value}</span>
+            {unit && (
+              <span className={`text-xs font-semibold ${isAlert ? "text-amber-700 font-bold" : "text-slate-400"}`}>{unit}</span>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Trend Chart (Multi-Timeframe SVG)                                         */
+/*  Trend Chart                                                               */
 /* -------------------------------------------------------------------------- */
 
 const TIMEFRAMES = [
@@ -302,16 +144,30 @@ const TIMEFRAMES = [
   { id: "yearly", label: "Yearly", sub: "Annual totals over recent years" },
 ];
 
+// Round up to a 1/2/5 x 10^n value so the y-axis ticks are clean numbers.
+function niceCeil(v) {
+  if (v <= 0) return 1000;
+  const pow = 10 ** Math.floor(Math.log10(v));
+  const f = v / pow;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * pow;
+}
+
+function formatTick(val) {
+  if (val === 0) return "0";
+  if (val >= 1_000_000) return `₱${+(val / 1_000_000).toFixed(2)}M`;
+  if (val >= 1000) return `₱${+(val / 1000).toFixed(1)}k`;
+  return `₱${val}`;
+}
+
 function TrendChart({ trend, activeTypeTab = "All" }) {
   const W = 880, H = 210;
   const pad = { l: 52, r: 20, t: 20, b: 32 };
 
-  const labels = trend?.labels || DEFAULT_TRENDS.weekly.labels;
-  const sales = trend?.sales || DEFAULT_TRENDS.weekly.sales;
-  const expenses = trend?.expenses || DEFAULT_TRENDS.weekly.expenses;
+  const labels = trend?.labels || [];
+  const sales = trend?.sales || [];
+  const expenses = trend?.expenses || [];
 
-  const maxVal = Math.max(50, ...sales, ...expenses);
-  const max = Math.ceil(maxVal / 50) * 50 || 200;
+  const max = niceCeil(Math.max(...sales, ...expenses, 0));
   const n = labels.length;
 
   const chartW = W - pad.l - pad.r;
@@ -322,21 +178,13 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
   const barW = Math.min(22, Math.max(10, groupWidth * 0.24));
   const barGap = 3;
 
-  const step = max / 4;
-  const ticks = [0, step, step * 2, step * 3, max].map((v) => Math.round(v));
-
-  const formatTick = (val) => {
-    if (val === 0) return "0";
-    if (val >= 1000) return `₱${(val / 1000).toFixed(val % 1000 === 0 ? 0 : 1)}M`;
-    return `₱${val}k`;
-  };
+  const ticks = [0, 1, 2, 3, 4].map((i) => (max / 4) * i);
 
   const isSalesDimmed = activeTypeTab === "Expenses";
   const isExpDimmed = activeTypeTab === "Sales";
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full select-none" role="img" aria-label="Sales and expenses grouped bar chart">
-      {/* Horizontal gridlines & Y-axis labels */}
       {ticks.map((t) => {
         const y = pad.t + (1 - (t || 0) / max) * chartH;
         return (
@@ -357,12 +205,11 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
         );
       })}
 
-      {/* Bar Groups */}
       {labels.map((l, i) => {
         const groupCenterX = pad.l + (i + 0.5) * groupWidth;
         const salesVal = sales[i] || 0;
         const expVal = expenses[i] || 0;
-        const netVal = (salesVal - expVal) * 1000;
+        const netVal = salesVal - expVal;
 
         const salesH = (salesVal / max) * chartH;
         const expH = (expVal / max) * chartH;
@@ -375,7 +222,6 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
 
         return (
           <g key={l + i} className="group cursor-pointer">
-            {/* Interactive hover column highlight */}
             <rect
               x={groupCenterX - groupWidth / 2 + 2}
               y={pad.t}
@@ -386,7 +232,6 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
               className="opacity-0 group-hover:opacity-60 transition-opacity"
             />
 
-            {/* Sales Bar */}
             {salesVal > 0 ? (
               <rect
                 x={salesX}
@@ -396,9 +241,10 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
                 rx="3"
                 ry="3"
                 fill="#059669"
-                className={`transition-all duration-200 group-hover:fill-emerald-500 ${
+                className={`bar-grow transition-[fill,opacity] duration-200 group-hover:fill-emerald-500 ${
                   isSalesDimmed ? "opacity-25" : "opacity-100"
                 }`}
+                style={{ animationDelay: `${i * 40}ms` }}
               />
             ) : (
               <rect
@@ -412,7 +258,6 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
               />
             )}
 
-            {/* Expense Bar */}
             {expVal > 0 ? (
               <rect
                 x={expX}
@@ -422,9 +267,10 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
                 rx="3"
                 ry="3"
                 fill="#94a3b8"
-                className={`transition-all duration-200 group-hover:fill-slate-500 ${
+                className={`bar-grow transition-[fill,opacity] duration-200 group-hover:fill-slate-500 ${
                   isExpDimmed ? "opacity-25" : "opacity-100"
                 }`}
+                style={{ animationDelay: `${i * 40 + 20}ms` }}
               />
             ) : (
               <rect
@@ -438,7 +284,6 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
               />
             )}
 
-            {/* X-axis label */}
             <text
               x={groupCenterX}
               y={H - 8}
@@ -449,9 +294,8 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
               {l}
             </text>
 
-            {/* Native SVG Tooltip */}
             <title>
-              {`${l}\n• Sales: ₱${(salesVal * 1000).toLocaleString("en-PH")}\n• Expenses: ₱${(expVal * 1000).toLocaleString("en-PH")}\n• Net: ${netVal >= 0 ? "+" : ""}₱${netVal.toLocaleString("en-PH")}`}
+              {`${l}\n• Sales: ₱${salesVal.toLocaleString("en-PH")}\n• Expenses: ₱${expVal.toLocaleString("en-PH")}\n• Net: ${netVal >= 0 ? "+" : ""}₱${netVal.toLocaleString("en-PH")}`}
             </title>
           </g>
         );
@@ -460,15 +304,10 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
   );
 }
 
-function TrendCard({ trends, trend, activeTypeTab = "All" }) {
+function TrendCard({ trends, activeTypeTab = "All" }) {
   const [timeframe, setTimeframe] = useState("weekly");
 
-  const currentTrend =
-    trends?.[timeframe] ||
-    (timeframe === "weekly" ? trend : null) ||
-    DEFAULT_TRENDS[timeframe] ||
-    trend ||
-    DEFAULT_TRENDS.weekly;
+  const currentTrend = trends?.[timeframe] || EMPTY_TREND;
 
   const currentMeta = TIMEFRAMES.find((t) => t.id === timeframe) || TIMEFRAMES[0];
 
@@ -481,7 +320,6 @@ function TrendCard({ trends, trend, activeTypeTab = "All" }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          {/* Legend */}
           <div className="flex items-center gap-3.5 text-xs font-semibold text-slate-600">
             <span className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-sm bg-emerald-600" /> Sales
@@ -491,7 +329,6 @@ function TrendCard({ trends, trend, activeTypeTab = "All" }) {
             </span>
           </div>
 
-          {/* Timeframe Tabs: Weekly, Monthly, Quarterly, Yearly */}
           <div className="inline-flex rounded-xl bg-slate-100/80 p-1 border border-slate-200/60">
             {TIMEFRAMES.map((tab) => {
               const active = timeframe === tab.id;
@@ -515,7 +352,7 @@ function TrendCard({ trends, trend, activeTypeTab = "All" }) {
       </div>
 
       <div className="mt-5">
-        <TrendChart trend={currentTrend} activeTypeTab={activeTypeTab} />
+        <TrendChart key={timeframe} trend={currentTrend} activeTypeTab={activeTypeTab} />
       </div>
     </section>
   );
@@ -546,7 +383,6 @@ function FilterSelect({ label, value, onChange, options }) {
 
 function TransactionsCard({
   rows,
-  totalCount,
   tab,
   setTab,
   query,
@@ -561,6 +397,8 @@ function TransactionsCard({
   onSelect,
   onOpenRecordModal,
   loading,
+  error,
+  onRetry,
 }) {
   const tabs = ["All", "Sales", "Expenses"];
   const [currentPage, setCurrentPage] = useState(1);
@@ -693,11 +531,7 @@ function TransactionsCard({
                   </td>
                   <td className="whitespace-nowrap px-3 py-4">
                     <div className="font-semibold text-slate-800">{t.date}</div>
-                    {(t.time || t.createdAt) && (
-                      <div className="text-[11px] text-slate-400 font-normal">
-                        {t.time || (t.createdAt ? new Date(t.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }) : "")}
-                      </div>
-                    )}
+                    {t.time && <div className="text-[11px] text-slate-400 font-normal">{t.time}</div>}
                   </td>
                   <td className="px-3 py-4">
                     <Pill className={TYPE_STYLES[t.type] || TYPE_STYLES.Expense}>{t.type}</Pill>
@@ -731,8 +565,25 @@ function TransactionsCard({
 
         {pagedRows.length === 0 && (
           <div className="px-6 py-14 text-center">
-            <p className="text-sm font-semibold text-slate-700">No transactions match your search</p>
-            <p className="mt-1 text-xs text-slate-500">Try a different ID, client, or reset the filters.</p>
+            {loading ? (
+              <p className="text-sm font-semibold text-slate-500">Loading transactions…</p>
+            ) : error ? (
+              <>
+                <p className="text-sm font-semibold text-rose-600">Couldn’t load transactions</p>
+                <p className="mt-1 text-xs text-slate-500">{error}</p>
+                <button
+                  onClick={onRetry}
+                  className="mt-3 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-200 cursor-pointer"
+                >
+                  Try again
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-slate-700">No transactions found</p>
+                <p className="mt-1 text-xs text-slate-500">Try a different ID, client, or reset the filters.</p>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -937,31 +788,29 @@ export default function TransactionRecords({ loggedInUser }) {
   const [statusFilter, setStatusFilter] = useState("All statuses");
   const [dateRangeFilter, setDateRangeFilter] = useState("All");
 
-  const [stats, setStats] = useState(DEFAULT_STATS);
-  const [trend, setTrend] = useState(DEFAULT_TRENDS.weekly);
-  const [trends, setTrends] = useState(DEFAULT_TRENDS);
-  const [transactions, setTransactions] = useState(DEFAULT_TRANSACTIONS);
-  const [selectedId, setSelectedId] = useState(DEFAULT_TRANSACTIONS[0]?.id || null);
+  const [stats, setStats] = useState([]);
+  const [trends, setTrends] = useState(null);
+  const [summaryError, setSummaryError] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
 
-  // Fetch Summary KPIs & Multi-Timeframe Trends
   const fetchSummary = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/transactions/summary`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.stats) setStats(data.stats);
-        if (data.trend) setTrend(data.trend);
-        if (data.trends) setTrends(data.trends);
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load summary");
+      setStats(data.stats || []);
+      setTrends(data.trends || null);
+      setSummaryError(null);
     } catch (err) {
-      console.warn("Could not load transactions summary, using fallback:", err.message);
+      setSummaryError(err.message);
     }
   }, []);
 
-  // Fetch Transactions list
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     try {
@@ -973,38 +822,23 @@ export default function TransactionRecords({ loggedInUser }) {
       if (query.trim()) params.append("search", query.trim());
 
       const res = await fetch(`${API_BASE}/api/transactions?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.data) && data.data.length > 0) {
-          setTransactions(data.data);
-          if (!selectedId || !data.data.some((t) => t.id === selectedId)) {
-            setSelectedId(data.data[0].id);
-          }
-        } else {
-          // If server returned 0 results, fall back to filtered DEFAULT_TRANSACTIONS
-          const localFiltered = DEFAULT_TRANSACTIONS.filter((t) => {
-            if (tab === "Sales" && t.type !== "Sale") return false;
-            if (tab === "Expenses" && t.type !== "Expense") return false;
-            if (categoryFilter !== "All categories" && (t.category || "").toLowerCase() !== categoryFilter.toLowerCase()) return false;
-            if (statusFilter !== "All statuses" && (t.status || "").toLowerCase() !== statusFilter.toLowerCase()) return false;
-            if (query.trim()) {
-              const q = query.trim().toLowerCase();
-              return t.id.toLowerCase().includes(q) || t.party.toLowerCase().includes(q);
-            }
-            return true;
-          });
-          setTransactions(localFiltered);
-          if (localFiltered.length > 0 && (!selectedId || !localFiltered.some((t) => t.id === selectedId))) {
-            setSelectedId(localFiltered[0].id);
-          }
-        }
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load transactions");
+
+      const rows = Array.isArray(data.data) ? data.data : [];
+      setTransactions(rows);
+      setError(null);
+
+      // Only auto-open the detail panel on desktop, where it sits beside the table.
+      const desktop = window.innerWidth >= 1280;
+      setSelectedId((prev) => (rows.some((t) => t.id === prev) ? prev : desktop ? rows[0]?.id ?? null : null));
     } catch (err) {
-      console.warn("Could not load transactions from API, using default:", err.message);
+      setTransactions([]);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [tab, categoryFilter, statusFilter, dateRangeFilter, query, selectedId]);
+  }, [tab, categoryFilter, statusFilter, dateRangeFilter, query]);
 
   useEffect(() => {
     fetchSummary();
@@ -1020,21 +854,28 @@ export default function TransactionRecords({ loggedInUser }) {
 
   return (
     <div className="space-y-6 bg-slate-50 p-6 min-h-screen">
-      {/* 4 Top KPI Cards */}
+      {summaryError && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-700">
+          <span>Couldn’t load totals and chart: {summaryError}</span>
+          <button onClick={fetchSummary} className="rounded-lg bg-white px-3 py-1 font-bold text-rose-700 ring-1 ring-rose-200 cursor-pointer">
+            Retry
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {stats.map((s) => (
-          <StatCard key={s.label} {...s} />
-        ))}
+        {stats.length > 0
+          ? stats.map((s) => <StatCard key={s.label} {...s} />)
+          : ["Total Sales", "Total Expenses", "Net Income", "Pending Payments"].map((label) => (
+              <StatCard key={label} label={label} loading={!summaryError} value="—" />
+            ))}
       </div>
 
-      {/* Multi-Timeframe Trend Chart (Weekly, Monthly, Quarterly, Yearly) */}
-      <TrendCard trends={trends} trend={trend} activeTypeTab={tab} />
+      <TrendCard trends={trends} activeTypeTab={tab} />
 
-      {/* Main Transactions Grid */}
       <div className={`grid items-start gap-6 ${selected ? "xl:grid-cols-[minmax(0,1fr)_380px]" : ""}`}>
         <TransactionsCard
           rows={transactions}
-          totalCount={transactions.length}
           tab={tab}
           setTab={setTab}
           query={query}
@@ -1049,6 +890,8 @@ export default function TransactionRecords({ loggedInUser }) {
           onSelect={setSelectedId}
           onOpenRecordModal={() => setIsRecordModalOpen(true)}
           loading={loading}
+          error={error}
+          onRetry={fetchTransactions}
         />
         {selected && (
           <DetailPanel
@@ -1063,7 +906,6 @@ export default function TransactionRecords({ loggedInUser }) {
         )}
       </div>
 
-      {/* Record Transaction Modal */}
       {isRecordModalOpen && (
         <RecordTransactionModal
           isOpen={isRecordModalOpen}
