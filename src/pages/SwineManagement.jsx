@@ -16,6 +16,7 @@ import toast from '../utils/toast';
 import StatusBadge from '../components/StatusBadge.jsx';
 import ExportDropdown from '../components/common/ExportDropdown.jsx';
 import PigSnout from '../components/common/PigSnout.jsx';
+import { isAdminUser } from '../utils/rbac';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const PAGE_SIZE = 5;
@@ -119,6 +120,7 @@ function TableSkeleton({ rows = 5, cols = 8 }) {
 }
 
 export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab = 'swine_list' }) {
+  const isAdmin = isAdminUser(loggedInUser);
   const [swineList, setSwineList] = useState([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState(null);
@@ -308,6 +310,14 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     if (!res.ok) {
       throw new Error(data.error || `Failed to save pig (status ${res.status})`);
     }
+    if (res.status === 202 || data.pendingApproval) {
+      window.dispatchEvent(new CustomEvent('swinesync:approvals-updated'));
+      return {
+        pendingApproval: true,
+        approvalRequest: data.approvalRequest,
+        message: data.message,
+      };
+    }
     fetchSwine();
     fetchStats();
     fetchArchived();
@@ -325,6 +335,14 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || `Failed to save batch (status ${res.status})`);
+    }
+    if (res.status === 202 || data.pendingApproval) {
+      window.dispatchEvent(new CustomEvent('swinesync:approvals-updated'));
+      return {
+        pendingApproval: true,
+        approvalRequest: data.approvalRequest,
+        message: data.message,
+      };
     }
     fetchSwine();
     fetchStats();
@@ -344,6 +362,14 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || `Failed to update record (status ${res.status})`);
+    }
+    if (res.status === 202 || data.pendingApproval) {
+      window.dispatchEvent(new CustomEvent('swinesync:approvals-updated'));
+      return {
+        pendingApproval: true,
+        approvalRequest: data.approvalRequest,
+        message: data.message,
+      };
     }
     fetchSwine();
     fetchStats();
@@ -920,14 +946,14 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                                   type="button"
                                   onClick={() => { setSelectedPig(pig); setIsEditModalOpen(true); }}
                                   className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors active:scale-95 cursor-pointer"
-                                  title="Edit Record"
+                                  title={isAdmin ? "Edit Record" : "Propose Weight or Status Update"}
                                   id={`swine-edit-${pig.id ?? idx}`}
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
 
-                                {/* Promote to Breeder Action (Batches Only) */}
-                                {pig.category === 'Piglet Batch' && (
+                                {/* Promote to Breeder Action (Batches Only, Admin Only) */}
+                                {isAdmin && pig.category === 'Piglet Batch' && (
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -942,16 +968,18 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                                   </button>
                                 )}
 
-                                {/* Archive Action */}
-                                <button
-                                  type="button"
-                                  onClick={() => promptArchive(pig)}
-                                  className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors active:scale-95 cursor-pointer"
-                                  title="Archive Record"
-                                  id={`swine-archive-${pig.id ?? idx}`}
-                                >
-                                  <Archive className="w-3.5 h-3.5" />
-                                </button>
+                                {/* Archive Action (Admin Only) */}
+                                {isAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => promptArchive(pig)}
+                                    className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors active:scale-95 cursor-pointer"
+                                    title="Archive Record"
+                                    id={`swine-archive-${pig.id ?? idx}`}
+                                  >
+                                    <Archive className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                               </>
                             ) : (
                               (() => {
@@ -963,6 +991,13 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                                       title="This batch was promoted to breeding stock and cannot be restored."
                                     >
                                       In Breeding Herd
+                                    </span>
+                                  );
+                                }
+                                if (!isAdmin) {
+                                  return (
+                                    <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-slate-500 bg-slate-100/80 border border-slate-200/60 rounded-md cursor-default select-none">
+                                      Archived
                                     </span>
                                   );
                                 }
@@ -1023,6 +1058,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
         onSave={handleSavePig}
         onSaveBatch={handleSaveBatch}
         loggedInUser={loggedInUser}
+        isAdmin={isAdmin}
         pens={pens}
       />
 
@@ -1032,6 +1068,8 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
         onClose={() => { setIsEditModalOpen(false); setSelectedPig(null); }}
         onSave={handleUpdatePig}
         pigData={selectedPig}
+        isAdmin={isAdmin}
+        loggedInUser={loggedInUser}
       />
 
       {/* RENDER: View Details Modal (with built-in edit form & smooth transition) */}
@@ -1039,29 +1077,34 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
         isOpen={isViewModalOpen}
         onClose={() => { setIsViewModalOpen(false); setSelectedPig(null); }}
         onSave={handleUpdatePig}
-        onArchive={!viewArchived ? (pig) => promptArchive(pig) : null}
-        onUnarchive={viewArchived ? (pig) => promptUnarchive(pig) : null}
-        onPromote={!viewArchived ? (batch) => setPromoteBatch(batch) : null}
+        onArchive={isAdmin && !viewArchived ? (pig) => promptArchive(pig) : null}
+        onUnarchive={isAdmin && viewArchived ? (pig) => promptUnarchive(pig) : null}
+        onPromote={isAdmin && !viewArchived ? (batch) => setPromoteBatch(batch) : null}
         pigData={selectedPig}
         loggedInUser={loggedInUser}
+        isAdmin={isAdmin}
       />
 
-      <ArchiveSwineModal
-        isOpen={!!selectedArchiveSwine}
-        onClose={() => setSelectedArchiveSwine(null)}
-        archiveData={selectedArchiveSwine}
-        onConfirmSuccess={handleArchiveModalSuccess}
-        loggedInUser={loggedInUser}
-      />
+      {isAdmin && (
+        <>
+          <ArchiveSwineModal
+            isOpen={!!selectedArchiveSwine}
+            onClose={() => setSelectedArchiveSwine(null)}
+            archiveData={selectedArchiveSwine}
+            onConfirmSuccess={handleArchiveModalSuccess}
+            loggedInUser={loggedInUser}
+          />
 
-      {/* RENDER: Promote to Breeder Modal (Batches only) */}
-      <PromoteToBreederModal
-        isOpen={!!promoteBatch}
-        onClose={() => setPromoteBatch(null)}
-        batch={promoteBatch}
-        onSuccess={handlePromoteSuccess}
-        loggedInUser={loggedInUser}
-      />
+          {/* RENDER: Promote to Breeder Modal (Batches only) */}
+          <PromoteToBreederModal
+            isOpen={!!promoteBatch}
+            onClose={() => setPromoteBatch(null)}
+            batch={promoteBatch}
+            onSuccess={handlePromoteSuccess}
+            loggedInUser={loggedInUser}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import express from 'express';
 import { supabaseAdmin } from '../supabaseClient.js';
-import { verifyAdmin } from '../middleware/auth.js';
+import { verifyAuth, verifyAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -26,7 +26,7 @@ router.get('/api/admin/users', verifyAdmin, async (req, res) => {
         fullId: user.id,
         name,
         email,
-        role: user.user_metadata?.role || 'Staff',
+        role: user.app_metadata?.role || user.user_metadata?.role || 'Staff',
         isArchived,
         // Shows as Archived first, otherwise falls back to active tracking status
         status: isArchived ? 'Archived' : (user.last_sign_in_at ? 'Active' : 'Inactive'),
@@ -208,7 +208,7 @@ router.get('/api/admin/activity-logs', verifyAdmin, async (req, res) => {
 });
 
 // 5. POST /api/admin/activity-logs (Record staff activity from client modules)
-router.post('/api/admin/activity-logs', async (req, res) => {
+router.post('/api/admin/activity-logs', verifyAuth, async (req, res) => {
   try {
     if (!supabaseAdmin) {
       return res.status(500).json({ error: 'Administrative client not configured.' });
@@ -219,8 +219,12 @@ router.post('/api/admin/activity-logs', async (req, res) => {
       return res.status(400).json({ error: 'event_title is required.' });
     }
 
-    const cleanName = (user_name && String(user_name).trim()) || 'Staff';
-    const cleanEmail = (user_email && String(user_email).trim()) || 'staff@swinesync.ag';
+    const cleanName = req.isAdmin
+      ? ((user_name && String(user_name).trim()) || req.userName || 'Admin')
+      : (req.userName || 'Staff');
+    const cleanEmail = req.isAdmin
+      ? ((user_email && String(user_email).trim()) || req.userEmail || 'admin@swinesync.ag')
+      : (req.userEmail || 'staff@swinesync.ag');
     const initials = cleanName
       .split(' ')
       .map(w => (w ? w[0] : ''))

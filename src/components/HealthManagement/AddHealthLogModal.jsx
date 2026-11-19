@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { X, Archive, ChevronDown, Loader2, CheckCircle2, AlertCircle, Package } from "lucide-react";
+import { X, Archive, ChevronDown, Loader2, CheckCircle2, AlertCircle, Package, Info } from "lucide-react";
 import { toast } from "../../utils/toast";
 import useModalAnimation from "../../hooks/useModalAnimation";
 import useSmoothStepTransition from "../../hooks/useSmoothStepTransition";
 import { supabase } from "../../supabaseClient";
 import { getContainerMeta, fromSubUnitQty, toSubUnitQty, getShortUnit } from "../Inventory/inventoryUtils";
 import { isVaccineItem } from "../../pages/GrowthProgramManagement";
+import { isAdminUser } from "../../utils/rbac";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -49,7 +50,8 @@ const EMPTY_FORM = {
   notes: "",
 };
 
-export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess, prefillData, currentUser }) {
+export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess, prefillData, currentUser, isAdmin: propIsAdmin, growthTaskId = null }) {
+  const isAdmin = typeof propIsAdmin === "boolean" ? propIsAdmin : isAdminUser(currentUser);
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(open, onClose);
 
@@ -289,6 +291,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         performed_by: form.recorded_by,
         item_id: willDeduct ? selectedInventoryItem.item_id : (form.item_id || null),
         quantity_deducted: willDeduct ? containerDeductionQty : null,
+        growth_task_id: !editRecord ? (growthTaskId || null) : undefined,
       };
       
       const url = editRecord
@@ -303,9 +306,22 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to save");
+
+      if (res.status === 202 || json.pendingApproval) {
+        window.dispatchEvent(new CustomEvent("swinesync:approvals-updated"));
+        toast.info(json.message || "Health log request submitted for administrator approval.");
+        onSuccess(json);
+        setSuccessInfo({
+          pendingApproval: true,
+          message: json.message || "Your health log request has been queued for administrator approval. Inventory stock and herd status will update once approved.",
+          isArchive: false
+        });
+        return;
+      }
       
       onSuccess(json.data);
       setSuccessInfo({
+        pendingApproval: false,
         message: editRecord
           ? "Your changes have been saved. The health log is now up to date."
           : "The health log has been added. You can view it in the treatment list.",
@@ -384,11 +400,19 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         {/* Body */}
         {successInfo ? (
           <div className="flex flex-col items-center justify-center p-10 text-center animate-fade-in">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+            <div className={`mb-4 flex h-16 w-16 items-center justify-center rounded-full ${
+              successInfo.pendingApproval
+                ? "bg-amber-100 text-amber-700"
+                : "bg-emerald-100 text-emerald-700"
+            }`}>
               <CheckCircle2 className="h-8 w-8" />
             </div>
             <h3 className="text-xl font-bold text-slate-800">
-              {successInfo.isArchive ? 'Log Removed!' : (editRecord ? 'Changes Saved!' : 'Log Added!')}
+              {successInfo.isArchive
+                ? 'Log Removed!'
+                : successInfo.pendingApproval
+                  ? 'Submitted for Approval'
+                  : (editRecord ? 'Changes Saved!' : 'Log Added!')}
             </h3>
             <p className="mt-2 text-sm text-slate-500 max-w-sm">
               {successInfo.message}
@@ -400,7 +424,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
                   setSuccessInfo(null);
                   requestClose();
                 }}
-                className="w-full rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 transition-all cursor-pointer"
+                className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 transition-all cursor-pointer"
               >
                 Done
               </button>
@@ -437,6 +461,15 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
           </div>
         ) : (
           <div className="px-6 py-5 grid grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
+            {!isAdmin && !editRecord && (
+              <div className="col-span-2 flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs leading-relaxed">
+                <Info className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Administrator Approval Required</span>
+                  Staff health log submissions require administrator approval before deducting inventory, updating swine status, or closing linked tasks.
+                </div>
+              </div>
+            )}
 
             {/* API-level errors only (network failures etc.) */}
             {apiError && (
@@ -856,7 +889,7 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
         {!confirmArchive && !successInfo && (
           <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4">
             <div>
-              {editRecord && (
+              {editRecord && isAdmin && (
                 <button
                   type="button"
                   onClick={() => setConfirmArchive(true)}
@@ -876,10 +909,16 @@ export default function AddHealthLogModal({ open, onClose, editRecord, onSuccess
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                className="flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
               >
                 {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {saving ? "Saving..." : editRecord ? "Save Changes" : "Add Record"}
+                {saving
+                  ? (isAdmin || editRecord ? "Saving..." : "Submitting...")
+                  : editRecord
+                    ? "Save Changes"
+                    : isAdmin
+                      ? "Add Record"
+                      : "Submit for Approval"}
               </button>
             </div>
           </div>

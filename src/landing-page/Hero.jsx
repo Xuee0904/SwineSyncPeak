@@ -1,25 +1,96 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import AnnouncementBanner from './AnnouncementBanner';
-import { ArrowUpRight, ChevronRight, Syringe, Award, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, ChevronLeft, Syringe, ShieldCheck } from 'lucide-react';
 import farmLogo from '../assets/Logo.jpg';
+import heroSwineOne from '../assets/IMG_9220.webp';
+import heroSwineTwo from '../assets/IMG_9194.webp';
+import heroSwineThree from '../assets/IMG_9217.webp';
+import heroSwineFour from '../assets/IMG_9227.webp';
+
+const HERO_PHOTOS = [
+  {
+    src: heroSwineOne,
+    alt: 'Healthy farm-raised swine at Ambo & Ang\'s Oink Yard',
+  },
+  {
+    src: heroSwineTwo,
+    alt: 'Healthy grower and fattener swine in the farm pen',
+  },
+  {
+    src: heroSwineThree,
+    alt: 'Active young swine in the farm pen',
+  },
+  {
+    src: heroSwineFour,
+    alt: 'Close-up of healthy swine at the farm',
+  },
+];
 
 export default function Hero({ scrollToSection }) {
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isTabHidden, setIsTabHidden] = useState(
+    typeof document !== 'undefined' ? document.hidden : false
+  );
+  const touchStartRef = useRef({ x: 0, y: 0 });
+  const activePhoto = HERO_PHOTOS[activePhotoIndex];
+
+  useEffect(() => {
+    const handleVisibilityChange = () => setIsTabHidden(document.hidden);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  useEffect(() => {
+    if (isPaused || isTabHidden) return;
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setActivePhotoIndex((prev) => (prev + 1) % HERO_PHOTOS.length);
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [isPaused, isTabHidden]);
+
+  const handlePrevPhoto = () => {
+    setActivePhotoIndex((prev) => (prev - 1 + HERO_PHOTOS.length) % HERO_PHOTOS.length);
+  };
+
+  const handleNextPhoto = () => {
+    setActivePhotoIndex((prev) => (prev + 1) % HERO_PHOTOS.length);
+  };
+
+  const handleTouchStart = (e) => {
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleTouchEnd = (e) => {
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - touchStartRef.current.x;
+    const deltaY = touch.clientY - touchStartRef.current.y;
+    // Only treat clearly horizontal swipes as navigation so vertical page scroll is unaffected
+    if (Math.abs(deltaX) < 40 || Math.abs(deltaX) < Math.abs(deltaY) * 1.5) return;
+    if (deltaX < 0) handleNextPhoto();
+    else handlePrevPhoto();
+  };
+
+  // Mouse-only pause: touch taps also fire mouseenter and would leave the carousel stuck paused
+  const handlePointerEnter = (e) => {
+    if (e.pointerType === 'mouse') setIsPaused(true);
+  };
+  const handlePointerLeave = (e) => {
+    if (e.pointerType === 'mouse') setIsPaused(false);
+  };
   return (
     <div className="animate-fade-in text-left pb-10" id="hero-section">
       {/* Top Farm Announcement Ribbon */}
       <AnnouncementBanner />
 
       {/* Main Public Hero Card */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-3xl p-8 sm:p-12 lg:p-14 shadow-2xl border border-slate-700/40">
-        {/* Subtle background ambient glow */}
-        <div
-          className="absolute inset-0 opacity-20 pointer-events-none"
-          style={{
-            backgroundImage:
-              'radial-gradient(circle at 80% 20%, #10b981 0%, transparent 50%), radial-gradient(circle at 10% 80%, #059669 0%, transparent 40%)',
-          }}
-        />
-
+      <section className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/90 text-white rounded-3xl p-5 sm:p-10 lg:p-14 shadow-2xl border border-slate-800">
         <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
           {/* Left Column: Farm Identity, Copy & CTAs */}
           <div className="lg:col-span-7 space-y-6">
@@ -49,32 +120,112 @@ export default function Hero({ scrollToSection }) {
 
             {/* Authentic Body Copy */}
             <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-xl">
-              From farrow to finish, we raise fatteners, and piglet batches with veterinary-supervised health care, complete vaccination records, and strict biosecurity protocols.
+              From farrow to finish, we raise fatteners and piglet batches with veterinary-supervised health care, complete vaccination records, and strict biosecurity protocols.
             </p>
 
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-3 pt-2">
               <button
+                type="button"
                 onClick={() => scrollToSection?.('catalog')}
-                className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-950/40 transition-all flex items-center gap-2 cursor-pointer hover:translate-y-[-1px]"
+                className="min-h-[44px] px-6 py-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-950/40 transition-all flex items-center gap-2 cursor-pointer hover:translate-y-[-1px]"
               >
-                Browse Available Pigs <ArrowUpRight className="w-4 h-4" />
+                Browse Available Pigs <ArrowUpRight className="w-4 h-4" aria-hidden="true" />
               </button>
               <button
+                type="button"
                 onClick={() => scrollToSection?.('protocols')}
-                className="px-6 py-3 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-sm rounded-xl transition-all flex items-center gap-2 cursor-pointer"
+                className="min-h-[44px] px-6 py-3 bg-white/10 hover:bg-white/15 border border-white/20 text-white font-semibold text-sm rounded-xl transition-all flex items-center gap-2 cursor-pointer"
               >
-                Visitor Safety Protocols <ChevronRight className="w-4 h-4 text-emerald-300" />
+                Visitor Safety Protocols <ChevronRight className="w-4 h-4 text-emerald-300" aria-hidden="true" />
               </button>
             </div>
           </div>
 
-          {/* Right Column: 3 Hybrid Trust & Transparency Cards */}
-          <div className="lg:col-span-5 flex flex-col gap-3.5">
+          {/* Right Column: Featured Swine Gallery + Trust & Transparency Cards */}
+          <div className="lg:col-span-5 flex flex-col gap-3">
+            {/* Featured Farm Swine Gallery */}
+            <div
+              className="space-y-2.5"
+              onPointerEnter={handlePointerEnter}
+              onPointerLeave={handlePointerLeave}
+              onFocus={() => setIsPaused(true)}
+              onBlur={() => setIsPaused(false)}
+            >
+              <div
+                className="relative overflow-hidden rounded-2xl border border-white/15 shadow-2xl aspect-[16/10] bg-slate-900 touch-pan-y"
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+              >
+                <img
+                  src={activePhoto.src}
+                  alt={activePhoto.alt}
+                  decoding="async"
+                  className="w-full h-full object-cover transition-opacity duration-300"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/15 to-transparent pointer-events-none" />
+
+                {/* Prev / Next Controls */}
+                <button
+                  type="button"
+                  onClick={handlePrevPhoto}
+                  aria-label="Previous farm photo"
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-slate-950/60 hover:bg-slate-950/85 border border-white/15 text-white flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextPhoto}
+                  aria-label="Next farm photo"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-slate-950/60 hover:bg-slate-950/85 border border-white/15 text-white flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                </button>
+
+                <div className="absolute bottom-3 left-3.5 right-3.5 flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-white tracking-wide">
+                    {activePhoto.caption}
+                  </span>
+                  <span className="text-[11px] font-medium text-emerald-300 bg-slate-950/70 backdrop-blur-sm border border-white/10 px-2.5 py-0.5 rounded-full shrink-0">
+                    {activePhotoIndex + 1} / {HERO_PHOTOS.length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Thumbnail Strip */}
+              <div className="grid grid-cols-4 gap-2" role="group" aria-label="Farm swine photos">
+                {HERO_PHOTOS.map((photo, idx) => {
+                  const isSelected = idx === activePhotoIndex;
+                  return (
+                    <button
+                      key={photo.caption}
+                      type="button"
+                      aria-pressed={isSelected}
+                      aria-label={`View photo ${idx + 1}: ${photo.caption}`}
+                      onClick={() => setActivePhotoIndex(idx)}
+                      className={`relative overflow-hidden rounded-xl aspect-[16/10] border transition-all cursor-pointer ${isSelected
+                          ? 'border-emerald-400 ring-2 ring-emerald-400/40 opacity-100'
+                          : 'border-white/15 opacity-65 hover:opacity-100'
+                        }`}
+                    >
+                      <img
+                        src={photo.src}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Card 1: 100% Documented Vaccines */}
-            <div className="p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all flex items-start gap-3.5">
-              <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-300 shrink-0">
-                <Syringe className="w-5 h-5" />
+            <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-white/10 flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shrink-0">
+                <Syringe className="w-4 h-4" aria-hidden="true" />
               </div>
               <div className="min-w-0">
                 <h2 className="text-sm font-bold text-white tracking-wide">100% Documented Vaccines</h2>
@@ -84,23 +235,10 @@ export default function Hero({ scrollToSection }) {
               </div>
             </div>
 
-            {/* Card 2: Verified Pedigrees */}
-            <div className="p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all flex items-start gap-3.5">
-              <div className="p-2.5 rounded-xl bg-sky-500/20 text-sky-300 shrink-0">
-                <Award className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-sm font-bold text-white tracking-wide">Verified Piglet &amp; Sow Pedigrees</h2>
-                <p className="text-xs text-slate-300 mt-0.5 leading-snug">
-                  Carefully tracked breed genetics, parities, and born-alive rates for consistent raiser success.
-                </p>
-              </div>
-            </div>
-
-            {/* Card 3: Strict Biosecurity Standards */}
-            <div className="p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md hover:bg-white/10 transition-all flex items-start gap-3.5">
-              <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-300 shrink-0">
-                <ShieldCheck className="w-5 h-5" />
+            {/* Card 2: Strict Biosecurity Standards */}
+            <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-white/10 flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shrink-0">
+                <ShieldCheck className="w-4 h-4" aria-hidden="true" />
               </div>
               <div className="min-w-0">
                 <h2 className="text-sm font-bold text-white tracking-wide">Strict Biosecurity &amp; Disinfection</h2>

@@ -1,6 +1,8 @@
 import express from 'express';
 import { supabase, supabaseAdmin } from '../supabaseClient.js';
 import { getPenOccupancy } from '../helpers/occupancy.js';
+import { verifyAuth, verifyAdmin } from '../middleware/auth.js';
+import { createHttpError, queueApprovalRequest } from '../helpers/approvalQueue.js';
 
 const router = express.Router();
 
@@ -76,7 +78,7 @@ async function resolveBreedId(breedInput, client = supabaseAdmin) {
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Inactive', 'Cull'];
 
 // GET /api/pigs/breeding-logs – legacy alias forwarding to breeding_logs
-router.get('/api/pigs/breeding-logs', async (req, res) => {
+router.get('/api/pigs/breeding-logs', verifyAuth, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('pigs')
@@ -132,7 +134,7 @@ const getBatchHeads = (b) => {
 };
 
 // GET /api/pigs/stats – aggregate counts for summary cards
-router.get('/api/pigs/stats', async (req, res) => {
+router.get('/api/pigs/stats', verifyAuth, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
     const [pigsRes, sickRes, quarRes, batchesRes] = await Promise.all([
@@ -183,7 +185,7 @@ router.get('/api/pigs/stats', async (req, res) => {
 });
 
 // GET /api/pigs/analytics – structured herd composition, health, breed & batch survivability metrics
-router.get('/api/pigs/analytics', async (req, res) => {
+router.get('/api/pigs/analytics', verifyAuth, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
     const [pigsRes, batchesRes, salesRes] = await Promise.all([
@@ -424,7 +426,7 @@ router.get('/api/pigs/analytics', async (req, res) => {
 });
 
 // GET /api/pigs
-router.get('/api/pigs', async (req, res) => {
+router.get('/api/pigs', verifyAuth, async (req, res) => {
   try {
     const { search, status, pen, category, breed, page, limit } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
@@ -554,7 +556,7 @@ router.get('/api/pigs', async (req, res) => {
 });
 
 // GET /api/pigs/archived – fetch archived pig & batch records
-router.get('/api/pigs/archived', async (req, res) => {
+router.get('/api/pigs/archived', verifyAuth, async (req, res) => {
   try {
     const { search, category, breed, pen, status, page, limit } = req.query;
     const pageNum = Math.max(1, parseInt(page) || 1);
@@ -665,7 +667,7 @@ router.get('/api/pigs/archived', async (req, res) => {
 
 
 // GET /api/pigs/:id – single pig record with full detail, for the Edit modal.
-router.get('/api/pigs/:id', async (req, res) => {
+router.get('/api/pigs/:id', verifyAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { data, error } = await supabase
@@ -776,421 +778,485 @@ router.get('/api/pigs/:id', async (req, res) => {
   }
 });
 
-// POST /api/pigs - Create an individual pig (Sow/Boar)
-router.post('/api/pigs', async (req, res) => {
-  try {
-    const { tagNumber, dateOfBirth, breed, weight, penId, status, gender, creator, sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date } = req.body;
-    const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
-    // 1. Resolve breed (UUID or formatted custom string, case-insensitive)
-    const finalBreedId = await resolveBreedId(breed, supabaseAdmin);
-
-    // 2. Confirm the selected pen still has room
-    if (penId) {
-      const { data: pen, error: penError } = await supabase
-        .from('pens')
-        .select('pen_code, pen_type, max_capacity')
-        .eq('pen_id', penId)
-        .single();
-
-      if (penError) throw penError;
-
-      const occ = await getPenOccupancy(penId);
-      const occupied = typeof occ === 'number' ? occ : occ.total;
-      const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
-
-      if (gender === 'Female' && (penSection === 'B' || penSection === 'BOAR')) {
-        return res.status(400).json({ error: `Cannot assign a female sow to boar pen ${pen.pen_code}.` });
-      }
-      if (gender === 'Male' && penSection !== 'B' && penSection !== 'BOAR') {
-        return res.status(400).json({ error: `Cannot assign a male boar to ${pen.pen_code}. Boars must be housed alone in a Boar pen.` });
-      }
-      const isSickOrQ = status?.toLowerCase() === 'sick' || status?.toLowerCase() === 'quarantine';
-      const isQPen = penSection === 'Q' || penSection === 'QUARANTINE';
-      if (!isSickOrQ && isQPen) {
-        return res.status(400).json({ error: `Cannot assign a ${status || 'Healthy'} pig to Quarantine pen ${pen.pen_code}. Quarantine pens are reserved for sick or quarantined pigs.` });
-      }
-      if (isSickOrQ && !isQPen) {
-        return res.status(400).json({ error: `Cannot assign a ${status} pig to ${pen.pen_code}. Sick or quarantined pigs must be placed in a Quarantine housing unit.` });
-      }
-      if (gender === 'Female' && !isQPen && penSection !== 'S' && penSection !== 'SOW') {
-        return res.status(400).json({ error: `Cannot assign a female sow to ${pen.pen_code}. Sows must be housed in Sow/Farrowing pens.` });
-      }
-      if ((penSection === 'S' || penSection === 'SOW') && (occ.hasSow || occ.sowCount >= 1 || occ.pigCount >= 1)) {
-        return res.status(400).json({
-          error: `Sow pen ${pen.pen_code} already houses 1 sow. The farm can only house 1 sow per sow pen.`,
-        });
-      }
-      if ((penSection === 'B' || penSection === 'BOAR') && (occ.hasBoar || occ.boarCount >= 1 || occ.pigCount >= 1)) {
-        return res.status(400).json({
-          error: `Boar pen ${pen.pen_code} already houses 1 boar. The farm can only house 1 boar per boar pen.`,
-        });
-      }
-      if (occupied >= (pen.max_capacity ?? 0)) {
-        return res.status(400).json({
-          error: `Pen ${pen.pen_code} is already at full capacity (${pen.max_capacity}). Please choose another pen.`,
-        });
-      }
-    }
-
-    // 3. Insert the pig using the finalBreedId
-    const { data, error } = await supabaseAdmin
-      .from('pigs')
-      .insert([{
-        pig_tag: tagNumber,
-        date_of_birth: dateOfBirth,
-        breed_id: finalBreedId, // Use the UUID
-        weight: (weight !== undefined && weight !== null && weight !== '' && !isNaN(parseFloat(weight))) ? parseFloat(weight) : null,
-        pen_id: penId,
-        status: status.toLowerCase(),
-        gender: gender,
-        source_origin: sourceOrigin || source_origin || 'born_in_farm',
-        supplier_name: supplierName || supplier_name || null,
-        arrival_date: arrivalDate || arrival_date || null,
-        is_archived: false
-      }])
-      .select();
-
-    if (error) throw error;
-
-    const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
-      user_name: creatorName,
-      user_email: creatorEmail,
-      user_initials: creatorInitials,
-      user_bg_color: 'bg-emerald-100 text-emerald-700',
-      event_title: 'Swine Record Added',
-      event_desc: `Added new ${gender.toLowerCase()} swine with tag ${tagNumber}.`,
-      status: 'SUCCESS'
-    });
-    if (logError) console.error("Error inserting activity log:", logError);
-
-    res.json({ message: 'Pig added successfully', data });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+export async function validateCreatePig(body = {}) {
+  const { tagNumber, status, gender, penId } = body;
+  if (!tagNumber || !String(tagNumber).trim()) {
+    throw createHttpError(400, 'Tag number is required.');
   }
-});
+  if (!gender) {
+    throw createHttpError(400, 'Gender is required.');
+  }
 
-// POST /api/pigs/batch - Create a piglet batch
-router.post('/api/pigs/batch', async (req, res) => {
-  try {
-    const {
-      batchTag, penId, sowId, dateOfBirth, breed,
-      totalBornAlive, currentCount, stillbornCount, mummyCount,
-      averageWeight, status, creator,
-      sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date,
-      assignedProgramId,
-      // legacy fallback fields from old form
-      batchId, penLocation, totalHerdCount,
-    } = req.body;
+  let penCode = '';
+  if (penId) {
+    const { data: pen, error: penError } = await supabase
+      .from('pens')
+      .select('pen_code, pen_type, max_capacity')
+      .eq('pen_id', penId)
+      .single();
 
-    const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
-
-    const resolvedPenId = penId || penLocation;
-    const resolvedTag = batchTag || batchId;
-    const resolvedCount = parseInt(currentCount ?? totalHerdCount) || 0;
-
-    // Confirm the pen has room for the whole batch before inserting.
-    if (resolvedPenId) {
-      const { data: pen, error: penError } = await supabase
-        .from('pens')
-        .select('pen_code, max_capacity, pen_type')
-        .eq('pen_id', resolvedPenId)
-        .single();
-
-      if (penError) throw penError;
-
-      const occupied = await getPenOccupancy(resolvedPenId);
-      const incoming = resolvedCount;
-      const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
-
-      if (penSection === 'B' || penSection === 'BOAR') {
-        return res.status(400).json({ error: `Piglet batches cannot be assigned to Boar pen ${pen.pen_code}.` });
-      }
-
-      const currentOccupied = typeof occupied === 'number' ? occupied : occupied.total;
-      const maxCap = pen.max_capacity ?? 20;
-      const remaining = Math.max(0, maxCap - currentOccupied);
-      if (incoming > remaining) {
-        return res.status(400).json({
-          error: `Pen ${pen.pen_code} only has ${remaining} slot(s) left (capacity ${maxCap}), but this batch has ${incoming} piglet(s).`,
-        });
-      }
-
-      const statusStr = (status || '').toLowerCase();
-      let ageInDays = null;
-      if (dateOfBirth) {
-        ageInDays = Math.floor((Date.now() - new Date(dateOfBirth).getTime()) / (1000 * 60 * 60 * 24));
-      }
-      const isBatchWeaned = statusStr === 'weaned' || (statusStr !== 'suckling' && ageInDays !== null && ageInDays > 28);
-      const isBatchNursing = statusStr === 'suckling' || (statusStr !== 'weaned' && ageInDays !== null && ageInDays <= 28);
-
-      if (sowId && resolvedPenId && isBatchNursing) {
-        const { data: motherSow } = await supabase.from('pigs').select('pen_id, pig_tag').eq('pig_id', sowId).single();
-        if (motherSow && motherSow.pen_id && String(motherSow.pen_id) !== String(resolvedPenId)) {
-          return res.status(400).json({
-            error: `Piglet batch is linked to Mother Sow #${motherSow.pig_tag}, but assigned to a different pen (${pen.pen_code}). Nursing piglet batches must be placed in their Mother Sow's pen.`,
-          });
-        }
-      }
-
-      if (dateOfBirth) {
-        if (ageInDays <= 28 && statusStr === 'weaned') {
-          return res.status(400).json({ error: `Piglet batches <= 28 days old (${ageInDays} days old) cannot have status "weaned" (must be suckling).` });
-        }
-        if (ageInDays > 28 && statusStr === 'suckling') {
-          return res.status(400).json({ error: `Piglet batches > 28 days old (${ageInDays} days old) cannot have status "suckling" (must be weaned).` });
-        }
-
-        if (isBatchNursing && penSection !== 'S' && penSection !== 'SOW') {
-          return res.status(400).json({ error: `Nursing piglet batches (<=28 days old) must be assigned to a Sow/Farrowing pen (${pen.pen_code} is ${penSection}).` });
-        }
-        if (isBatchWeaned && penSection !== 'W' && penSection !== 'WEANED') {
-          return res.status(400).json({ error: `Weaned piglet batches (>28 days old) must be assigned to a Weaned/Fattening pen (${pen.pen_code} is ${penSection}).` });
-        }
-      }
+    if (penError || !pen) {
+      throw createHttpError(400, 'Selected pen not found.');
     }
+    penCode = pen.pen_code || '';
 
-    // Resolve breed name → breed_id (upsert if new, case-insensitive)
-    const resolvedBreedId = await resolveBreedId(breed, supabaseAdmin);
+    const occ = await getPenOccupancy(penId);
+    const occupied = typeof occ === 'number' ? occ : occ.total;
+    const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
 
-    const record = {
-      batch_tag: resolvedTag,
-      pen_id: resolvedPenId || null,
-      sow_id: sowId || null,
-      date_of_birth: dateOfBirth || null,
-      breed_id: resolvedBreedId,
-      total_born_alive: parseInt(totalBornAlive) || null,
-      current_count: resolvedCount,
-      stillborn_count: parseInt(stillbornCount) || 0,
-      mummy_count: parseInt(mummyCount) || 0,
-      average_weight: averageWeight ? parseFloat(averageWeight) : null,
-      status: status || 'suckling',
-      assigned_program_id: assignedProgramId || null,
+    if (gender === 'Female' && (penSection === 'B' || penSection === 'BOAR')) {
+      throw createHttpError(400, `Cannot assign a female sow to boar pen ${pen.pen_code}.`);
+    }
+    if (gender === 'Male' && penSection !== 'B' && penSection !== 'BOAR') {
+      throw createHttpError(400, `Cannot assign a male boar to ${pen.pen_code}. Boars must be housed alone in a Boar pen.`);
+    }
+    const isSickOrQ = status?.toLowerCase() === 'sick' || status?.toLowerCase() === 'quarantine';
+    const isQPen = penSection === 'Q' || penSection === 'QUARANTINE';
+    if (!isSickOrQ && isQPen) {
+      throw createHttpError(400, `Cannot assign a ${status || 'Healthy'} pig to Quarantine pen ${pen.pen_code}. Quarantine pens are reserved for sick or quarantined pigs.`);
+    }
+    if (isSickOrQ && !isQPen) {
+      throw createHttpError(400, `Cannot assign a ${status} pig to ${pen.pen_code}. Sick or quarantined pigs must be placed in a Quarantine housing unit.`);
+    }
+    if (gender === 'Female' && !isQPen && penSection !== 'S' && penSection !== 'SOW') {
+      throw createHttpError(400, `Cannot assign a female sow to ${pen.pen_code}. Sows must be housed in Sow/Farrowing pens.`);
+    }
+    if ((penSection === 'S' || penSection === 'SOW') && (occ.hasSow || occ.sowCount >= 1 || occ.pigCount >= 1)) {
+      throw createHttpError(400, `Sow pen ${pen.pen_code} already houses 1 sow. The farm can only house 1 sow per sow pen.`);
+    }
+    if ((penSection === 'B' || penSection === 'BOAR') && (occ.hasBoar || occ.boarCount >= 1 || occ.pigCount >= 1)) {
+      throw createHttpError(400, `Boar pen ${pen.pen_code} already houses 1 boar. The farm can only house 1 boar per boar pen.`);
+    }
+    if (occupied >= (pen.max_capacity ?? 0)) {
+      throw createHttpError(400, `Pen ${pen.pen_code} is already at full capacity (${pen.max_capacity}). Please choose another pen.`);
+    }
+  }
+
+  return { penCode };
+}
+
+export async function executeCreatePig(body = {}) {
+  const { tagNumber, dateOfBirth, breed, weight, penId, status, gender, creator, sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date } = body;
+  const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
+
+  await validateCreatePig(body);
+  const finalBreedId = await resolveBreedId(breed, supabaseAdmin);
+
+  const { data, error } = await supabaseAdmin
+    .from('pigs')
+    .insert([{
+      pig_tag: tagNumber,
+      date_of_birth: dateOfBirth,
+      breed_id: finalBreedId,
+      weight: (weight !== undefined && weight !== null && weight !== '' && !isNaN(parseFloat(weight))) ? parseFloat(weight) : null,
+      pen_id: penId,
+      status: (status || 'healthy').toLowerCase(),
+      gender: gender,
       source_origin: sourceOrigin || source_origin || 'born_in_farm',
       supplier_name: supplierName || supplier_name || null,
       arrival_date: arrivalDate || arrival_date || null,
-      is_archived: false,
-    };
+      is_archived: false
+    }])
+    .select();
 
-    const { data, error } = await supabaseAdmin
-      .from('piglet_batches')
-      .insert([record])
-      .select();
+  if (error) throw error;
 
-    if (error) throw error;
+  const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
+    user_name: creatorName,
+    user_email: creatorEmail,
+    user_initials: creatorInitials,
+    user_bg_color: 'bg-emerald-100 text-emerald-700',
+    event_title: 'Swine Record Added',
+    event_desc: `Added new ${gender.toLowerCase()} swine with tag ${tagNumber}.`,
+    status: 'SUCCESS'
+  });
+  if (logError) console.error("Error inserting activity log:", logError);
 
-    const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
-      user_name: creatorName,
-      user_email: creatorEmail,
-      user_initials: creatorInitials,
-      user_bg_color: 'bg-emerald-100 text-emerald-700',
-      event_title: 'Batch Created',
-      event_desc: `Created piglet batch ${resolvedTag} (${resolvedCount} heads).`,
-      status: 'SUCCESS'
+  return { message: 'Pig added successfully', data };
+}
+
+// POST /api/pigs - Create an individual pig (Sow/Boar)
+router.post('/api/pigs', verifyAuth, async (req, res) => {
+  try {
+    const { penCode } = await validateCreatePig(req.body);
+
+    if (req.isAdmin) {
+      const result = await executeCreatePig({
+        ...req.body,
+        creator: req.body.creator || req.userName,
+      });
+      return res.json(result);
+    }
+
+    const { tagNumber, gender, status, breed } = req.body;
+    const roleLabel = String(gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar';
+    const penNote = penCode ? ` in Pen ${penCode}` : '';
+    const summary = `Register ${roleLabel} #${tagNumber}${breed ? ` (${breed})` : ''}${penNote}`;
+
+    const approvalRequest = await queueApprovalRequest({
+      req,
+      module: 'swine',
+      action: 'create_pig',
+      actionLabel: 'Register Swine',
+      summary,
+      payload: {
+        ...req.body,
+        status: status || 'Healthy',
+        penCode,
+      },
     });
-    if (logError) console.error("Error inserting activity log:", logError);
 
-    res.json({ message: 'Batch added successfully', data });
+    return res.status(202).json({
+      pendingApproval: true,
+      approvalRequest,
+      message: 'Swine registration submitted for administrator approval.',
+    });
   } catch (error) {
-    console.error("Error inserting batch:", error);
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
-// PUT /api/pigs/:id - Update pig details or piglet batch
-router.put('/api/pigs/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      tagNumber, dateOfBirth, breed, weight,
-      penId, status, parityCount, creator, gender,
-      totalBornAlive, stillbornCount, mummyCount, category, isBatch,
-      sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date
-    } = req.body;
+export async function validateCreateBatch(body = {}) {
+  const {
+    batchTag, penId, sowId, dateOfBirth,
+    currentCount, status,
+    batchId, penLocation, totalHerdCount,
+  } = body;
 
-    const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
+  const resolvedPenId = penId || penLocation;
+  const resolvedTag = batchTag || batchId;
+  const resolvedCount = parseInt(currentCount ?? totalHerdCount) || 0;
 
-    if (!tagNumber || !breed || !penId) {
-      return res.status(400).json({ error: 'Tag number, breed, and pen are required.' });
+  if (!resolvedTag || !String(resolvedTag).trim()) {
+    throw createHttpError(400, 'Batch tag is required.');
+  }
+
+  let penCode = '';
+  if (resolvedPenId) {
+    const { data: pen, error: penError } = await supabase
+      .from('pens')
+      .select('pen_code, max_capacity, pen_type')
+      .eq('pen_id', resolvedPenId)
+      .single();
+
+    if (penError || !pen) {
+      throw createHttpError(400, 'Selected pen not found.');
+    }
+    penCode = pen.pen_code || '';
+
+    const occupied = await getPenOccupancy(resolvedPenId);
+    const incoming = resolvedCount;
+    const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
+
+    if (penSection === 'B' || penSection === 'BOAR') {
+      throw createHttpError(400, `Piglet batches cannot be assigned to Boar pen ${pen.pen_code}.`);
     }
 
-    const checkIsBatch = category === 'Piglet Batch' || isBatch === true;
+    const currentOccupied = typeof occupied === 'number' ? occupied : occupied.total;
+    const maxCap = pen.max_capacity ?? 20;
+    const remaining = Math.max(0, maxCap - currentOccupied);
+    if (incoming > remaining) {
+      throw createHttpError(
+        400,
+        `Pen ${pen.pen_code} only has ${remaining} slot(s) left (capacity ${maxCap}), but this batch has ${incoming} piglet(s).`
+      );
+    }
 
-    let existingBatchRecord = null;
+    const statusStr = (status || '').toLowerCase();
+    let ageInDays = null;
+    if (dateOfBirth) {
+      ageInDays = Math.floor((Date.now() - new Date(dateOfBirth).getTime()) / (1000 * 60 * 60 * 24));
+    }
+    const isBatchWeaned = statusStr === 'weaned' || (statusStr !== 'suckling' && ageInDays !== null && ageInDays > 28);
+    const isBatchNursing = statusStr === 'suckling' || (statusStr !== 'weaned' && ageInDays !== null && ageInDays <= 28);
+
+    if (sowId && resolvedPenId && isBatchNursing) {
+      const { data: motherSow } = await supabase.from('pigs').select('pen_id, pig_tag').eq('pig_id', sowId).single();
+      if (motherSow && motherSow.pen_id && String(motherSow.pen_id) !== String(resolvedPenId)) {
+        throw createHttpError(
+          400,
+          `Piglet batch is linked to Mother Sow #${motherSow.pig_tag}, but assigned to a different pen (${pen.pen_code}). Nursing piglet batches must be placed in their Mother Sow's pen.`
+        );
+      }
+    }
+
+    if (dateOfBirth) {
+      if (ageInDays <= 28 && statusStr === 'weaned') {
+        throw createHttpError(400, `Piglet batches <= 28 days old (${ageInDays} days old) cannot have status "weaned" (must be suckling).`);
+      }
+      if (ageInDays > 28 && statusStr === 'suckling') {
+        throw createHttpError(400, `Piglet batches > 28 days old (${ageInDays} days old) cannot have status "suckling" (must be weaned).`);
+      }
+
+      if (isBatchNursing && penSection !== 'S' && penSection !== 'SOW') {
+        throw createHttpError(400, `Nursing piglet batches (<=28 days old) must be assigned to a Sow/Farrowing pen (${pen.pen_code} is ${penSection}).`);
+      }
+      if (isBatchWeaned && penSection !== 'W' && penSection !== 'WEANED') {
+        throw createHttpError(400, `Weaned piglet batches (>28 days old) must be assigned to a Weaned/Fattening pen (${pen.pen_code} is ${penSection}).`);
+      }
+    }
+  }
+
+  return { penCode, resolvedTag, resolvedCount };
+}
+
+export async function executeCreateBatch(body = {}) {
+  const {
+    batchTag, penId, sowId, dateOfBirth, breed,
+    totalBornAlive, currentCount, stillbornCount, mummyCount,
+    averageWeight, status, creator,
+    sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date,
+    assignedProgramId,
+    batchId, penLocation, totalHerdCount,
+  } = body;
+
+  const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
+
+  const resolvedPenId = penId || penLocation;
+  const resolvedTag = batchTag || batchId;
+  const resolvedCount = parseInt(currentCount ?? totalHerdCount) || 0;
+
+  await validateCreateBatch(body);
+
+  const resolvedBreedId = await resolveBreedId(breed, supabaseAdmin);
+
+  const record = {
+    batch_tag: resolvedTag,
+    pen_id: resolvedPenId || null,
+    sow_id: sowId || null,
+    date_of_birth: dateOfBirth || null,
+    breed_id: resolvedBreedId,
+    total_born_alive: parseInt(totalBornAlive) || null,
+    current_count: resolvedCount,
+    stillborn_count: parseInt(stillbornCount) || 0,
+    mummy_count: parseInt(mummyCount) || 0,
+    average_weight: averageWeight ? parseFloat(averageWeight) : null,
+    status: status || 'suckling',
+    assigned_program_id: assignedProgramId || null,
+    source_origin: sourceOrigin || source_origin || 'born_in_farm',
+    supplier_name: supplierName || supplier_name || null,
+    arrival_date: arrivalDate || arrival_date || null,
+    is_archived: false,
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from('piglet_batches')
+    .insert([record])
+    .select();
+
+  if (error) throw error;
+
+  const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
+    user_name: creatorName,
+    user_email: creatorEmail,
+    user_initials: creatorInitials,
+    user_bg_color: 'bg-emerald-100 text-emerald-700',
+    event_title: 'Batch Created',
+    event_desc: `Created piglet batch ${resolvedTag} (${resolvedCount} heads).`,
+    status: 'SUCCESS'
+  });
+  if (logError) console.error("Error inserting activity log:", logError);
+
+  return { message: 'Batch added successfully', data };
+}
+
+// POST /api/pigs/batch - Create a piglet batch
+router.post('/api/pigs/batch', verifyAuth, async (req, res) => {
+  try {
+    const { penCode, resolvedTag, resolvedCount } = await validateCreateBatch(req.body);
+
+    if (req.isAdmin) {
+      const result = await executeCreateBatch({
+        ...req.body,
+        creator: req.body.creator || req.userName,
+      });
+      return res.json(result);
+    }
+
+    const penNote = penCode ? ` in Pen ${penCode}` : '';
+    const summary = `Register piglet batch ${resolvedTag} (${resolvedCount} head${resolvedCount === 1 ? '' : 's'})${penNote}`;
+
+    const approvalRequest = await queueApprovalRequest({
+      req,
+      module: 'swine',
+      action: 'create_batch',
+      actionLabel: 'Register Piglet Batch',
+      summary,
+      payload: {
+        ...req.body,
+        penCode,
+      },
+    });
+
+    return res.status(202).json({
+      pendingApproval: true,
+      approvalRequest,
+      message: 'Batch registration submitted for administrator approval.',
+    });
+  } catch (error) {
+    console.error("Error inserting batch:", error);
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+export async function executeUpdatePig(id, body = {}) {
+  const {
+    tagNumber, dateOfBirth, breed, weight,
+    penId, status, parityCount, creator, gender,
+    totalBornAlive, stillbornCount, mummyCount, category, isBatch,
+    sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date,
+    staffRestrictedUpdate,
+  } = body;
+
+  const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
+  const checkIsBatch = category === 'Piglet Batch' || isBatch === true;
+
+  if (staffRestrictedUpdate) {
     if (checkIsBatch) {
       const { data: existingBatch } = await supabaseAdmin
         .from('piglet_batches')
-        .select('is_archived, total_born_alive, current_count')
+        .select('batch_id, batch_tag, is_archived')
         .eq('batch_id', id)
         .maybeSingle();
-      if (existingBatch && existingBatch.is_archived) {
-        return res.status(400).json({ error: 'Cannot modify details of an archived piglet batch.' });
+      if (!existingBatch) {
+        throw createHttpError(404, 'Piglet batch not found.');
       }
-      existingBatchRecord = existingBatch;
-    } else {
-      const { data: existingPig } = await supabaseAdmin
-        .from('pigs')
-        .select('is_archived')
-        .eq('pig_id', id)
-        .maybeSingle();
-      if (existingPig && existingPig.is_archived) {
-        return res.status(400).json({ error: 'Cannot modify details of an archived swine record.' });
+      if (existingBatch.is_archived) {
+        throw createHttpError(400, 'Cannot modify details of an archived piglet batch.');
       }
-    }
-
-    // Resolve breed name → UUID (upsert if new, case-insensitive)
-    const finalBreedId = await resolveBreedId(breed, supabaseAdmin);
-
-    if (checkIsBatch) {
-      const updatePayload = {
-        batch_tag: tagNumber,
-        date_of_birth: dateOfBirth || null,
-        breed_id: finalBreedId,
-        pen_id: penId,
-        status: (status || 'suckling').toLowerCase(),
-      };
-      if (sourceOrigin || source_origin) updatePayload.source_origin = sourceOrigin || source_origin;
-      if (supplierName || supplier_name) updatePayload.supplier_name = supplierName || supplier_name;
-      if (arrivalDate || arrival_date) updatePayload.arrival_date = arrivalDate || arrival_date;
-      if (weight !== undefined && weight !== null && weight !== '') {
-        updatePayload.average_weight = parseFloat(weight);
+      const patch = {};
+      if (status) patch.status = String(status).toLowerCase();
+      if (weight !== undefined && weight !== null && weight !== '' && !isNaN(parseFloat(weight))) {
+        patch.average_weight = parseFloat(weight);
+      } else if (body.averageWeight !== undefined && body.averageWeight !== null && body.averageWeight !== '' && !isNaN(parseFloat(body.averageWeight))) {
+        patch.average_weight = parseFloat(body.averageWeight);
       }
-      if (req.body.currentCount !== undefined && req.body.currentCount !== null && req.body.currentCount !== '') {
-        const newCurrent = Math.max(0, parseInt(req.body.currentCount) || 0);
-        updatePayload.current_count = newCurrent;
-        if (newCurrent === 0) {
-          updatePayload.is_archived = true;
-          updatePayload.archived_at = new Date().toISOString();
-          updatePayload.archive_reasoning = 'Mortality - Total Batch Loss';
-        }
-      } else if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
-        const newBornAlive = parseInt(totalBornAlive) || 0;
-        updatePayload.total_born_alive = newBornAlive;
-        const prevBornAlive = Number(existingBatchRecord?.total_born_alive ?? newBornAlive);
-        const prevCurrent = Number(existingBatchRecord?.current_count ?? prevBornAlive);
-        const recordedLosses = Math.max(0, prevBornAlive - prevCurrent);
-        updatePayload.current_count = Math.max(0, newBornAlive - recordedLosses);
-      }
-      if (stillbornCount !== undefined && stillbornCount !== null && stillbornCount !== '') {
-        updatePayload.stillborn_count = parseInt(stillbornCount) || 0;
-      }
-      if (mummyCount !== undefined && mummyCount !== null && mummyCount !== '') {
-        updatePayload.mummy_count = parseInt(mummyCount) || 0;
-      }
-
       const { data, error } = await supabaseAdmin
         .from('piglet_batches')
-        .update(updatePayload)
+        .update(patch)
         .eq('batch_id', id)
         .select();
-
       if (error) throw error;
-      if (!data || data.length === 0) {
-        return res.status(404).json({ error: 'Piglet batch not found.' });
-      }
-
-      const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
+      await supabaseAdmin.from('activity_logs').insert({
         user_name: creatorName,
         user_email: creatorEmail,
         user_initials: creatorInitials,
         user_bg_color: 'bg-emerald-100 text-emerald-700',
         event_title: 'Batch Updated',
-        event_desc: `Updated piglet batch ${tagNumber}.`,
+        event_desc: `Updated piglet batch ${existingBatch.batch_tag || tagNumber}.`,
         status: 'SUCCESS'
-      });
-      if (logError) console.error("Error inserting activity log:", logError);
-
-      return res.json({ message: 'Piglet batch updated successfully', data: data[0] });
+      }).then(() => {}).catch(() => {});
+      return { message: 'Piglet batch updated successfully', data: data[0] };
     }
 
-    // If the pen is changing, confirm the new pen actually has room and follows gender/section limits
-    const { data: currentPig, error: currentPigError } = await supabaseAdmin
+    const { data: existingPig } = await supabaseAdmin
       .from('pigs')
-      .select('pen_id, gender, status')
+      .select('pig_id, pig_tag, is_archived')
       .eq('pig_id', id)
       .maybeSingle();
-
-    if (currentPigError) throw currentPigError;
-
-    if (currentPig && String(currentPig.pen_id) !== String(penId)) {
-      const { data: pen, error: penError } = await supabaseAdmin
-        .from('pens')
-        .select('pen_code, pen_type, max_capacity')
-        .eq('pen_id', penId)
-        .single();
-
-      if (penError || !pen) {
-        return res.status(400).json({ error: 'Selected pen not found or invalid.' });
-      }
-
-      const occ = await getPenOccupancy(penId);
-      const occupied = typeof occ === 'number' ? occ : occ.total;
-      const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
-
-      const pigGender = gender || currentPig?.gender || (category === 'Sow' ? 'Female' : category === 'Boar' ? 'Male' : '');
-      const isSow = (pigGender || '').toLowerCase().startsWith('f') || currentPig?.status?.toLowerCase() === 'sow';
-      const isBoar = (pigGender || '').toLowerCase().startsWith('m') || currentPig?.status?.toLowerCase() === 'boar';
-
-      if (isSow && (penSection === 'B' || penSection === 'BOAR')) {
-        return res.status(400).json({ error: `Cannot assign a female sow to boar pen ${pen.pen_code}.` });
-      }
-      if (isBoar && penSection !== 'B' && penSection !== 'BOAR') {
-        return res.status(400).json({ error: `Cannot assign a male boar to ${pen.pen_code}. Boars must be housed alone in a Boar pen.` });
-      }
-      const currentStatus = req.body.status?.toLowerCase() || currentPig?.status?.toLowerCase() || '';
-      const isSickOrQ = currentStatus === 'sick' || currentStatus === 'quarantine';
-      const isQPen = penSection === 'Q' || penSection === 'QUARANTINE';
-      if (!isSickOrQ && isQPen) {
-        return res.status(400).json({ error: `Cannot assign a ${currentStatus || 'Healthy'} pig to Quarantine pen ${pen.pen_code}. Quarantine pens are reserved for sick or quarantined pigs.` });
-      }
-      if (isSickOrQ && !isQPen) {
-        return res.status(400).json({ error: `Cannot assign a ${currentStatus} pig to ${pen.pen_code}. Sick or quarantined pigs must be placed in a Quarantine housing unit.` });
-      }
-      if (isSow && !isQPen && penSection !== 'S' && penSection !== 'SOW') {
-        return res.status(400).json({ error: `Cannot assign a female sow to ${pen.pen_code}. Sows must be housed in Sow/Farrowing pens.` });
-      }
-      if ((penSection === 'S' || penSection === 'SOW') && (occ.sowCount >= 1 || occ.pigCount >= 1)) {
-        return res.status(400).json({
-          error: `Sow pen ${pen.pen_code} already houses 1 sow. The farm can only house 1 sow per sow pen.`,
-        });
-      }
-      if ((penSection === 'B' || penSection === 'BOAR') && (occ.boarCount >= 1 || occ.pigCount >= 1)) {
-        return res.status(400).json({
-          error: `Boar pen ${pen.pen_code} already houses 1 boar. The farm can only house 1 boar per boar pen.`,
-        });
-      }
-      if (occupied >= (pen.max_capacity ?? 0)) {
-        return res.status(400).json({
-          error: `Pen ${pen.pen_code} is already at full capacity (${pen.max_capacity}). Please choose another pen.`,
-        });
-      }
+    if (!existingPig) {
+      throw createHttpError(404, 'Pig not found.');
     }
+    if (existingPig.is_archived) {
+      throw createHttpError(400, 'Cannot modify details of an archived swine record.');
+    }
+    const patch = {};
+    if (status) patch.status = String(status).toLowerCase();
+    if (weight !== undefined && weight !== null && weight !== '' && !isNaN(parseFloat(weight))) {
+      patch.weight = parseFloat(weight);
+    }
+    const { data, error } = await supabaseAdmin
+      .from('pigs')
+      .update(patch)
+      .eq('pig_id', id)
+      .select();
+    if (error) throw error;
+    await supabaseAdmin.from('activity_logs').insert({
+      user_name: creatorName,
+      user_email: creatorEmail,
+      user_initials: creatorInitials,
+      user_bg_color: 'bg-emerald-100 text-emerald-700',
+      event_title: 'Swine Record Updated',
+      event_desc: `Updated swine record for tag ${existingPig.pig_tag || tagNumber}.`,
+      status: 'SUCCESS'
+    }).then(() => {}).catch(() => {});
+    return { message: 'Pig updated successfully', data: data[0] };
+  }
 
+  if (!tagNumber || !breed || !penId) {
+    throw createHttpError(400, 'Tag number, breed, and pen are required.');
+  }
+
+  let existingBatchRecord = null;
+  if (checkIsBatch) {
+    const { data: existingBatch } = await supabaseAdmin
+      .from('piglet_batches')
+      .select('is_archived, total_born_alive, current_count')
+      .eq('batch_id', id)
+      .maybeSingle();
+    if (existingBatch && existingBatch.is_archived) {
+      throw createHttpError(400, 'Cannot modify details of an archived piglet batch.');
+    }
+    existingBatchRecord = existingBatch;
+  } else {
+    const { data: existingPig } = await supabaseAdmin
+      .from('pigs')
+      .select('is_archived')
+      .eq('pig_id', id)
+      .maybeSingle();
+    if (existingPig && existingPig.is_archived) {
+      throw createHttpError(400, 'Cannot modify details of an archived swine record.');
+    }
+  }
+
+  const finalBreedId = await resolveBreedId(breed, supabaseAdmin);
+
+  if (checkIsBatch) {
     const updatePayload = {
-      pig_tag: tagNumber,
+      batch_tag: tagNumber,
       date_of_birth: dateOfBirth || null,
       breed_id: finalBreedId,
-      weight: (weight !== undefined && weight !== null && weight !== '' && !isNaN(parseFloat(weight))) ? parseFloat(weight) : null,
       pen_id: penId,
-      status: (status || '').toLowerCase(),
+      status: (status || 'suckling').toLowerCase(),
     };
-    if (gender) updatePayload.gender = gender;
     if (sourceOrigin || source_origin) updatePayload.source_origin = sourceOrigin || source_origin;
     if (supplierName || supplier_name) updatePayload.supplier_name = supplierName || supplier_name;
     if (arrivalDate || arrival_date) updatePayload.arrival_date = arrivalDate || arrival_date;
-
-    if (parityCount !== undefined && parityCount !== '' && !Number.isNaN(Number(parityCount))) {
-      updatePayload.parity_count = Number(parityCount);
+    if (weight !== undefined && weight !== null && weight !== '') {
+      updatePayload.average_weight = parseFloat(weight);
+    }
+    if (body.currentCount !== undefined && body.currentCount !== null && body.currentCount !== '') {
+      const newCurrent = Math.max(0, parseInt(body.currentCount) || 0);
+      updatePayload.current_count = newCurrent;
+      if (newCurrent === 0) {
+        updatePayload.is_archived = true;
+        updatePayload.archived_at = new Date().toISOString();
+        updatePayload.archive_reasoning = 'Mortality - Total Batch Loss';
+      }
+    } else if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
+      const newBornAlive = parseInt(totalBornAlive) || 0;
+      updatePayload.total_born_alive = newBornAlive;
+      const prevBornAlive = Number(existingBatchRecord?.total_born_alive ?? newBornAlive);
+      const prevCurrent = Number(existingBatchRecord?.current_count ?? prevBornAlive);
+      const recordedLosses = Math.max(0, prevBornAlive - prevCurrent);
+      updatePayload.current_count = Math.max(0, newBornAlive - recordedLosses);
+    }
+    if (stillbornCount !== undefined && stillbornCount !== null && stillbornCount !== '') {
+      updatePayload.stillborn_count = parseInt(stillbornCount) || 0;
+    }
+    if (mummyCount !== undefined && mummyCount !== null && mummyCount !== '') {
+      updatePayload.mummy_count = parseInt(mummyCount) || 0;
     }
 
     const { data, error } = await supabaseAdmin
-      .from('pigs')
+      .from('piglet_batches')
       .update(updatePayload)
-      .eq('pig_id', id)
+      .eq('batch_id', id)
       .select();
 
     if (error) throw error;
     if (!data || data.length === 0) {
-      return res.status(404).json({ error: 'Pig not found.' });
+      throw createHttpError(404, 'Piglet batch not found.');
     }
 
     const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
@@ -1198,21 +1264,297 @@ router.put('/api/pigs/:id', async (req, res) => {
       user_email: creatorEmail,
       user_initials: creatorInitials,
       user_bg_color: 'bg-emerald-100 text-emerald-700',
-      event_title: 'Swine Record Updated',
-      event_desc: `Updated swine record for tag ${tagNumber}.`,
+      event_title: 'Batch Updated',
+      event_desc: `Updated piglet batch ${tagNumber}.`,
       status: 'SUCCESS'
     });
     if (logError) console.error("Error inserting activity log:", logError);
 
-    res.json({ message: 'Pig updated successfully', data: data[0] });
+    return { message: 'Piglet batch updated successfully', data: data[0] };
+  }
+
+  const { data: currentPig, error: currentPigError } = await supabaseAdmin
+    .from('pigs')
+    .select('pen_id, gender, status')
+    .eq('pig_id', id)
+    .maybeSingle();
+
+  if (currentPigError) throw currentPigError;
+
+  if (currentPig && String(currentPig.pen_id) !== String(penId)) {
+    const { data: pen, error: penError } = await supabaseAdmin
+      .from('pens')
+      .select('pen_code, pen_type, max_capacity')
+      .eq('pen_id', penId)
+      .single();
+
+    if (penError || !pen) {
+      throw createHttpError(400, 'Selected pen not found or invalid.');
+    }
+
+    const occ = await getPenOccupancy(penId);
+    const occupied = typeof occ === 'number' ? occ : occ.total;
+    const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
+
+    const pigGender = gender || currentPig?.gender || (category === 'Sow' ? 'Female' : category === 'Boar' ? 'Male' : '');
+    const isSow = (pigGender || '').toLowerCase().startsWith('f') || currentPig?.status?.toLowerCase() === 'sow';
+    const isBoar = (pigGender || '').toLowerCase().startsWith('m') || currentPig?.status?.toLowerCase() === 'boar';
+
+    if (isSow && (penSection === 'B' || penSection === 'BOAR')) {
+      throw createHttpError(400, `Cannot assign a female sow to boar pen ${pen.pen_code}.`);
+    }
+    if (isBoar && penSection !== 'B' && penSection !== 'BOAR') {
+      throw createHttpError(400, `Cannot assign a male boar to ${pen.pen_code}. Boars must be housed alone in a Boar pen.`);
+    }
+    const currentStatus = body.status?.toLowerCase() || currentPig?.status?.toLowerCase() || '';
+    const isSickOrQ = currentStatus === 'sick' || currentStatus === 'quarantine';
+    const isQPen = penSection === 'Q' || penSection === 'QUARANTINE';
+    if (!isSickOrQ && isQPen) {
+      throw createHttpError(400, `Cannot assign a ${currentStatus || 'Healthy'} pig to Quarantine pen ${pen.pen_code}. Quarantine pens are reserved for sick or quarantined pigs.`);
+    }
+    if (isSickOrQ && !isQPen) {
+      throw createHttpError(400, `Cannot assign a ${currentStatus} pig to ${pen.pen_code}. Sick or quarantined pigs must be placed in a Quarantine housing unit.`);
+    }
+    if (isSow && !isQPen && penSection !== 'S' && penSection !== 'SOW') {
+      throw createHttpError(400, `Cannot assign a female sow to ${pen.pen_code}. Sows must be housed in Sow/Farrowing pens.`);
+    }
+    if ((penSection === 'S' || penSection === 'SOW') && (occ.sowCount >= 1 || occ.pigCount >= 1)) {
+      throw createHttpError(400, `Sow pen ${pen.pen_code} already houses 1 sow. The farm can only house 1 sow per sow pen.`);
+    }
+    if ((penSection === 'B' || penSection === 'BOAR') && (occ.boarCount >= 1 || occ.pigCount >= 1)) {
+      throw createHttpError(400, `Boar pen ${pen.pen_code} already houses 1 boar. The farm can only house 1 boar per boar pen.`);
+    }
+    if (occupied >= (pen.max_capacity ?? 0)) {
+      throw createHttpError(400, `Pen ${pen.pen_code} is already at full capacity (${pen.max_capacity}). Please choose another pen.`);
+    }
+  }
+
+  const updatePayload = {
+    pig_tag: tagNumber,
+    date_of_birth: dateOfBirth || null,
+    breed_id: finalBreedId,
+    weight: (weight !== undefined && weight !== null && weight !== '' && !isNaN(parseFloat(weight))) ? parseFloat(weight) : null,
+    pen_id: penId,
+    status: (status || '').toLowerCase(),
+  };
+  if (gender) updatePayload.gender = gender;
+  if (sourceOrigin || source_origin) updatePayload.source_origin = sourceOrigin || source_origin;
+  if (supplierName || supplier_name) updatePayload.supplier_name = supplierName || supplier_name;
+  if (arrivalDate || arrival_date) updatePayload.arrival_date = arrivalDate || arrival_date;
+
+  if (parityCount !== undefined && parityCount !== '' && !Number.isNaN(Number(parityCount))) {
+    updatePayload.parity_count = Number(parityCount);
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('pigs')
+    .update(updatePayload)
+    .eq('pig_id', id)
+    .select();
+
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw createHttpError(404, 'Pig not found.');
+  }
+
+  const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
+    user_name: creatorName,
+    user_email: creatorEmail,
+    user_initials: creatorInitials,
+    user_bg_color: 'bg-emerald-100 text-emerald-700',
+    event_title: 'Swine Record Updated',
+    event_desc: `Updated swine record for tag ${tagNumber}.`,
+    status: 'SUCCESS'
+  });
+  if (logError) console.error("Error inserting activity log:", logError);
+
+  return { message: 'Pig updated successfully', data: data[0] };
+}
+
+// PUT /api/pigs/:id - Update pig details or piglet batch
+router.put('/api/pigs/:id', verifyAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (req.isAdmin) {
+      const result = await executeUpdatePig(id, {
+        ...req.body,
+        creator: req.body.creator || req.userName,
+      });
+      return res.json(result);
+    }
+
+    const checkIsBatch = req.body.category === 'Piglet Batch' || req.body.isBatch === true;
+
+    if (checkIsBatch) {
+      const { data: existingBatch, error: bErr } = await supabaseAdmin
+        .from('piglet_batches')
+        .select('*, breeds(name), pens(pen_code)')
+        .eq('batch_id', id)
+        .maybeSingle();
+
+      if (bErr) throw bErr;
+      if (!existingBatch) {
+        return res.status(404).json({ error: 'Piglet batch not found.' });
+      }
+      if (existingBatch.is_archived) {
+        return res.status(400).json({ error: 'Cannot modify details of an archived piglet batch.' });
+      }
+
+      const prevWeight = existingBatch.average_weight !== null && existingBatch.average_weight !== undefined
+        ? Number(existingBatch.average_weight)
+        : null;
+      const rawWeight = req.body.averageWeight ?? req.body.weight;
+      const nextWeight = (rawWeight !== undefined && rawWeight !== null && rawWeight !== '' && !isNaN(parseFloat(rawWeight)))
+        ? parseFloat(rawWeight)
+        : prevWeight;
+
+      const prevStatus = String(existingBatch.status || 'suckling').toLowerCase();
+      const nextStatus = req.body.status ? String(req.body.status).trim().toLowerCase() : prevStatus;
+
+      const weightChanged = prevWeight !== nextWeight;
+      const statusChanged = prevStatus !== nextStatus;
+      if (!weightChanged && !statusChanged) {
+        return res.status(400).json({
+          error: 'No weight or status changes were detected. Staff can only propose weight and status updates.'
+        });
+      }
+
+      const changeParts = [];
+      if (weightChanged) changeParts.push(`avg weight ${prevWeight ?? 'unset'} kg to ${nextWeight ?? 'unset'} kg`);
+      if (statusChanged) changeParts.push(`status ${prevStatus} to ${nextStatus}`);
+
+      const sanitizedPayload = {
+        tagNumber: existingBatch.batch_tag,
+        batchTag: existingBatch.batch_tag,
+        dateOfBirth: existingBatch.date_of_birth || null,
+        breed: existingBatch.breeds?.name || existingBatch.breed_id || req.body.breed || '',
+        penId: existingBatch.pen_id,
+        penCode: existingBatch.pens?.pen_code || '',
+        sowId: existingBatch.sow_id || null,
+        weight: nextWeight,
+        averageWeight: nextWeight,
+        status: nextStatus,
+        totalBornAlive: existingBatch.total_born_alive,
+        currentCount: existingBatch.current_count,
+        stillbornCount: existingBatch.stillborn_count,
+        mummyCount: existingBatch.mummy_count,
+        sourceOrigin: existingBatch.source_origin || 'born_in_farm',
+        supplierName: existingBatch.supplier_name || null,
+        arrivalDate: existingBatch.arrival_date || null,
+        category: 'Piglet Batch',
+        isBatch: true,
+        viaUnifiedUpdate: true,
+        staffRestrictedUpdate: true,
+      };
+
+      const approvalRequest = await queueApprovalRequest({
+        req,
+        module: 'swine',
+        action: 'update_batch',
+        actionLabel: 'Update Piglet Batch',
+        summary: `Update batch ${existingBatch.batch_tag}: ${changeParts.join(', ')}`,
+        targetId: id,
+        payload: sanitizedPayload,
+        beforeSnapshot: {
+          tag: existingBatch.batch_tag,
+          penCode: existingBatch.pens?.pen_code || '',
+          weight: prevWeight,
+          status: prevStatus,
+        },
+      });
+
+      return res.status(202).json({
+        pendingApproval: true,
+        approvalRequest,
+        message: 'Batch update submitted for administrator approval.',
+      });
+    }
+
+    const { data: existingPig, error: pErr } = await supabaseAdmin
+      .from('pigs')
+      .select('*, breeds(name), pens(pen_code)')
+      .eq('pig_id', id)
+      .maybeSingle();
+
+    if (pErr) throw pErr;
+    if (!existingPig) {
+      return res.status(404).json({ error: 'Pig not found.' });
+    }
+    if (existingPig.is_archived) {
+      return res.status(400).json({ error: 'Cannot modify details of an archived swine record.' });
+    }
+
+    const prevWeight = existingPig.weight !== null && existingPig.weight !== undefined
+      ? Number(existingPig.weight)
+      : null;
+    const rawWeight = req.body.weight;
+    const nextWeight = (rawWeight !== undefined && rawWeight !== null && rawWeight !== '' && !isNaN(parseFloat(rawWeight)))
+      ? parseFloat(rawWeight)
+      : prevWeight;
+
+    const prevStatus = String(existingPig.status || 'healthy').toLowerCase();
+    const nextStatus = req.body.status ? String(req.body.status).trim().toLowerCase() : prevStatus;
+
+    const weightChanged = prevWeight !== nextWeight;
+    const statusChanged = prevStatus !== nextStatus;
+    if (!weightChanged && !statusChanged) {
+      return res.status(400).json({
+        error: 'No weight or status changes were detected. Staff can only propose weight and status updates.'
+      });
+    }
+
+    const changeParts = [];
+    if (weightChanged) changeParts.push(`weight ${prevWeight ?? 'unset'} kg to ${nextWeight ?? 'unset'} kg`);
+    if (statusChanged) changeParts.push(`status ${prevStatus} to ${nextStatus}`);
+
+    const sanitizedPayload = {
+      tagNumber: existingPig.pig_tag,
+      dateOfBirth: existingPig.date_of_birth || null,
+      breed: existingPig.breeds?.name || existingPig.breed_id || req.body.breed || '',
+      penId: existingPig.pen_id,
+      penCode: existingPig.pens?.pen_code || '',
+      gender: existingPig.gender,
+      parityCount: existingPig.parity_count,
+      weight: nextWeight,
+      status: nextStatus,
+      sourceOrigin: existingPig.source_origin || 'born_in_farm',
+      supplierName: existingPig.supplier_name || null,
+      arrivalDate: existingPig.arrival_date || null,
+      category: (existingPig.gender || '').toLowerCase().startsWith('f') ? 'Sow' : 'Boar',
+      isBatch: false,
+      staffRestrictedUpdate: true,
+    };
+
+    const approvalRequest = await queueApprovalRequest({
+      req,
+      module: 'swine',
+      action: 'update_pig',
+      actionLabel: 'Update Swine Record',
+      summary: `Update swine #${existingPig.pig_tag}: ${changeParts.join(', ')}`,
+      targetId: id,
+      payload: sanitizedPayload,
+      beforeSnapshot: {
+        tag: existingPig.pig_tag,
+        penCode: existingPig.pens?.pen_code || '',
+        weight: prevWeight,
+        status: prevStatus,
+      },
+    });
+
+    return res.status(202).json({
+      pendingApproval: true,
+      approvalRequest,
+      message: 'Swine update submitted for administrator approval.',
+    });
   } catch (error) {
     console.error('Error updating pig:', error.message);
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
 // PATCH /api/pigs/:id/archive – soft-archive a pig or piglet batch
-router.patch('/api/pigs/:id/archive', async (req, res) => {
+router.patch('/api/pigs/:id/archive', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { creator, archive_reasoning } = req.body;
@@ -1278,7 +1620,7 @@ router.patch('/api/pigs/:id/archive', async (req, res) => {
 });
 
 // POST /api/pigs/batch/:batchId/promote - Promote 1 pig from batch to breeding herd (Gilt/Boar)
-router.post('/api/pigs/batch/:batchId/promote', async (req, res) => {
+router.post('/api/pigs/batch/:batchId/promote', verifyAdmin, async (req, res) => {
   try {
     const { batchId } = req.params;
     const { tagNumber, gender, penId, weight, dateOfBirth, creator } = req.body;
@@ -1452,7 +1794,7 @@ router.post('/api/pigs/batch/:batchId/promote', async (req, res) => {
 });
 
 // PATCH /api/pigs/:id/unarchive – unarchive a pig or piglet batch
-router.patch('/api/pigs/:id/unarchive', async (req, res) => {
+router.patch('/api/pigs/:id/unarchive', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { creator } = req.body;
@@ -1571,157 +1913,256 @@ router.patch('/api/pigs/:id/unarchive', async (req, res) => {
   }
 });
 
-// PUT /api/pigs/batch/:id - Dedicated update endpoint for piglet batches
-router.put('/api/pigs/batch/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      batchTag, tagNumber, dateOfBirth, breed, averageWeight, weight,
-      penId, sowId, status, creator,
-      totalBornAlive, stillbornCount, mummyCount,
-      sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date
-    } = req.body;
+export async function executeUpdateBatch(id, body = {}) {
+  if (body.viaUnifiedUpdate || body.staffRestrictedUpdate) {
+    return executeUpdatePig(id, { ...body, isBatch: true, category: 'Piglet Batch' });
+  }
 
-    const resolvedTag = batchTag || tagNumber;
-    const resolvedWeight = averageWeight ?? weight;
-    const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
+  const {
+    batchTag, tagNumber, dateOfBirth, breed, averageWeight, weight,
+    penId, sowId, status, creator,
+    totalBornAlive, stillbornCount, mummyCount,
+    sourceOrigin, source_origin, supplierName, supplier_name, arrivalDate, arrival_date
+  } = body;
 
-    if (!resolvedTag || !breed || !penId) {
-      return res.status(400).json({ error: 'Batch tag, breed, and pen are required.' });
+  const resolvedTag = batchTag || tagNumber;
+  const resolvedWeight = averageWeight ?? weight;
+  const { name: creatorName, email: creatorEmail, initials: creatorInitials } = getCreatorDetails(creator);
+
+  if (!resolvedTag || !breed || !penId) {
+    throw createHttpError(400, 'Batch tag, breed, and pen are required.');
+  }
+
+  const { data: existingBatch } = await supabaseAdmin
+    .from('piglet_batches')
+    .select('is_archived, current_count, pen_id')
+    .eq('batch_id', id)
+    .maybeSingle();
+  if (existingBatch && existingBatch.is_archived) {
+    throw createHttpError(400, 'Cannot modify details of an archived piglet batch.');
+  }
+
+  if (penId) {
+    const { data: pen, error: penError } = await supabase
+      .from('pens')
+      .select('pen_code, max_capacity, pen_type')
+      .eq('pen_id', penId)
+      .single();
+    if (penError || !pen) throw createHttpError(400, 'Selected pen not found.');
+
+    const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
+    if (penSection === 'B' || penSection === 'BOAR') {
+      throw createHttpError(400, `Piglet batches cannot be assigned to Boar pen ${pen.pen_code}.`);
     }
 
-    const { data: existingBatch } = await supabaseAdmin
+    const occupied = await getPenOccupancy(penId);
+    const currentOccupied = typeof occupied === 'number' ? occupied : occupied.total;
+    const maxCap = pen.max_capacity ?? 20;
+
+    const isSamePen = existingBatch && String(existingBatch.pen_id) === String(penId);
+    const currentBatchCountInPen = isSamePen ? (existingBatch.current_count || 0) : 0;
+    const effectiveOccupied = currentOccupied - currentBatchCountInPen;
+    const remaining = Math.max(0, maxCap - effectiveOccupied);
+
+    const incomingCount = parseInt(body.currentCount ?? body.totalBornAlive) || (existingBatch ? existingBatch.current_count : 0);
+    if (incomingCount > remaining) {
+      throw createHttpError(
+        400,
+        `Pen ${pen.pen_code} only has ${remaining} slot(s) left (capacity ${maxCap}), but this batch has ${incomingCount} piglet(s).`
+      );
+    }
+
+    const statusStr = (status || '').toLowerCase();
+    let ageInDays = null;
+    if (dateOfBirth) {
+      ageInDays = Math.floor((Date.now() - new Date(dateOfBirth).getTime()) / (1000 * 60 * 60 * 24));
+    }
+    const isBatchWeaned = statusStr === 'weaned' || (statusStr !== 'suckling' && ageInDays !== null && ageInDays > 28);
+    const isBatchNursing = statusStr === 'suckling' || (statusStr !== 'weaned' && ageInDays !== null && ageInDays <= 28);
+
+    if (sowId && penId && isBatchNursing) {
+      const { data: motherSow } = await supabase.from('pigs').select('pen_id, pig_tag').eq('pig_id', sowId).single();
+      if (motherSow && motherSow.pen_id && String(motherSow.pen_id) !== String(penId)) {
+        throw createHttpError(
+          400,
+          `Piglet batch is linked to Mother Sow #${motherSow.pig_tag}, but assigned to a different pen (${pen.pen_code}). Nursing piglet batches must be placed in their Mother Sow's pen.`
+        );
+      }
+    }
+
+    if (dateOfBirth) {
+      if (ageInDays <= 28 && statusStr === 'weaned') {
+        throw createHttpError(400, `Piglet batches <= 28 days old (${ageInDays} days old) cannot have status "weaned" (must be suckling).`);
+      }
+      if (ageInDays > 28 && statusStr === 'suckling') {
+        throw createHttpError(400, `Piglet batches > 28 days old (${ageInDays} days old) cannot have status "suckling" (must be weaned).`);
+      }
+
+      if (isBatchNursing && penSection !== 'S' && penSection !== 'SOW') {
+        throw createHttpError(400, `Nursing piglet batches (<=28 days old) must be assigned to a Sow/Farrowing pen (${pen.pen_code} is ${penSection}).`);
+      }
+      if (isBatchWeaned && penSection !== 'W' && penSection !== 'WEANED') {
+        throw createHttpError(400, `Weaned piglet batches (>28 days old) must be assigned to a Weaned/Fattening pen (${pen.pen_code} is ${penSection}).`);
+      }
+    }
+  }
+
+  const finalBreedId = await resolveBreedId(breed, supabaseAdmin);
+
+  const updatePayload = {
+    batch_tag: resolvedTag.trim(),
+    date_of_birth: dateOfBirth || null,
+    breed_id: finalBreedId,
+    pen_id: penId,
+    status: (status || 'suckling').toLowerCase(),
+  };
+  if (sourceOrigin || source_origin) updatePayload.source_origin = sourceOrigin || source_origin;
+  if (supplierName || supplier_name) updatePayload.supplier_name = supplierName || supplier_name;
+  if (arrivalDate || arrival_date) updatePayload.arrival_date = arrivalDate || arrival_date;
+  if (sowId !== undefined) updatePayload.sow_id = sowId || null;
+  if (resolvedWeight !== undefined && resolvedWeight !== null && resolvedWeight !== '') {
+    updatePayload.average_weight = parseFloat(resolvedWeight);
+  }
+  if (body.currentCount !== undefined && body.currentCount !== null && body.currentCount !== '') {
+    const newCurrent = Math.max(0, parseInt(body.currentCount) || 0);
+    updatePayload.current_count = newCurrent;
+    if (newCurrent === 0) {
+      updatePayload.is_archived = true;
+      updatePayload.archived_at = new Date().toISOString();
+      updatePayload.archive_reasoning = 'Mortality - Total Batch Loss';
+    }
+  } else if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
+    updatePayload.total_born_alive = parseInt(totalBornAlive) || 0;
+  }
+  if (stillbornCount !== undefined && stillbornCount !== null && stillbornCount !== '') {
+    updatePayload.stillborn_count = parseInt(stillbornCount) || 0;
+  }
+  if (mummyCount !== undefined && mummyCount !== null && mummyCount !== '') {
+    updatePayload.mummy_count = parseInt(mummyCount) || 0;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('piglet_batches')
+    .update(updatePayload)
+    .eq('batch_id', id)
+    .select();
+
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw createHttpError(404, 'Piglet batch not found.');
+  }
+
+  const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
+    user_name: creatorName,
+    user_email: creatorEmail,
+    user_initials: creatorInitials,
+    user_bg_color: 'bg-emerald-100 text-emerald-700',
+    event_title: 'Batch Updated',
+    event_desc: `Updated piglet batch ${resolvedTag}.`,
+    status: 'SUCCESS'
+  });
+  if (logError) console.error("Error inserting activity log:", logError);
+
+  return { message: 'Piglet batch updated successfully', data };
+}
+
+// PUT /api/pigs/batch/:id - Dedicated update endpoint for piglet batches
+router.put('/api/pigs/batch/:id', verifyAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (req.isAdmin) {
+      const result = await executeUpdateBatch(id, {
+        ...req.body,
+        creator: req.body.creator || req.userName,
+      });
+      return res.json(result);
+    }
+
+    const { data: existingBatch, error: bErr } = await supabaseAdmin
       .from('piglet_batches')
-      .select('is_archived, current_count, pen_id')
+      .select('*, breeds(name), pens(pen_code)')
       .eq('batch_id', id)
       .maybeSingle();
-    if (existingBatch && existingBatch.is_archived) {
+
+    if (bErr) throw bErr;
+    if (!existingBatch) {
+      return res.status(404).json({ error: 'Piglet batch not found.' });
+    }
+    if (existingBatch.is_archived) {
       return res.status(400).json({ error: 'Cannot modify details of an archived piglet batch.' });
     }
 
-    if (penId) {
-      const { data: pen, error: penError } = await supabase
-        .from('pens')
-        .select('pen_code, max_capacity, pen_type')
-        .eq('pen_id', penId)
-        .single();
-      if (penError) throw penError;
+    const prevWeight = existingBatch.average_weight !== null && existingBatch.average_weight !== undefined
+      ? Number(existingBatch.average_weight)
+      : null;
+    const rawWeight = req.body.averageWeight ?? req.body.weight;
+    const nextWeight = (rawWeight !== undefined && rawWeight !== null && rawWeight !== '' && !isNaN(parseFloat(rawWeight)))
+      ? parseFloat(rawWeight)
+      : prevWeight;
 
-      const penSection = pen.pen_type || (pen.pen_code && pen.pen_code.toUpperCase().startsWith('S') ? 'S' : pen.pen_code && pen.pen_code.toUpperCase().startsWith('B') ? 'B' : '');
-      if (penSection === 'B' || penSection === 'BOAR') {
-        return res.status(400).json({ error: `Piglet batches cannot be assigned to Boar pen ${pen.pen_code}.` });
-      }
+    const prevStatus = String(existingBatch.status || 'suckling').toLowerCase();
+    const nextStatus = req.body.status ? String(req.body.status).trim().toLowerCase() : prevStatus;
 
-      const occupied = await getPenOccupancy(penId);
-      const currentOccupied = typeof occupied === 'number' ? occupied : occupied.total;
-      const maxCap = pen.max_capacity ?? 20;
-
-      const isSamePen = existingBatch && String(existingBatch.pen_id) === String(penId);
-      const currentBatchCountInPen = isSamePen ? (existingBatch.current_count || 0) : 0;
-      const effectiveOccupied = currentOccupied - currentBatchCountInPen;
-      const remaining = Math.max(0, maxCap - effectiveOccupied);
-
-      const incomingCount = parseInt(req.body.currentCount ?? req.body.totalBornAlive) || (existingBatch ? existingBatch.current_count : 0);
-      if (incomingCount > remaining) {
-        return res.status(400).json({
-          error: `Pen ${pen.pen_code} only has ${remaining} slot(s) left (capacity ${maxCap}), but this batch has ${incomingCount} piglet(s).`,
-        });
-      }
-
-      const statusStr = (status || '').toLowerCase();
-      let ageInDays = null;
-      if (dateOfBirth) {
-        ageInDays = Math.floor((Date.now() - new Date(dateOfBirth).getTime()) / (1000 * 60 * 60 * 24));
-      }
-      const isBatchWeaned = statusStr === 'weaned' || (statusStr !== 'suckling' && ageInDays !== null && ageInDays > 28);
-      const isBatchNursing = statusStr === 'suckling' || (statusStr !== 'weaned' && ageInDays !== null && ageInDays <= 28);
-
-      if (sowId && penId && isBatchNursing) {
-        const { data: motherSow } = await supabase.from('pigs').select('pen_id, pig_tag').eq('pig_id', sowId).single();
-        if (motherSow && motherSow.pen_id && String(motherSow.pen_id) !== String(penId)) {
-          return res.status(400).json({
-            error: `Piglet batch is linked to Mother Sow #${motherSow.pig_tag}, but assigned to a different pen (${pen.pen_code}). Nursing piglet batches must be placed in their Mother Sow's pen.`,
-          });
-        }
-      }
-
-      if (dateOfBirth) {
-        if (ageInDays <= 28 && statusStr === 'weaned') {
-          return res.status(400).json({ error: `Piglet batches <= 28 days old (${ageInDays} days old) cannot have status "weaned" (must be suckling).` });
-        }
-        if (ageInDays > 28 && statusStr === 'suckling') {
-          return res.status(400).json({ error: `Piglet batches > 28 days old (${ageInDays} days old) cannot have status "suckling" (must be weaned).` });
-        }
-
-        if (isBatchNursing && penSection !== 'S' && penSection !== 'SOW') {
-          return res.status(400).json({ error: `Nursing piglet batches (<=28 days old) must be assigned to a Sow/Farrowing pen (${pen.pen_code} is ${penSection}).` });
-        }
-        if (isBatchWeaned && penSection !== 'W' && penSection !== 'WEANED') {
-          return res.status(400).json({ error: `Weaned piglet batches (>28 days old) must be assigned to a Weaned/Fattening pen (${pen.pen_code} is ${penSection}).` });
-        }
-      }
+    const weightChanged = prevWeight !== nextWeight;
+    const statusChanged = prevStatus !== nextStatus;
+    if (!weightChanged && !statusChanged) {
+      return res.status(400).json({
+        error: 'No weight or status changes were detected. Staff can only propose weight and status updates.'
+      });
     }
 
-    const finalBreedId = await resolveBreedId(breed, supabaseAdmin);
+    const changeParts = [];
+    if (weightChanged) changeParts.push(`avg weight ${prevWeight ?? 'unset'} kg to ${nextWeight ?? 'unset'} kg`);
+    if (statusChanged) changeParts.push(`status ${prevStatus} to ${nextStatus}`);
 
-    const updatePayload = {
-      batch_tag: resolvedTag.trim(),
-      date_of_birth: dateOfBirth || null,
-      breed_id: finalBreedId,
-      pen_id: penId,
-      status: (status || 'suckling').toLowerCase(),
+    const sanitizedPayload = {
+      batchTag: existingBatch.batch_tag,
+      tagNumber: existingBatch.batch_tag,
+      dateOfBirth: existingBatch.date_of_birth || null,
+      breed: existingBatch.breeds?.name || existingBatch.breed_id || req.body.breed || '',
+      penId: existingBatch.pen_id,
+      penCode: existingBatch.pens?.pen_code || '',
+      sowId: existingBatch.sow_id || null,
+      weight: nextWeight,
+      averageWeight: nextWeight,
+      status: nextStatus,
+      totalBornAlive: existingBatch.total_born_alive,
+      currentCount: existingBatch.current_count,
+      stillbornCount: existingBatch.stillborn_count,
+      mummyCount: existingBatch.mummy_count,
+      sourceOrigin: existingBatch.source_origin || 'born_in_farm',
+      supplierName: existingBatch.supplier_name || null,
+      arrivalDate: existingBatch.arrival_date || null,
+      category: 'Piglet Batch',
+      isBatch: true,
+      staffRestrictedUpdate: true,
     };
-    if (sourceOrigin || source_origin) updatePayload.source_origin = sourceOrigin || source_origin;
-    if (supplierName || supplier_name) updatePayload.supplier_name = supplierName || supplier_name;
-    if (arrivalDate || arrival_date) updatePayload.arrival_date = arrivalDate || arrival_date;
-    if (sowId !== undefined) updatePayload.sow_id = sowId || null;
-    if (resolvedWeight !== undefined && resolvedWeight !== null && resolvedWeight !== '') {
-      updatePayload.average_weight = parseFloat(resolvedWeight);
-    }
-    if (req.body.currentCount !== undefined && req.body.currentCount !== null && req.body.currentCount !== '') {
-      const newCurrent = Math.max(0, parseInt(req.body.currentCount) || 0);
-      updatePayload.current_count = newCurrent;
-      if (newCurrent === 0) {
-        updatePayload.is_archived = true;
-        updatePayload.archived_at = new Date().toISOString();
-        updatePayload.archive_reasoning = 'Mortality - Total Batch Loss';
-      }
-    } else if (totalBornAlive !== undefined && totalBornAlive !== null && totalBornAlive !== '') {
-      updatePayload.total_born_alive = parseInt(totalBornAlive) || 0;
-    }
-    if (stillbornCount !== undefined && stillbornCount !== null && stillbornCount !== '') {
-      updatePayload.stillborn_count = parseInt(stillbornCount) || 0;
-    }
-    if (mummyCount !== undefined && mummyCount !== null && mummyCount !== '') {
-      updatePayload.mummy_count = parseInt(mummyCount) || 0;
-    }
 
-    const { data, error } = await supabaseAdmin
-      .from('piglet_batches')
-      .update(updatePayload)
-      .eq('batch_id', id)
-      .select();
-
-    if (error) throw error;
-    if (!data || data.length === 0) {
-      return res.status(404).json({ error: 'Piglet batch not found.' });
-    }
-
-    const { error: logError } = await supabaseAdmin.from('activity_logs').insert({
-      user_name: creatorName,
-      user_email: creatorEmail,
-      user_initials: creatorInitials,
-      user_bg_color: 'bg-emerald-100 text-emerald-700',
-      event_title: 'Batch Updated',
-      event_desc: `Updated piglet batch ${resolvedTag}.`,
-      status: 'SUCCESS'
+    const approvalRequest = await queueApprovalRequest({
+      req,
+      module: 'swine',
+      action: 'update_batch',
+      actionLabel: 'Update Piglet Batch',
+      summary: `Update batch ${existingBatch.batch_tag}: ${changeParts.join(', ')}`,
+      targetId: id,
+      payload: sanitizedPayload,
+      beforeSnapshot: {
+        tag: existingBatch.batch_tag,
+        penCode: existingBatch.pens?.pen_code || '',
+        weight: prevWeight,
+        status: prevStatus,
+      },
     });
-    if (logError) console.error("Error inserting activity log:", logError);
 
-    res.json({ message: 'Piglet batch updated successfully', data });
+    return res.status(202).json({
+      pendingApproval: true,
+      approvalRequest,
+      message: 'Batch update submitted for administrator approval.',
+    });
   } catch (error) {
     console.error('Error updating batch:', error.message);
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 

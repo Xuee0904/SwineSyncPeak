@@ -18,6 +18,7 @@ import healthRouter from './routes/health.js';
 import breedingLogsRouter from './routes/breedingLogs.js';
 import growthRouter from './routes/growth.js';
 import transactionsRouter from './routes/transactions.js';
+import approvalsRouter from './routes/approvals.js';
 
 const app = express();
 
@@ -72,6 +73,7 @@ app.use(healthRouter);
 app.use(breedingLogsRouter);
 app.use(growthRouter);
 app.use(transactionsRouter);
+app.use(approvalsRouter);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', () => {

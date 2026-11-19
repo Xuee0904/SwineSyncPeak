@@ -1,5 +1,6 @@
 import express from 'express';
 import { supabase, supabaseAdmin } from '../supabaseClient.js';
+import { verifyAuth, verifyAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -24,7 +25,7 @@ function getCreatorDetails(creator) {
 }
 
 // GET /api/sows — lightweight list of active sows for sow_id dropdown
-router.get('/api/sows', async (req, res) => {
+router.get('/api/sows', verifyAuth, async (req, res) => {
   try {
     const { excludePregnant } = req.query;
     const db = supabaseAdmin || supabase;
@@ -57,7 +58,7 @@ router.get('/api/sows', async (req, res) => {
 });
 
 // GET /api/boars — lightweight list of active boars for boar_id dropdown
-router.get('/api/boars', async (req, res) => {
+router.get('/api/boars', verifyAuth, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
     const { data, error } = await db
@@ -83,7 +84,7 @@ router.get('/api/boars', async (req, res) => {
 });
 
 // GET /api/breeding-logs/by-sow/:sow_id — fetch all breeding records for a specific sow
-router.get('/api/breeding-logs/by-sow/:sow_id', async (req, res) => {
+router.get('/api/breeding-logs/by-sow/:sow_id', verifyAuth, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
     const { sow_id } = req.params;
@@ -138,7 +139,7 @@ router.get('/api/breeding-logs/by-sow/:sow_id', async (req, res) => {
 });
 
 // GET /api/breeding-logs — fetch all breeding log records for the dashboard
-router.get('/api/breeding-logs', async (req, res) => {
+router.get('/api/breeding-logs', verifyAuth, async (req, res) => {
 
   try {
     const db = supabaseAdmin || supabase;
@@ -258,7 +259,7 @@ router.get('/api/breeding-logs', async (req, res) => {
 });
 
 // POST /api/breeding-logs — create a new breeding log record & record activity log
-router.post('/api/breeding-logs', async (req, res) => {
+router.post('/api/breeding-logs', verifyAdmin, async (req, res) => {
   try {
     const {
       breeding_method,
@@ -352,7 +353,7 @@ router.post('/api/breeding-logs', async (req, res) => {
 });
 
 // POST /api/breeding-logs/:id/abort — report a miscarriage / abortion
-router.post('/api/breeding-logs/:id/abort', async (req, res) => {
+router.post('/api/breeding-logs/:id/abort', verifyAdmin, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
     const { id } = req.params;
@@ -404,7 +405,7 @@ router.post('/api/breeding-logs/:id/abort', async (req, res) => {
 });
 
 // PUT /api/breeding-logs/:id — update a breeding log & record activity log
-router.put('/api/breeding-logs/:id', async (req, res) => {
+router.put('/api/breeding-logs/:id', verifyAdmin, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
     const { id } = req.params;
@@ -474,7 +475,7 @@ router.put('/api/breeding-logs/:id', async (req, res) => {
 });
 
 // DELETE /api/breeding-logs/:id — archive / remove a breeding log & record activity log
-router.delete('/api/breeding-logs/:id', async (req, res) => {
+router.delete('/api/breeding-logs/:id', verifyAdmin, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
     const { id } = req.params;
@@ -538,7 +539,7 @@ router.delete('/api/breeding-logs/:id', async (req, res) => {
 });
 
 // POST /api/breeding-logs/:id/check — log a heat or pregnancy check
-router.post('/api/breeding-logs/:id/check', async (req, res) => {
+router.post('/api/breeding-logs/:id/check', verifyAdmin, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
     const { id } = req.params;
@@ -620,7 +621,7 @@ router.post('/api/breeding-logs/:id/check', async (req, res) => {
 });
 
 // POST /api/breeding-logs/:id/farrow — report farrowing
-router.post('/api/breeding-logs/:id/farrow', async (req, res) => {
+router.post('/api/breeding-logs/:id/farrow', verifyAdmin, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
     const { id } = req.params;

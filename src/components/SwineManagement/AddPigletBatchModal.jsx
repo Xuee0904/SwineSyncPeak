@@ -4,7 +4,7 @@ import {
   X, Loader2, Tag, Calendar, Home, Heart,
   AlertCircle, Baby, Weight, Activity, PlusCircle, Hash,
   Shuffle, BarChart2, Bookmark, ChevronLeft, ChevronDown, CheckCircle2, Users,
-  Sparkles, ShoppingBag, ArrowRightLeft, Dna, Check,
+  Sparkles, ShoppingBag, ArrowRightLeft, Dna, Check, Info,
 } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import useSmoothStepTransition from '../../hooks/useSmoothStepTransition';
@@ -12,6 +12,7 @@ import useFormDraft, { fetchDraftPayload } from '../../hooks/useFormDraft';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
 import DraftBanner from '../DraftBanner';
 import toast from '../../utils/toast';
+import { isAdminUser } from '../../utils/rbac';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -78,7 +79,10 @@ export function AddPigletBatchForm({
   pens: propPens,
   breeds: propBreeds,
   initialData,
+  isAdmin: propIsAdmin,
+  loggedInUser,
 }) {
+  const isAdmin = typeof propIsAdmin === 'boolean' ? propIsAdmin : (loggedInUser ? isAdminUser(loggedInUser) : true);
   const {
     form,
     setForm,
@@ -441,12 +445,20 @@ export function AddPigletBatchForm({
         assignedProgramId: form.assignedProgramId || null,
       });
       clearDraft();
-      toast.success('Batch Created', `Batch #${form.batchTag.trim()} created with ${Number(form.totalBornAlive) || 0} born alive.`);
+      const isPending = Boolean(result?.pendingApproval);
+      if (isPending) {
+        toast.info('Submitted for Approval', result?.message || `Batch #${form.batchTag.trim()} sent for administrator approval.`);
+      } else {
+        toast.success('Batch Created', `Batch #${form.batchTag.trim()} created with ${Number(form.totalBornAlive) || 0} born alive.`);
+      }
       if (onSuccess) {
         onSuccess({
           type: 'Piglet Batch',
           tag: form.batchTag.trim(),
-          message: 'Successfully registered to your active swine inventory.'
+          pendingApproval: isPending,
+          message: isPending
+            ? (result?.message || 'Your batch registration request has been queued for administrator approval.')
+            : 'Successfully registered to your active swine inventory.'
         }, result, form);
       } else {
         resetAndClose();
@@ -529,11 +541,10 @@ export function AddPigletBatchForm({
 
           {/* Smooth animated submit error */}
           <div
-            className={`grid transition-[grid-template-rows,opacity,margin] duration-250 ease-out ${
-              submitError
+            className={`grid transition-[grid-template-rows,opacity,margin] duration-250 ease-out ${submitError
                 ? 'grid-rows-[1fr] opacity-100 mb-2'
                 : 'grid-rows-[0fr] opacity-0 mb-0 pointer-events-none'
-            }`}
+              }`}
           >
             <div className="overflow-hidden">
               <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
@@ -542,6 +553,16 @@ export function AddPigletBatchForm({
               </div>
             </div>
           </div>
+
+          {!isAdmin && (
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs leading-relaxed">
+              <Info size={15} className="text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">Administrator Approval Required</span>
+                Staff batch registrations are sent to the approval queue before entering the active herd.
+              </div>
+            </div>
+          )}
 
           {/* Top: Source Origin */}
           <div className="pt-1">
@@ -562,11 +583,10 @@ export function AddPigletBatchForm({
                       sourceOrigin: opt.value,
                       ...(opt.value !== 'born_in_farm' ? { sowId: '' } : {})
                     }))}
-                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                      isSelected
+                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${isSelected
                         ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-xs ring-1 ring-emerald-500/20'
                         : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <IconComp size={14} className={isSelected ? 'text-emerald-600' : 'text-slate-400'} />
                     <span>{opt.label}</span>
@@ -577,11 +597,10 @@ export function AddPigletBatchForm({
 
             {/* Smooth animated supplier tracking when purchased or transferred */}
             <div
-              className={`grid transition-[grid-template-rows,opacity,margin] duration-300 ease-out ${
-                form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
+              className={`grid transition-[grid-template-rows,opacity,margin] duration-300 ease-out ${form.sourceOrigin === 'purchased' || form.sourceOrigin === 'transferred'
                   ? 'grid-rows-[1fr] opacity-100 mt-2.5'
                   : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
-              }`}
+                }`}
             >
               <div className="overflow-hidden">
                 <div className="grid grid-cols-2 gap-4 pb-1">
@@ -788,11 +807,10 @@ export function AddPigletBatchForm({
                               setIsSearchingBreed(false);
                               setBreedOpen(false);
                             }}
-                            className={`cursor-pointer px-4 py-2 text-xs transition-colors flex items-center justify-between ${
-                              isSelected
+                            className={`cursor-pointer px-4 py-2 text-xs transition-colors flex items-center justify-between ${isSelected
                                 ? 'bg-emerald-50 text-emerald-800 font-bold'
                                 : 'text-slate-700 hover:bg-slate-50'
-                            }`}
+                              }`}
                           >
                             <span>{b.name}</span>
                             {isSelected && <Check size={13} className="text-emerald-600 shrink-0" />}
@@ -861,21 +879,22 @@ export function AddPigletBatchForm({
           type="submit"
           form="batch-form"
           disabled={isSaving || isLoadingData}
-          className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50"
+          className="flex items-center gap-2 px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-50"
         >
           {isSaving ? (
             <Loader2 size={14} className="animate-spin" />
           ) : (
             <Check size={14} className="stroke-[2.5]" />
           )}
-          <span>Save Batch</span>
+          <span>{isAdmin ? 'Save Batch' : 'Submit Batch for Approval'}</span>
         </button>
       </div>
     </div>
   );
 }
 
-export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, breeds, initialData }) {
+export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, breeds, initialData, isAdmin: propIsAdmin, loggedInUser }) {
+  const isAdmin = typeof propIsAdmin === 'boolean' ? propIsAdmin : (loggedInUser ? isAdminUser(loggedInUser) : true);
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
@@ -910,12 +929,17 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
       >
         {step === 'success' ? (
           <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm mx-auto">
+            <div className={`w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm mx-auto ${successInfo?.pendingApproval
+                ? 'bg-amber-50 border-amber-200 text-amber-700'
+                : 'bg-emerald-50 border-emerald-100 text-emerald-700'
+              }`}>
               <CheckCircle2 size={28} strokeWidth={2} />
             </div>
             <div>
               <h4 className="text-xl font-black text-slate-900">
-                {successInfo?.tag} Added!
+                {successInfo?.pendingApproval
+                  ? `${successInfo?.tag} Submitted for Approval`
+                  : `${successInfo?.tag} Added!`}
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
                 {successInfo?.message || 'Successfully registered to your active swine inventory.'}
@@ -930,10 +954,10 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
                     setFormKey(k => k + 1);
                     setStep('form');
                   }}
-                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
                   <PlusCircle size={16} />
-                  Add Another Batch
+                  {successInfo?.pendingApproval ? 'Submit Another Batch' : 'Add Another Batch'}
                 </button>
               )}
               <button
@@ -958,6 +982,8 @@ export default function AddPigletBatchModal({ isOpen, onClose, onSave, pens, bre
             pens={pens}
             breeds={breeds}
             initialData={initialData}
+            isAdmin={isAdmin}
+            loggedInUser={loggedInUser}
           />
         )}
       </div>
@@ -1000,11 +1026,10 @@ function Field({ label, error, hint, icon, children, className = '' }) {
         {children}
       </div>
       <div
-        className={`grid transition-[grid-template-rows,opacity,margin] duration-250 ease-out ${
-          hasError
+        className={`grid transition-[grid-template-rows,opacity,margin] duration-250 ease-out ${hasError
             ? 'grid-rows-[1fr] opacity-100 mt-1'
             : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
-        }`}
+          }`}
       >
         <div className="overflow-hidden">
           <p className="flex items-center gap-1 text-[10px] text-rose-600 font-semibold leading-tight pt-0.5">

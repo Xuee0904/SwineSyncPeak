@@ -90,22 +90,35 @@ export default function App() {
     return () => observerRef.current?.disconnect();
   }, [loggedInUser]);
 
-  // Scroll-reveal: animate sections entering viewport
+  // Scroll-reveal: animate sections below the fold as they enter the viewport
   useEffect(() => {
-    const revealEls = document.querySelectorAll('.reveal-on-scroll');
+    if (loggedInUser) return;
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
+    const revealEls = Array.from(document.querySelectorAll('.reveal-on-scroll'));
+    const hiddenEls = revealEls.filter((el) => el.getBoundingClientRect().top > window.innerHeight * 0.95);
+    hiddenEls.forEach((el) => el.classList.add('reveal-hidden'));
+
     const revealObserver = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            entry.target.classList.add('active');
+            entry.target.classList.remove('reveal-hidden');
             revealObserver.unobserve(entry.target);
           }
         });
       },
-      { threshold: 0.08 }
+      { threshold: 0.02 }
     );
-    revealEls.forEach((el) => revealObserver.observe(el));
-    return () => revealObserver.disconnect();
+
+    hiddenEls.forEach((el) => revealObserver.observe(el));
+
+    return () => {
+      revealObserver.disconnect();
+      hiddenEls.forEach((el) => el.classList.remove('reveal-hidden'));
+    };
   }, [loggedInUser]);
 
   // Back-to-top visibility
@@ -122,6 +135,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    supabase.auth.signOut().catch(() => {});
     setLoggedInUser(null);
     showToast('Staff session terminated successfully.', 'info');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -176,28 +190,22 @@ export default function App() {
         <main className="flex-grow" id="public-landing">
 
           {/* HERO / HOME */}
-          <section id="home" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-20">
+          <section id="home" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-14 sm:pb-16">
             <Hero scrollToSection={scrollToSection} />
           </section>
 
-          {/* DIVIDER */}
-          <div className="w-full border-t border-slate-100" />
-
           {/* PROTOCOLS */}
-          <section id="protocols" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
+          <section id="protocols" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 reveal-on-scroll">
             <Protocols />
           </section>
 
-          {/* DIVIDER */}
-          <div className="w-full bg-slate-900/3 border-t border-slate-100" />
-
           {/* CATALOG */}
-          <section id="catalog" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
+          <section id="catalog" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-10 reveal-on-scroll">
             <Catalog />
           </section>
 
           {/* FAQs */}
-          <section id="faqs" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-20 reveal-on-scroll">
+          <section id="faqs" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-14 reveal-on-scroll">
             <FAQs scrollToSection={scrollToSection} />
           </section>
 

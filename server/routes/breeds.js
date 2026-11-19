@@ -1,9 +1,10 @@
 import express from 'express';
 import { supabase } from '../supabaseClient.js';
+import { verifyAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
-router.get('/api/breeds', async (req, res) => {
+router.get('/api/breeds', verifyAuth, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('breeds')

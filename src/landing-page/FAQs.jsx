@@ -32,18 +32,21 @@ export default function FAQs({ scrollToSection }) {
   };
 
   return (
-    <div className="space-y-8 pb-16 text-left animate-fade-in" id="faqs-section">
+    <div className="space-y-6 text-left animate-fade-in" id="faqs-section">
       {/* Header */}
-      <section className="border-b border-slate-100 pb-5">
+      <section className="border-b border-slate-200/80 pb-4">
         <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-2xl bg-emerald-50 text-emerald-600 shrink-0">
+            <HelpCircle className="w-6 h-6" aria-hidden="true" />
+          </div>
           <div>
-            <h1 className="text-3xl font-extrabold font-display text-slate-900 tracking-tight">Frequently Asked Questions</h1>
+            <h2 className="text-3xl font-extrabold font-display text-slate-900 tracking-tight">Frequently Asked Questions</h2>
           </div>
         </div>
       </section>
 
       {/* Accordion List */}
-      <section className="max-w-3xl mx-auto space-y-4" id="faqs-accordion-container">
+      <section className="w-full space-y-3" id="faqs-accordion-container">
         {faqItems.map((item, idx) => {
           const isOpen = openIndex === idx;
           return (
@@ -53,8 +56,9 @@ export default function FAQs({ scrollToSection }) {
               id={`faq-item-${idx}`}
             >
               <button
+                type="button"
                 onClick={() => handleToggle(idx)}
-                className="w-full flex items-center justify-between p-5 text-left text-slate-800 hover:text-emerald-700 transition-colors focus:outline-none cursor-pointer"
+                className="w-full flex items-center justify-between px-5 py-4 text-left text-slate-800 hover:text-emerald-700 transition-colors focus:outline-none cursor-pointer"
                 aria-expanded={isOpen}
                 id={`faq-toggle-btn-${idx}`}
               >

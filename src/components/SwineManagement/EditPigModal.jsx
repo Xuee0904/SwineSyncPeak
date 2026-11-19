@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, cloneElement } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Tag, Calendar, Weight, Home, Activity, Ruler, Loader2, AlertCircle, PlusCircle, Baby, Hash, Shuffle, CheckCircle2, ArrowLeft, Users, ChevronDown, Dna, Check, Sparkles, ShoppingBag, ArrowRightLeft } from 'lucide-react';
+import { X, Tag, Calendar, Weight, Home, Activity, Ruler, Loader2, AlertCircle, PlusCircle, Baby, Hash, Shuffle, CheckCircle2, ArrowLeft, Users, ChevronDown, Dna, Check, Sparkles, ShoppingBag, ArrowRightLeft, Info } from 'lucide-react';
 import useModalAnimation from '../../hooks/useModalAnimation';
 import toast from '../../utils/toast';
+import { isAdminUser } from '../../utils/rbac';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Cull'];
@@ -36,7 +37,7 @@ function toFormState(fullPig) {
   };
 }
 
-export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel, onSuccess, isArchived = false, isLoadingData = false, maxHeightClass = 'max-h-[88vh]' }) {
+export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel, onSuccess, isArchived = false, isLoadingData = false, maxHeightClass = 'max-h-[88vh]', isAdmin = true }) {
   const isBatch = pigData?.category === 'Piglet Batch' || Boolean(pigData?.batch_tag) || (pigData && typeof pigData.pig_tag === 'string' && pigData.pig_tag.startsWith('BATCH'));
 
   const [form, setForm] = useState(() => toFormState(pigData || {}));
@@ -286,12 +287,20 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
         category: pigData.category,
         isBatch,
       });
+      const isPending = Boolean(savedRecord?.pendingApproval);
       const updatedInfo = {
         type: isBatch ? 'Piglet Batch' : pigData.category || 'Swine',
         tag: form.tagNumber || pigData.pig_tag || pigData.batch_tag || pigData.id,
-        message: 'Successfully updated in your active swine inventory.'
+        pendingApproval: isPending,
+        message: isPending
+          ? (savedRecord?.message || 'Your update request has been sent to an administrator for approval.')
+          : 'Successfully updated in your active swine inventory.'
       };
-      toast.success(isBatch ? `Batch #${form.tagNumber} updated successfully!` : `Swine #${form.tagNumber} updated successfully!`);
+      if (isPending) {
+        toast.info(isBatch ? `Batch #${form.tagNumber} update submitted for approval!` : `Swine #${form.tagNumber} update submitted for approval!`);
+      } else {
+        toast.success(isBatch ? `Batch #${form.tagNumber} updated successfully!` : `Swine #${form.tagNumber} updated successfully!`);
+      }
       if (typeof onSuccess === 'function') onSuccess(savedRecord || { ...pigData, ...form }, updatedInfo);
     } catch (err) {
       setSubmitError(err.message || 'Failed to update record.');
@@ -356,6 +365,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
   const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs pl-10 pr-4";
   const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
   const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 text-rose-900 bg-rose-50/10";
+  const lockedCls = !isAdmin ? "disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed" : "";
 
   return isBatch ? (
     <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -364,6 +374,16 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
           <div className="p-3.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2.5 font-medium">
             <AlertCircle size={16} className="text-amber-600 shrink-0" />
             <span>This record is archived and cannot be modified unless restored from archive.</span>
+          </div>
+        )}
+
+        {!isAdmin && !isArchived && (
+          <div className="p-3.5 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 leading-relaxed">
+            <Info size={16} className="text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block">Limited Staff Edit (Approval Required)</span>
+              Staff can propose weight and status updates for administrator approval. Other profile fields are locked.
+            </div>
           </div>
         )}
 
@@ -377,10 +397,10 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Batch Tag ID" error={errors.tagNumber} icon={<Tag />}>
-              <input type="text" value={form.tagNumber ?? ''} onChange={handleChange('tagNumber')} className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
+              <input type="text" disabled={!isAdmin} value={form.tagNumber ?? ''} onChange={handleChange('tagNumber')} className={`${inputBase} ${lockedCls} ${errors.tagNumber ? inputErr : inputOk}`} />
             </Field>
             <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
-              <input type="date" min={minDobStr} max={todayStr} value={form.dateOfBirth ?? ''} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
+              <input type="date" disabled={!isAdmin} min={minDobStr} max={todayStr} value={form.dateOfBirth ?? ''} onChange={handleChange('dateOfBirth')} className={`${inputBase} ${lockedCls} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
             </Field>
           </div>
 
@@ -389,30 +409,33 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
               <Field label="Breed" error={errors.breed} icon={<Dna />}>
                 <input
                   type="text"
+                  disabled={!isAdmin}
                   value={form.breed ?? ''}
                   onChange={(e) => {
                     handleChange('breed')(e);
                     setIsSearchingBreed(true);
                     setBreedOpen(true);
                   }}
-                  onFocus={() => setBreedOpen(true)}
-                  className={`${inputBase} pr-9 ${errors.breed ? inputErr : inputOk}`}
+                  onFocus={() => { if (isAdmin) setBreedOpen(true); }}
+                  className={`${inputBase} pr-9 ${lockedCls} ${errors.breed ? inputErr : inputOk}`}
                   autoComplete="off"
                 />
                 <button
                   type="button"
                   tabIndex={-1}
+                  disabled={!isAdmin}
                   onClick={() => {
+                    if (!isAdmin) return;
                     setIsSearchingBreed(false);
                     setBreedOpen(prev => !prev);
                   }}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                   title="Toggle breed list"
                 >
                   <ChevronDown size={14} className={`transition-transform duration-200 ${breedOpen ? 'rotate-180' : ''}`} />
                 </button>
               </Field>
-              {breedOpen && !isLoadingData && (() => {
+              {isAdmin && breedOpen && !isLoadingData && (() => {
                 const isExactMatch = breeds.some(b => b.name.toLowerCase() === (form.breed || '').trim().toLowerCase());
                 const listToRender = (isSearchingBreed && form.breed && !isExactMatch)
                   ? breeds.filter(b => b.name.toLowerCase().includes(form.breed.toLowerCase()))
@@ -480,7 +503,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Pen Code" error={errors.penId} icon={<Home />}>
-              <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} pr-9 ${errors.penId ? inputErr : inputOk} appearance-none cursor-pointer`}>
+              <select disabled={!isAdmin} value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} pr-9 ${lockedCls} ${errors.penId ? inputErr : inputOk} appearance-none cursor-pointer`}>
                 <option value="">{availablePensForBatch.length === 0 ? 'No available pens' : 'Select Pen'}</option>
                 {availablePensForBatch.map(p => (
                   <option key={p.id} value={p.id}>
@@ -508,9 +531,10 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
                 <input
                   type="number"
                   min="1"
+                  disabled={!isAdmin}
                   value={form.totalBornAlive ?? ''}
                   onChange={handleChange('totalBornAlive')}
-                  className={`${inputBase} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`}
+                  className={`${inputBase} ${lockedCls} ${errors.totalBornAlive || isInvalidBornAlive ? inputErr : inputOk}`}
                 />
               </Field>
 
@@ -518,9 +542,10 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
                 <input
                   type="number"
                   min="0"
+                  disabled={!isAdmin}
                   value={form.currentCount ?? ''}
                   onChange={handleChange('currentCount')}
-                  className={`${inputBase} ${inlineCurrentCountError ? inputErr : inputOk}`}
+                  className={`${inputBase} ${lockedCls} ${inlineCurrentCountError ? inputErr : inputOk}`}
                 />
               </Field>
             </div>
@@ -536,8 +561,9 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
                     <button
                       key={opt.value}
                       type="button"
+                      disabled={!isAdmin}
                       onClick={() => setForm(p => ({ ...p, sourceOrigin: opt.value }))}
-                      className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                      className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                         isSelected
                           ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-xs ring-1 ring-emerald-500/20'
                           : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
@@ -560,10 +586,10 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
               <div className="overflow-hidden">
                 <div className="grid grid-cols-2 gap-4 pb-1">
                   <Field label="Supplier / Breeder Name" icon={<Users />}>
-                    <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
+                    <input type="text" disabled={!isAdmin} value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${lockedCls} ${inputOk}`} />
                   </Field>
                   <Field label="Arrival Date" icon={<Calendar />}>
-                    <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} className={`${inputBase} ${inputOk}`} />
+                    <input type="date" disabled={!isAdmin} value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} className={`${inputBase} ${lockedCls} ${inputOk}`} />
                   </Field>
                 </div>
               </div>
@@ -576,8 +602,8 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
         <button type="button" onClick={() => onCancel?.()} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
           Cancel
         </button>
-        <button type="submit" disabled={isSaving || isArchived} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-          {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'Update Batch Record'}
+        <button type="submit" disabled={isSaving || isArchived} className="flex-1 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+          {isSaving ? <Loader2 size={16} className="animate-spin" /> : (isAdmin ? 'Update Batch Record' : 'Submit Update for Approval')}
         </button>
       </div>
     </form>
@@ -591,6 +617,16 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
           </div>
         )}
 
+        {!isAdmin && !isArchived && (
+          <div className="p-3.5 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 leading-relaxed">
+            <Info size={16} className="text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block">Limited Staff Edit (Approval Required)</span>
+              Staff can propose weight and status updates for administrator approval. Other profile fields are locked.
+            </div>
+          </div>
+        )}
+
         <fieldset disabled={isArchived} className="space-y-4">
           {submitError && (
             <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2">
@@ -601,10 +637,10 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Tag Number" error={errors.tagNumber} icon={<Tag />}>
-              <input type="text" value={form.tagNumber ?? ''} onChange={handleChange('tagNumber')} className={`${inputBase} ${errors.tagNumber ? inputErr : inputOk}`} />
+              <input type="text" disabled={!isAdmin} value={form.tagNumber ?? ''} onChange={handleChange('tagNumber')} className={`${inputBase} ${lockedCls} ${errors.tagNumber ? inputErr : inputOk}`} />
             </Field>
             <Field label="Date of Birth" error={errors.dateOfBirth || (isFutureDob ? 'Date of birth cannot be from the future' : isPastDob ? 'Date of birth is too far in the past (max 15 years)' : undefined)} icon={<Calendar />}>
-              <input type="date" value={form.dateOfBirth ?? ''} onChange={handleChange('dateOfBirth')} min={minDobStr} max={todayStr} className={`${inputBase} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
+              <input type="date" disabled={!isAdmin} value={form.dateOfBirth ?? ''} onChange={handleChange('dateOfBirth')} min={minDobStr} max={todayStr} className={`${inputBase} ${lockedCls} ${errors.dateOfBirth || isFutureDob || isPastDob ? inputErr : inputOk}`} />
             </Field>
           </div>
 
@@ -613,30 +649,33 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
               <Field label="Breed" error={errors.breed} icon={<Dna />}>
                 <input
                   type="text"
+                  disabled={!isAdmin}
                   value={form.breed ?? ''}
                   onChange={(e) => {
                     handleChange('breed')(e);
                     setIsSearchingBreed(true);
                     setBreedOpen(true);
                   }}
-                  onFocus={() => setBreedOpen(true)}
-                  className={`${inputBase} pr-9 ${errors.breed ? inputErr : inputOk}`}
+                  onFocus={() => { if (isAdmin) setBreedOpen(true); }}
+                  className={`${inputBase} pr-9 ${lockedCls} ${errors.breed ? inputErr : inputOk}`}
                   autoComplete="off"
                 />
                 <button
                   type="button"
                   tabIndex={-1}
+                  disabled={!isAdmin}
                   onClick={() => {
+                    if (!isAdmin) return;
                     setIsSearchingBreed(false);
                     setBreedOpen(prev => !prev);
                   }}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                   title="Toggle breed list"
                 >
                   <ChevronDown size={14} className={`transition-transform duration-200 ${breedOpen ? 'rotate-180' : ''}`} />
                 </button>
               </Field>
-              {breedOpen && !isLoadingData && (() => {
+              {isAdmin && breedOpen && !isLoadingData && (() => {
                 const isExactMatch = breeds.some(b => b.name.toLowerCase() === (form.breed || '').trim().toLowerCase());
                 const listToRender = (isSearchingBreed && form.breed && !isExactMatch)
                   ? breeds.filter(b => b.name.toLowerCase().includes(form.breed.toLowerCase()))
@@ -704,7 +743,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Pen Code" error={errors.penId} icon={<Home />}>
-              <select value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} pr-9 ${errors.penId ? inputErr : inputOk} appearance-none cursor-pointer`}>
+              <select disabled={!isAdmin} value={form.penId ?? ''} onChange={handleChange('penId')} className={`${inputBase} pr-9 ${lockedCls} ${errors.penId ? inputErr : inputOk} appearance-none cursor-pointer`}>
                 <option value="">{availablePensForPig.length === 0 ? 'No available pens' : 'Select Pen'}</option>
                 {availablePensForPig.map(p => (
                   <option key={p.id} value={p.id}>
@@ -736,7 +775,7 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
                 }
                 icon={<Ruler />}
               >
-                <input type="number" min="0" value={form.parityCount ?? ''} onChange={handleChange('parityCount')} className={`${inputBase} ${inputOk}`} />
+                <input type="number" min="0" disabled={!isAdmin} value={form.parityCount ?? ''} onChange={handleChange('parityCount')} className={`${inputBase} ${lockedCls} ${inputOk}`} />
               </Field>
             </div>
           )}
@@ -752,8 +791,9 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
                   <button
                     key={opt.value}
                     type="button"
+                    disabled={!isAdmin}
                     onClick={() => setForm(p => ({ ...p, sourceOrigin: opt.value }))}
-                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                       isSelected
                         ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-xs ring-1 ring-emerald-500/20'
                         : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
@@ -776,10 +816,10 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
             <div className="overflow-hidden">
               <div className="grid grid-cols-2 gap-4 pb-1">
                 <Field label="Supplier / Breeder Name" icon={<Users />}>
-                  <input type="text" value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${inputOk}`} />
+                  <input type="text" disabled={!isAdmin} value={form.supplierName || ''} onChange={handleChange('supplierName')} placeholder="e.g. AgriGenetics Inc." className={`${inputBase} ${lockedCls} ${inputOk}`} />
                 </Field>
                 <Field label="Arrival Date" icon={<Calendar />}>
-                  <input type="date" value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} className={`${inputBase} ${inputOk}`} />
+                  <input type="date" disabled={!isAdmin} value={form.arrivalDate || ''} onChange={handleChange('arrivalDate')} className={`${inputBase} ${lockedCls} ${inputOk}`} />
                 </Field>
               </div>
             </div>
@@ -791,8 +831,8 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
         <button type="button" onClick={() => onCancel?.()} className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-semibold rounded-xl transition-colors cursor-pointer">
           Cancel
         </button>
-        <button type="submit" disabled={isSaving || isArchived} className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-          {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'Update Record'}
+        <button type="submit" disabled={isSaving || isArchived} className="flex-1 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+          {isSaving ? <Loader2 size={16} className="animate-spin" /> : (isAdmin ? 'Update Record' : 'Submit Update for Approval')}
         </button>
       </div>
     </form>
@@ -808,7 +848,10 @@ export function PigEditView({
   showBackBtn = false,
   onBack,
   fetchDetailOnMount = false,
+  isAdmin: propIsAdmin,
+  loggedInUser,
 }) {
+  const isAdmin = typeof propIsAdmin === 'boolean' ? propIsAdmin : (loggedInUser ? isAdminUser(loggedInUser) : true);
   const isBatch = pigData?.category === 'Piglet Batch' || Boolean(pigData?.batch_tag) || (pigData && typeof pigData.pig_tag === 'string' && pigData.pig_tag.startsWith('BATCH'));
 
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -894,12 +937,18 @@ export function PigEditView({
   if (saveSuccess) {
     return (
       <div className="p-8 text-center flex flex-col items-center justify-center space-y-5 animate-in fade-in duration-300">
-        <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm mx-auto">
+        <div className={`w-14 h-14 rounded-2xl border flex items-center justify-center shadow-sm mx-auto ${
+          successInfo?.pendingApproval
+            ? 'bg-amber-50 border-amber-200 text-amber-700'
+            : 'bg-emerald-50 border-emerald-100 text-emerald-700'
+        }`}>
           <CheckCircle2 size={28} strokeWidth={2} />
         </div>
         <div>
           <h4 className="text-xl font-black text-slate-900">
-            {successInfo?.tag} Updated!
+            {successInfo?.pendingApproval
+              ? `${successInfo?.tag} Update Submitted for Approval`
+              : `${successInfo?.tag} Updated!`}
           </h4>
           <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto">
             {successInfo?.message || 'The record has been updated and synced to your database.'}
@@ -909,7 +958,7 @@ export function PigEditView({
           <button
             type="button"
             onClick={() => onClose?.()}
-            className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+            className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
           >
             Done
           </button>
@@ -1002,13 +1051,15 @@ export function PigEditView({
           isArchived={isArchived}
           isLoadingData={isLoadingData}
           maxHeightClass="max-h-[88vh]"
+          isAdmin={isAdmin}
         />
       )}
     </div>
   );
 }
 
-export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
+export default function EditPigModal({ isOpen, onClose, onSave, pigData, isAdmin: propIsAdmin, loggedInUser }) {
+  const isAdmin = typeof propIsAdmin === 'boolean' ? propIsAdmin : (loggedInUser ? isAdminUser(loggedInUser) : true);
   const { shouldRender, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
@@ -1031,6 +1082,8 @@ export default function EditPigModal({ isOpen, onClose, onSave, pigData }) {
           onCancel={() => requestClose()}
           onClose={() => requestClose()}
           fetchDetailOnMount={true}
+          isAdmin={isAdmin}
+          loggedInUser={loggedInUser}
         />
       </div>
     </div>,

@@ -22,7 +22,9 @@ import {
   Syringe,
   ChevronDown,
   ChevronUp,
+  Eye,
 } from "lucide-react";
+import { isAdminUser } from "../utils/rbac";
 import { toast } from "../utils/toast";
 import { supabase } from "../supabaseClient";
 import { formatTimestamp } from "../utils/formatTimestamp";
@@ -273,7 +275,7 @@ function getRunwayInsight(item, metrics, current, statusKey) {
 }
 
 // ----- CriticalStockCard -----
-function CriticalStockCard({ item, metrics, onAdjust, onViewHistory }) {
+function CriticalStockCard({ item, metrics, onAdjust, onViewHistory, isAdmin = true }) {
   if (!item) return null;
   const current = Number(item.current_stock_level) || 0;
   const capacity = Number(item.ideal_stock_level) || 1;
@@ -435,13 +437,15 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory }) {
           >
             <History className="w-3.5 h-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={onAdjust}
-            className={`py-1 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${cfg.buttonClass}`}
-          >
-            {cfg.buttonLabel}
-          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={onAdjust}
+              className={`py-1 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${cfg.buttonClass}`}
+            >
+              {cfg.buttonLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -465,6 +469,7 @@ function StatusPill({ current, threshold, daysUntilLow, extra }) {
 // Main Page
 // ====================================================================
 export default function InventoryManagement({ loggedInUser }) {
+  const isAdmin = isAdminUser(loggedInUser);
   const [items, setItems] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -926,6 +931,12 @@ export default function InventoryManagement({ loggedInUser }) {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="p-5 lg:p-6 space-y-6">
+        {!isAdmin && (
+          <div className="rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 flex items-center gap-2.5 text-xs font-semibold text-slate-800 text-left">
+            <Eye className="w-4 h-4 text-slate-700 shrink-0" aria-hidden="true" />
+            <span>View-only access. Supply additions, purchases, and stock adjustments are managed by an administrator.</span>
+          </div>
+        )}
         {/* Top Section: Critical Stock & Growth Program Alerts (smoothly animates on tab switch) */}
         <div
           className={`grid transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${!viewArchived && !viewHistory
@@ -958,7 +969,7 @@ export default function InventoryManagement({ loggedInUser }) {
                   </div>
                 ) : criticalDisplay.length === 0 ? (
                   <div className="rounded-2xl border border-slate-100 bg-white p-8 text-center text-sm text-slate-400 shadow-sm">
-                    No active inventory items yet. Add your first supply above.
+                    {isAdmin ? "No active inventory items yet. Add your first supply above." : "No active inventory items yet."}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -967,6 +978,7 @@ export default function InventoryManagement({ loggedInUser }) {
                         key={item.item_id}
                         item={item}
                         metrics={itemMetrics[item.item_id]}
+                        isAdmin={isAdmin}
                         onAdjust={() => setAdjustItem(item)}
                         onViewHistory={() => setHistoryItem(item)}
                       />
@@ -1039,23 +1051,25 @@ export default function InventoryManagement({ loggedInUser }) {
                                 </div>
                               </div>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditItem(null);
-                                  setPrefillSupply({
-                                    item_name: g.task_name,
-                                    category: mappedCat,
-                                    description: `Added from Growth Program "${progName}" (Day ${g.days_after_birth})`,
-                                    guideline: g,
-                                  });
-                                  setAddModal(true);
-                                }}
-                                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 text-xs font-bold shadow-2xs shadow-emerald-600/20 transition-all shrink-0 cursor-pointer"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                Add to Inventory
-                              </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditItem(null);
+                                    setPrefillSupply({
+                                      item_name: g.task_name,
+                                      category: mappedCat,
+                                      description: `Added from Growth Program "${progName}" (Day ${g.days_after_birth})`,
+                                      guideline: g,
+                                    });
+                                    setAddModal(true);
+                                  }}
+                                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 text-xs font-bold shadow-2xs shadow-emerald-600/20 transition-all shrink-0 cursor-pointer"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  Add to Inventory
+                                </button>
+                              )}
                             </div>
                           );
                         })}
@@ -1188,7 +1202,7 @@ export default function InventoryManagement({ loggedInUser }) {
                         : "Active Supply Ledger"
                   }
                 />
-                {!viewArchived && (
+                {!viewArchived && isAdmin && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1633,14 +1647,16 @@ export default function InventoryManagement({ loggedInUser }) {
                             <div className="flex items-center justify-end gap-1.5">
                               {!viewArchived ? (
                                 <>
-                                  <button
-                                    onClick={() => setAdjustItem(item)}
-                                    title="Adjust Stock In / Out"
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/70 transition-colors cursor-pointer"
-                                  >
-                                    <ArrowUpDown className="w-3.5 h-3.5" />
-                                    Adjust
-                                  </button>
+                                  {isAdmin && (
+                                    <button
+                                      onClick={() => setAdjustItem(item)}
+                                      title="Adjust Stock In / Out"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/70 transition-colors cursor-pointer"
+                                    >
+                                      <ArrowUpDown className="w-3.5 h-3.5" />
+                                      Adjust
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => setHistoryItem(item)}
                                     title="View Stock Movements"
@@ -1649,25 +1665,29 @@ export default function InventoryManagement({ loggedInUser }) {
                                     <History className="w-3.5 h-3.5" />
                                     History
                                   </button>
-                                  <button
-                                    onClick={() => {
-                                      setEditItem(item);
-                                      setAddModal(true);
-                                    }}
-                                    title="Edit Item"
-                                    className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-colors cursor-pointer"
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() =>
-                                      setArchiveData({ item, isArchiving: true })
-                                    }
-                                    title="Archive Item"
-                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                  >
-                                    <Archive className="w-4 h-4" />
-                                  </button>
+                                  {isAdmin && (
+                                    <>
+                                      <button
+                                        onClick={() => {
+                                          setEditItem(item);
+                                          setAddModal(true);
+                                        }}
+                                        title="Edit Item"
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-colors cursor-pointer"
+                                      >
+                                        <Pencil className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          setArchiveData({ item, isArchiving: true })
+                                        }
+                                        title="Archive Item"
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                      >
+                                        <Archive className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  )}
                                 </>
                               ) : (
                                 <>
@@ -1679,27 +1699,31 @@ export default function InventoryManagement({ loggedInUser }) {
                                     <History className="w-3.5 h-3.5" />
                                     History
                                   </button>
-                                  <button
-                                    onClick={() =>
-                                      setArchiveData({
-                                        item,
-                                        isArchiving: false,
-                                      })
-                                    }
-                                    title="Restore Item"
-                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer"
-                                  >
-                                    <RotateCcw className="w-3.5 h-3.5" />
-                                    Restore
-                                  </button>
-                                  <button
-                                    onClick={() => handlePermanentDelete(item)}
-                                    title="Delete Permanently"
-                                    disabled={deletingId === item.item_id}
-                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
+                                  {isAdmin && (
+                                    <>
+                                      <button
+                                        onClick={() =>
+                                          setArchiveData({
+                                            item,
+                                            isArchiving: false,
+                                          })
+                                        }
+                                        title="Restore Item"
+                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer"
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                        Restore
+                                      </button>
+                                      <button
+                                        onClick={() => handlePermanentDelete(item)}
+                                        title="Delete Permanently"
+                                        disabled={deletingId === item.item_id}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -1725,8 +1749,7 @@ export default function InventoryManagement({ loggedInUser }) {
         </section>
       </div>
 
-      {/* Add / Edit Supply Modal */}
-      {addModal && (
+      {isAdmin && addModal && (
         <AddSupplyModal
           item={editItem}
           prefill={prefillSupply}
@@ -1740,8 +1763,7 @@ export default function InventoryManagement({ loggedInUser }) {
         />
       )}
 
-      {/* Stock Adjustment Modal */}
-      {adjustItem && (
+      {isAdmin && adjustItem && (
         <StockAdjustmentModal
           item={adjustItem}
           onClose={() => setAdjustItem(null)}
@@ -1755,13 +1777,13 @@ export default function InventoryManagement({ loggedInUser }) {
         <TransactionHistoryModal
           item={activeHistoryItem}
           metrics={itemMetrics[activeHistoryItem.item_id]}
+          isAdmin={isAdmin}
           onClose={() => setHistoryItem(null)}
           onAdjustStock={(target) => setAdjustItem(target)}
         />
       )}
 
-      {/* Archive / Restore Modal */}
-      {archiveData && (
+      {isAdmin && archiveData && (
         <ArchiveSupplyModal
           isOpen={!!archiveData}
           archiveData={archiveData}

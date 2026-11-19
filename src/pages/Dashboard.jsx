@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import SideNav, { NAV_ITEMS } from '../components/SideNav';
 import Admin from './Admin';
+import Approvals from './Approvals';
+import MySubmissions from './MySubmissions';
 import SwineManagement from './SwineManagement';
 import PenManagement from './PenManagement';
 import BreedingLogs from './BreedingLogs';
@@ -11,6 +13,7 @@ import TransactionRecords from './TransactionRecords';
 import PigSnout from '../components/common/PigSnout';
 import { supabase } from '../supabaseClient';
 import { toast } from '../utils/toast';
+import { isAdminUser, canAccessTab } from '../utils/rbac';
 import {
   computeInventoryMetrics,
   getStockStatus,
@@ -19,7 +22,7 @@ import {
 } from '../components/Inventory/inventoryUtils';
 import {
   Sparkles, Database, ChevronRight,
-  AlertTriangle,
+  AlertTriangle, ShieldAlert,
   ChevronLeft, Menu, Bell,
   Users, HeartPulse, Grid3X3, ArrowRight,
   CheckCircle2, RefreshCw, Calendar, Check,
@@ -153,6 +156,16 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [mobileNav, setMobileNav] = useState(false);
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const isAdmin = isAdminUser(loggedInUser);
+
+  const handleTabChange = useCallback((nextTab) => {
+    if (!canAccessTab(loggedInUser, nextTab)) {
+      toast.error('Access denied', 'Administrative privileges are required for that section.');
+      setActiveTab('dashboard');
+      return;
+    }
+    setActiveTab(nextTab);
+  }, [loggedInUser]);
 
   // Live Module Data States
   const [pigStats, setPigStats] = useState({
@@ -168,10 +181,12 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
     total: 0, weaners: 0, finishers: 0,
   });
   const [healthAlerts, setHealthAlerts] = useState([]);
-  const [actionItems, setActionItems] = useState([]);
+  const [baseActionItems, setBaseActionItems] = useState([]);
   const [rawEvents, setRawEvents] = useState([]);
   const [dashboardInventory, setDashboardInventory] = useState([]);
   const [inventoryLoading, setInventoryLoading] = useState(true);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+  const [pendingApprovalsList, setPendingApprovalsList] = useState([]);
 
   // Calendar State (Defaults to current local date)
   const [calMonth, setCalMonth] = useState(() => {
@@ -623,7 +638,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         });
       }
 
-      setActionItems(tasks);
+      setBaseActionItems(tasks);
 
       // 7. Calendar Events Synthesis
       const evts = [];
@@ -775,6 +790,41 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
     }
   };
 
+  const loadApprovalSummary = useCallback(async () => {
+    try {
+      const countRes = await fetch(`${API_BASE}/api/approvals/pending-count`);
+      if (countRes.ok) {
+        const countJson = await countRes.json().catch(() => ({}));
+        setPendingApprovalsCount(Number(countJson.count) || 0);
+      }
+
+      if (isAdmin) {
+        const listRes = await fetch(`${API_BASE}/api/approvals?status=pending`);
+        if (listRes.ok) {
+          const listJson = await listRes.json().catch(() => ({}));
+          setPendingApprovalsList(Array.isArray(listJson.data) ? listJson.data : []);
+        }
+      } else {
+        setPendingApprovalsList([]);
+      }
+    } catch {
+      // ignore background summary fetch failures
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    loadApprovalSummary();
+    const handleApprovalSync = () => loadApprovalSummary();
+    window.addEventListener('swinesync:approvals-updated', handleApprovalSync);
+    window.addEventListener('swinesync_data_updated', handleApprovalSync);
+    window.addEventListener('focus', handleApprovalSync);
+    return () => {
+      window.removeEventListener('swinesync:approvals-updated', handleApprovalSync);
+      window.removeEventListener('swinesync_data_updated', handleApprovalSync);
+      window.removeEventListener('focus', handleApprovalSync);
+    };
+  }, [loadApprovalSummary, activeTab]);
+
   useEffect(() => {
     if (activeTab !== 'dashboard') return;
 
@@ -871,12 +921,37 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
     return 'Staff';
   };
 
+  const actionItems = useMemo(() => {
+    if (!isAdmin || pendingApprovalsCount <= 0) return baseActionItems;
+    const summaryRow = {
+      id: 'admin_pending_approvals_summary',
+      text: `${pendingApprovalsCount} staff submission${pendingApprovalsCount === 1 ? '' : 's'} awaiting review`,
+      pen: null,
+      sub: 'Open Admin Settings -> Approvals to inspect and approve or reject requests',
+      urgency: 'REVIEW',
+      actionLabel: 'Review Queue',
+      targetTab: 'approvals',
+      category: 'Approvals',
+      completed: false,
+    };
+    return [summaryRow, ...baseActionItems];
+  }, [isAdmin, pendingApprovalsCount, baseActionItems]);
+
   const now = new Date();
   const isCurrentMonthView = calMonth.year === now.getFullYear() && calMonth.month === now.getMonth();
   const pendingActionCount = actionItems.filter(item => !item.completed).length;
 
   // Notifications: derived from live health alerts + pending action items (most urgent first)
   const allNotifications = [
+    ...(isAdmin
+      ? pendingApprovalsList.slice(0, 5).map((reqItem) => ({
+          id: `approval_${reqItem.id}`,
+          title: `Approval Needed • ${reqItem.action_label}`,
+          sub: `${reqItem.submitted_by_name} • ${reqItem.summary}`,
+          targetTab: 'approvals',
+          level: 'high',
+        }))
+      : []),
     ...healthAlerts.map(a => ({
       id: `health_${a.id}`,
       title: `${a.tag} • ${a.status}`,
@@ -908,10 +983,11 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
     <div className="flex h-screen bg-slate-50 overflow-hidden" id="staff-portal">
       <SideNav
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         onClose={() => setMobileNav(false)}
         loggedInUser={loggedInUser}
         mobileOpen={mobileNav}
+        pendingApprovalsCount={pendingApprovalsCount}
       />
 
       <div className="flex-1 flex flex-col ml-0 lg:ml-64 min-w-0 overflow-hidden">
@@ -1321,6 +1397,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                             let urgencyClass = 'bg-slate-50 text-slate-600 border-slate-200/80 font-bold';
                             if (u === 'ALL FED' || u === 'DONE') {
                               urgencyClass = 'bg-emerald-50 text-emerald-700 border-emerald-200/80 font-bold';
+                            } else if (u === 'REVIEW') {
+                              urgencyClass = 'bg-amber-50 text-amber-800 border-amber-300 font-bold';
                             } else if (u === 'OVERDUE') {
                               urgencyClass = 'bg-rose-50 text-rose-700 border-rose-200/80 font-bold';
                             } else if (u === 'DUE TODAY' || u === 'TODAY' || u === 'ACTION' || u === 'ACTION DUE') {
@@ -1720,74 +1798,109 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             </main>
           )}
 
-          {activeTab === 'admin' && (
-            <main>
-              <Admin loggedInUser={loggedInUser} />
-            </main>
-          )}
-
-          {activeTab === 'swine_management' && (
-            <main>
-              <SwineManagement loggedInUser={loggedInUser} />
-            </main>
-          )}
-
-          {activeTab === 'pen_management' && (
-            <main>
-              <PenManagement loggedInUser={loggedInUser} />
-            </main>
-          )}
-
-          {activeTab === 'breeding_logs' && (
-            <main>
-              <BreedingLogs loggedInUser={loggedInUser} />
-            </main>
-          )}
-
-          {activeTab === 'growth' && (
-            <main className="h-full">
-              <GrowthProgramManagement loggedInUser={loggedInUser} />
-            </main>
-          )}
-
-          {activeTab === 'health_management' && (
-            <main>
-              <HealthManagement loggedInUser={loggedInUser} setActiveTab={setActiveTab} />
-            </main>
-          )}
-
-          {activeTab === 'inventory' && (
-            <main>
-              <InventoryManagement loggedInUser={loggedInUser} />
-            </main>
-          )}
-
-          {activeTab === 'transactions' && (
-            <main>
-              <TransactionRecords loggedInUser={loggedInUser} />
-            </main>
-          )}
-
-          {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && activeTab !== 'breeding_logs' && activeTab !== 'growth' && activeTab !== 'health_management' && activeTab !== 'inventory' && activeTab !== 'transactions' && (
-            <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
-              <div className="text-center space-y-4 max-w-xs mx-auto animate-fade-in">
-                <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">
-                  <Database className="w-6 h-6 text-slate-300 animate-pulse" />
+          {!canAccessTab(loggedInUser, activeTab) ? (
+            <main className="p-6 flex items-center justify-center min-h-72">
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-sm w-full text-center space-y-3 shadow-xs">
+                <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-center justify-center mx-auto">
+                  <ShieldAlert className="w-5 h-5" aria-hidden="true" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-slate-800 text-sm">Module Under Integration</h3>
-                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                    This section is being connected to the database. Check back soon.
-                  </p>
-                </div>
+                <h2 className="text-sm font-bold text-slate-900">Administrator Access Required</h2>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Your account does not have permission to view this section.
+                </p>
                 <button
+                  type="button"
                   onClick={() => setActiveTab('dashboard')}
-                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                  className="min-h-[44px] px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                 >
-                  ← Back to Dashboard
+                  Back to Dashboard
                 </button>
               </div>
             </main>
+          ) : (
+            <>
+              {activeTab === 'admin' && isAdmin && (
+                <main>
+                  <Admin loggedInUser={loggedInUser} />
+                </main>
+              )}
+
+              {activeTab === 'approvals' && isAdmin && (
+                <main>
+                  <Approvals loggedInUser={loggedInUser} onQueueChanged={loadApprovalSummary} />
+                </main>
+              )}
+
+              {activeTab === 'my_submissions' && !isAdmin && (
+                <main>
+                  <MySubmissions loggedInUser={loggedInUser} onQueueChanged={loadApprovalSummary} />
+                </main>
+              )}
+
+              {activeTab === 'swine_management' && (
+                <main>
+                  <SwineManagement loggedInUser={loggedInUser} />
+                </main>
+              )}
+
+              {activeTab === 'pen_management' && (
+                <main>
+                  <PenManagement loggedInUser={loggedInUser} />
+                </main>
+              )}
+
+              {activeTab === 'breeding_logs' && (
+                <main>
+                  <BreedingLogs loggedInUser={loggedInUser} />
+                </main>
+              )}
+
+              {activeTab === 'growth' && (
+                <main className="h-full">
+                  <GrowthProgramManagement loggedInUser={loggedInUser} />
+                </main>
+              )}
+
+              {activeTab === 'health_management' && (
+                <main>
+                  <HealthManagement loggedInUser={loggedInUser} setActiveTab={handleTabChange} />
+                </main>
+              )}
+
+              {activeTab === 'inventory' && (
+                <main>
+                  <InventoryManagement loggedInUser={loggedInUser} />
+                </main>
+              )}
+
+              {activeTab === 'transactions' && isAdmin && (
+                <main>
+                  <TransactionRecords loggedInUser={loggedInUser} />
+                </main>
+              )}
+
+              {activeTab !== 'dashboard' && activeTab !== 'admin' && activeTab !== 'approvals' && activeTab !== 'my_submissions' && activeTab !== 'swine_management' && activeTab !== 'pen_management' && activeTab !== 'breeding_logs' && activeTab !== 'growth' && activeTab !== 'health_management' && activeTab !== 'inventory' && activeTab !== 'transactions' && (
+                <main className="p-5 lg:p-6 flex items-center justify-center min-h-64">
+                  <div className="text-center space-y-4 max-w-xs mx-auto animate-fade-in">
+                    <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto border border-slate-100">
+                      <Database className="w-6 h-6 text-slate-300 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-sm">Module Under Integration</h3>
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        This section is being connected to the database. Check back soon.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('dashboard')}
+                      className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                    >
+                      Back to Dashboard
+                    </button>
+                  </div>
+                </main>
+              )}
+            </>
           )}
         </div>
       </div>

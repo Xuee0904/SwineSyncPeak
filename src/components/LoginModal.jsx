@@ -105,6 +105,12 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
 
       const user = data.user;
 
+      if (user?.user_metadata?.is_archived === true) {
+        await supabase.auth.signOut().catch(() => {});
+        setServerError('This account has been archived. Contact an administrator.');
+        return;
+      }
+
       if (user?.user_metadata?.must_change_password) {
         if (onForcePasswordChange) {
           handleClose(() => onForcePasswordChange(user, password));
@@ -118,9 +124,10 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
         user.email.split('@')[0].charAt(0).toUpperCase() + user.email.split('@')[0].slice(1);
 
       onLoginSuccess({
+        id: user.id,
         name: displayName,
         email: user.email,
-        role: user.user_metadata?.role || 'Staff'
+        role: user.app_metadata?.role || user.user_metadata?.role || 'Staff'
       });
       handleClose();
     } catch (err) {

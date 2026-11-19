@@ -35,15 +35,16 @@ export default function AnnouncementBanner() {
             <p className="text-xs font-medium text-slate-200 truncate">
               <span className="font-semibold text-white">{activeAnnouncement.title}</span>
               {!isExpanded && (
-                <span className="hidden md:inline text-slate-400"> — {activeAnnouncement.summary}</span>
+                <span className="hidden md:inline text-slate-400"> · {activeAnnouncement.summary}</span>
               )}
             </p>
           </div>
 
           <div className="flex items-center shrink-0">
             <button
+              type="button"
               onClick={() => setIsExpanded(prev => !prev)}
-              className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer rounded-lg hover:bg-slate-800"
+              className="inline-flex items-center gap-1.5 min-h-[44px] px-3 py-2 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer rounded-lg hover:bg-slate-800"
               aria-expanded={isExpanded}
             >
               <span>{isExpanded ? 'Show less' : 'Read details'}</span>

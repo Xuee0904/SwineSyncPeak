@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Users, TrendingUp,
   ClipboardList, Receipt, Settings, X, ChevronRight,
-  Grid3X3, HeartPulse, Dna,
+  Grid3X3, HeartPulse, Dna, ClipboardCheck,
 } from 'lucide-react';
 import PigSnout from './common/PigSnout';
 import farmLogo from '../assets/Logo.jpg';
+import { isAdminUser } from '../utils/rbac';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const NAV_ITEMS = [
@@ -20,11 +21,24 @@ export const NAV_ITEMS = [
   { id: 'health_management', label: 'Health Management', icon: HeartPulse },
   { id: 'breeding_logs', label: 'Breeding Logs', icon: Dna },
   { id: 'inventory', label: 'Inventory', icon: ClipboardList },
-  { id: 'transactions', label: 'Transaction Records', icon: Receipt },
-  { id: 'admin', label: 'Admin Settings', icon: Settings },
+  { id: 'my_submissions', label: 'My Submissions', icon: ClipboardCheck, staffOnly: true },
+  { id: 'transactions', label: 'Transaction Records', icon: Receipt, adminOnly: true },
+  {
+    id: 'admin', label: 'Admin Settings', icon: Settings, adminOnly: true,
+    children: [
+      { id: 'approvals', label: 'Approvals', icon: ClipboardCheck },
+    ]
+  },
 ];
 
-export default function SideNav({ activeTab, onTabChange, onClose, loggedInUser, mobileOpen }) {
+export default function SideNav({
+  activeTab,
+  onTabChange,
+  onClose,
+  loggedInUser,
+  mobileOpen,
+  pendingApprovalsCount = 0,
+}) {
   const [expanded, setExpanded] = useState(() => {
     const parentWithActiveChild = NAV_ITEMS.find(item =>
       item.children?.some(child => child.id === activeTab)
@@ -32,23 +46,23 @@ export default function SideNav({ activeTab, onTabChange, onClose, loggedInUser,
     return parentWithActiveChild ? { [parentWithActiveChild.id]: true } : {};
   });
 
-  const getUserRole = () => {
-    if (!loggedInUser) return 'Staff';
-    if (typeof loggedInUser === 'string') return 'Staff';
-    if (typeof loggedInUser === 'object') {
-      return loggedInUser.role || 'Staff';
+  useEffect(() => {
+    const parentWithActiveChild = NAV_ITEMS.find(item =>
+      item.children?.some(child => child.id === activeTab)
+    );
+    if (parentWithActiveChild) {
+      setExpanded(prev => (prev[parentWithActiveChild.id] ? prev : { ...prev, [parentWithActiveChild.id]: true }));
     }
-    return 'Staff';
-  };
+  }, [activeTab]);
 
-  // ─── ROLE-BASED PRIVILEGES FILTERING ───
-  const role = getUserRole().toLowerCase();
+  const isAdmin = isAdminUser(loggedInUser);
 
   const filteredNavItems = NAV_ITEMS.filter((item) => {
-    if (role !== 'admin') {
-      if (item.id === 'admin' || item.id === 'transactions') {
-        return false;
-      }
+    if (item.adminOnly || item.id === 'admin' || item.id === 'transactions') {
+      return isAdmin;
+    }
+    if (item.staffOnly || item.id === 'my_submissions') {
+      return !isAdmin;
     }
     return true;
   });
@@ -123,6 +137,14 @@ export default function SideNav({ activeTab, onTabChange, onClose, loggedInUser,
                     >
                       <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
                       <span className="flex-1 truncate">{label}</span>
+                      {id === 'my_submissions' && pendingApprovalsCount > 0 && (
+                        <span
+                          className="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-900 text-[10px] font-extrabold leading-none shrink-0"
+                          aria-label={`${pendingApprovalsCount} pending submissions`}
+                        >
+                          {pendingApprovalsCount > 99 ? '99+' : pendingApprovalsCount}
+                        </span>
+                      )}
                       {sub && !active && (
                         <ChevronRight className="w-3 h-3 text-slate-500 shrink-0" />
                       )}
@@ -146,13 +168,21 @@ export default function SideNav({ activeTab, onTabChange, onClose, loggedInUser,
                       >
                         <Icon
                           className={`w-4 h-4 shrink-0 ${active
-                              ? 'text-white'
-                              : showCollapsedChildIndicator
-                                ? 'text-emerald-400'
-                                : 'text-slate-400'
+                            ? 'text-white'
+                            : showCollapsedChildIndicator
+                              ? 'text-emerald-400'
+                              : 'text-slate-400'
                             }`}
                         />
                         <span className="flex-1 truncate">{label}</span>
+                        {id === 'admin' && !isExpanded && pendingApprovalsCount > 0 && (
+                          <span
+                            className="px-1.5 py-0.5 mr-1 rounded-full bg-amber-400 text-slate-900 text-[10px] font-extrabold leading-none shrink-0"
+                            aria-label={`${pendingApprovalsCount} pending approvals`}
+                          >
+                            {pendingApprovalsCount > 99 ? '99+' : pendingApprovalsCount}
+                          </span>
+                        )}
                       </button>
                       <button
                         onClick={(e) => {
@@ -210,6 +240,14 @@ export default function SideNav({ activeTab, onTabChange, onClose, loggedInUser,
                               >
                                 <CIcon className={`w-3.5 h-3.5 shrink-0 ${childActive ? 'text-white' : 'text-slate-500'}`} />
                                 <span className="flex-1 truncate">{clabel}</span>
+                                {cid === 'approvals' && pendingApprovalsCount > 0 && (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-900 text-[10px] font-extrabold leading-none shrink-0"
+                                    aria-label={`${pendingApprovalsCount} pending approvals`}
+                                  >
+                                    {pendingApprovalsCount > 99 ? '99+' : pendingApprovalsCount}
+                                  </span>
+                                )}
                               </button>
                             );
                           })}

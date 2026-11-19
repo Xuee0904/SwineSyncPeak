@@ -52,6 +52,7 @@ export default function TransactionHistoryModal({
   metrics,
   onClose,
   onAdjustStock,
+  isAdmin = true,
 }) {
   const [typeFilter, setTypeFilter] = useState("ALL");
 
@@ -349,7 +350,7 @@ export default function TransactionHistoryModal({
             Audit trail is immutable and protected by row-level security.
           </p>
           <div className="flex items-center gap-2.5">
-            {!item.is_archived && onAdjustStock && (
+            {isAdmin && !item.is_archived && onAdjustStock && (
               <button
                 type="button"
                 onClick={() => {

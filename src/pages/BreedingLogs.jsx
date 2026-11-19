@@ -12,7 +12,9 @@ import {
   List,
   CalendarCheck,
   Sparkles,
+  Eye,
 } from "lucide-react";
+import { isAdminUser } from "../utils/rbac";
 import AddBreedingLogModal from "../components/BreedingLogs/AddBreedingLogModal";
 import EditBreedingLogModal from "../components/BreedingLogs/EditBreedingLogModal";
 import LogCheckModal from "../components/BreedingLogs/LogCheckModal";
@@ -226,6 +228,7 @@ function GestationRing({ day, status }) {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 export default function BreedingLogs({ loggedInUser }) {
+  const isAdmin = isAdminUser(loggedInUser);
   const [sows, setSows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("ALL");
@@ -488,6 +491,13 @@ export default function BreedingLogs({ loggedInUser }) {
         .brl-table-timeline-fill { height: 100%; border-radius: 999px; }
       `}</style>
 
+      {!isAdmin && (
+        <div className="mb-5 rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 flex items-center gap-2.5 text-xs font-semibold text-slate-800">
+          <Eye className="w-4 h-4 text-slate-700 shrink-0" aria-hidden="true" />
+          <span>View-only access. Breeding checks, matings, and farrowing logs are recorded by an administrator.</span>
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <StatCard
@@ -569,7 +579,7 @@ export default function BreedingLogs({ loggedInUser }) {
             </div>
 
             {/* Add New Button */}
-            {activeTab === 'active' && (
+            {activeTab === 'active' && isAdmin && (
               <button
                 onClick={() => setShowAddModal(true)}
                 className="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl shadow-sm transition-colors w-full sm:w-auto"
@@ -606,20 +616,20 @@ export default function BreedingLogs({ loggedInUser }) {
                   <th>Timeline</th>
                   <th>Expected Farrowing</th>
                   <th>Status</th>
-                  <th style={{ textAlign: "right" }}>Actions</th>
+                  {isAdmin && <th style={{ textAlign: "right" }}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="6" className="text-center py-10">
+                    <td colSpan={isAdmin ? 6 : 5} className="text-center py-10">
                       <div className="flex justify-center mb-3"><div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div></div>
                       <span className="text-sm font-semibold text-slate-500">Loading records...</span>
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="text-center py-12">
+                    <td colSpan={isAdmin ? 6 : 5} className="text-center py-12">
                       <span className="text-sm font-semibold text-slate-500">No sows found</span>
                     </td>
                   </tr>
@@ -681,55 +691,57 @@ export default function BreedingLogs({ loggedInUser }) {
                               : meta.label}
                           </span>
                         </td>
-                        <td style={{ textAlign: "right", position: "relative" }}>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
-                            {sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
-                              <button
-                                onClick={() => { setFarrowLogData(sow); setShowFarrowModal(true); }}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
-                                title="Log Farrowing"
-                              >
-                                <Sparkles size={13} />
-                                Log Farrowing
-                              </button>
-                            )}
-                            {!(sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action')) && sow.status !== 'pregnant' && sow.day >= 21 && (
-                              <button
-                                onClick={() => { setCheckLogData(sow); setShowCheckModal(true); }}
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-xs transition-colors cursor-pointer ${
-                                  sow.status === 'action'
-                                    ? 'bg-rose-600 hover:bg-rose-700 text-white'
-                                    : 'bg-slate-800 hover:bg-slate-900 text-white'
-                                }`}
-                                title={sow.day >= 25 ? 'Log Pregnancy Confirmation Check' : 'Log Heat Return Check'}
-                              >
-                                <CalendarCheck size={13} />
-                                {sow.day >= 25 ? 'Log Preg Check' : 'Log Heat Check'}
-                              </button>
-                            )}
-                            <button className="brl-menu-btn" onClick={() => {
-                              const id = sow.breeding_id || sow.id;
-                              setOpenMenu(openMenu === id ? null : id);
-                            }}>
-                              <MoreVertical size={16} />
-                            </button>
-                          </div>
-                          {openMenu === (sow.breeding_id || sow.id) && (
-                            <div className="brl-menu" style={{ right: 20, ...(isNearBottom ? { bottom: 40, top: 'auto' } : { top: 40 }) }}>
-                              {sow.status !== 'pregnant' && sow.day >= 21 && (
-                                <button onClick={() => { setCheckLogData(sow); setShowCheckModal(true); setOpenMenu(null); }}>Log new check</button>
-                              )}
+                        {isAdmin && (
+                          <td style={{ textAlign: "right", position: "relative" }}>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
                               {sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
-                                <button style={{ color: 'var(--pine)' }} onClick={() => { setFarrowLogData(sow); setShowFarrowModal(true); setOpenMenu(null); }}>
-                                  Log farrowing
+                                <button
+                                  onClick={() => { setFarrowLogData(sow); setShowFarrowModal(true); }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
+                                  title="Log Farrowing"
+                                >
+                                  <Sparkles size={13} />
+                                  Log Farrowing
                                 </button>
                               )}
-                              <button onClick={() => { setEditLogData(sow); setShowEditModal(true); setOpenMenu(null); }}>Edit mating record</button>
-                              <button onClick={() => { setAbortLogData(sow); setShowAbortModal(true); setOpenMenu(null); }} style={{ color: "var(--wheat)" }}>Report Miscarriage</button>
-                              <button onClick={() => { setArchiveLogData(sow); setShowArchiveModal(true); setOpenMenu(null); }} style={{ color: "var(--brick)" }}>Archive record</button>
+                              {!(sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action')) && sow.status !== 'pregnant' && sow.day >= 21 && (
+                                <button
+                                  onClick={() => { setCheckLogData(sow); setShowCheckModal(true); }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-xs transition-colors cursor-pointer ${
+                                    sow.status === 'action'
+                                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                                      : 'bg-slate-800 hover:bg-slate-900 text-white'
+                                  }`}
+                                  title={sow.day >= 25 ? 'Log Pregnancy Confirmation Check' : 'Log Heat Return Check'}
+                                >
+                                  <CalendarCheck size={13} />
+                                  {sow.day >= 25 ? 'Log Preg Check' : 'Log Heat Check'}
+                                </button>
+                              )}
+                              <button className="brl-menu-btn" onClick={() => {
+                                const id = sow.breeding_id || sow.id;
+                                setOpenMenu(openMenu === id ? null : id);
+                              }}>
+                                <MoreVertical size={16} />
+                              </button>
                             </div>
-                          )}
-                        </td>
+                            {openMenu === (sow.breeding_id || sow.id) && (
+                              <div className="brl-menu" style={{ right: 20, ...(isNearBottom ? { bottom: 40, top: 'auto' } : { top: 40 }) }}>
+                                {sow.status !== 'pregnant' && sow.day >= 21 && (
+                                  <button onClick={() => { setCheckLogData(sow); setShowCheckModal(true); setOpenMenu(null); }}>Log new check</button>
+                                )}
+                                {sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
+                                  <button style={{ color: 'var(--pine)' }} onClick={() => { setFarrowLogData(sow); setShowFarrowModal(true); setOpenMenu(null); }}>
+                                    Log farrowing
+                                  </button>
+                                )}
+                                <button onClick={() => { setEditLogData(sow); setShowEditModal(true); setOpenMenu(null); }}>Edit mating record</button>
+                                <button onClick={() => { setAbortLogData(sow); setShowAbortModal(true); setOpenMenu(null); }} style={{ color: "var(--wheat)" }}>Report Miscarriage</button>
+                                <button onClick={() => { setArchiveLogData(sow); setShowArchiveModal(true); setOpenMenu(null); }} style={{ color: "var(--brick)" }}>Archive record</button>
+                              </div>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })
@@ -800,8 +812,7 @@ export default function BreedingLogs({ loggedInUser }) {
                         <p className="brl-sow-sub">{sow.parity === 1 ? "1st" : sow.parity === 2 ? "2nd" : sow.parity === 3 ? "3rd" : `${sow.parity}th`} parity · {sow.breed} · Pen: {sow.pen_code || 'Unassigned'}</p>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        {/* ── Inline Quick Action Button ── */}
-                        {sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
+                        {isAdmin && sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action') && (
                           <button
                             onClick={() => { setFarrowLogData(sow); setShowFarrowModal(true); }}
                             className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer"
@@ -811,7 +822,7 @@ export default function BreedingLogs({ loggedInUser }) {
                             Log Farrowing
                           </button>
                         )}
-                        {!(sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action')) && sow.status !== 'pregnant' && sow.day >= 21 && (
+                        {isAdmin && !(sow.day >= 100 && (sow.status === 'pregnant' || sow.status === 'action')) && sow.status !== 'pregnant' && sow.day >= 21 && (
                           <button
                             onClick={() => { setCheckLogData(sow); setShowCheckModal(true); }}
                             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-xs ${
@@ -832,7 +843,7 @@ export default function BreedingLogs({ loggedInUser }) {
                             ? (sow.day > GESTATION_DAYS ? "Farrowing Overdue" : "Pre-Farrow Action")
                             : meta.label}
                         </span>
-                        {activeTab === 'active' && (
+                        {isAdmin && activeTab === 'active' && (
                           <div style={{ position: "relative" }}>
                             <button className="brl-menu-btn" onClick={() => {
                               const id = sow.breeding_id || sow.id;
@@ -912,92 +923,92 @@ export default function BreedingLogs({ loggedInUser }) {
         </div>
       )}
 
-      {/* Add Breeding Log Modal */}
-      <AddBreedingLogModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        loggedInUser={loggedInUser}
-        onSaved={() => {
-          refreshLogs();
-        }}
-      />
+      {isAdmin && (
+        <>
+          <AddBreedingLogModal
+            isOpen={showAddModal}
+            onClose={() => setShowAddModal(false)}
+            loggedInUser={loggedInUser}
+            onSaved={() => {
+              refreshLogs();
+            }}
+          />
 
-      {/* Edit Breeding Log Modal */}
-      <EditBreedingLogModal
-        isOpen={showEditModal}
-        onClose={() => setShowEditModal(false)}
-        loggedInUser={loggedInUser}
-        initialData={editLogData}
-        onSaved={() => {
-          refreshLogs();
-        }}
-      />
+          <EditBreedingLogModal
+            isOpen={showEditModal}
+            onClose={() => setShowEditModal(false)}
+            loggedInUser={loggedInUser}
+            initialData={editLogData}
+            onSaved={() => {
+              refreshLogs();
+            }}
+          />
 
-      {/* Log Check Modal */}
-      <LogCheckModal
-        isOpen={showCheckModal}
-        onClose={() => setShowCheckModal(false)}
-        loggedInUser={loggedInUser}
-        initialData={checkLogData}
-        onSaved={() => {
-          refreshLogs();
-        }}
-      />
+          <LogCheckModal
+            isOpen={showCheckModal}
+            onClose={() => setShowCheckModal(false)}
+            loggedInUser={loggedInUser}
+            initialData={checkLogData}
+            onSaved={() => {
+              refreshLogs();
+            }}
+          />
 
-      <LogFarrowingModal
-        isOpen={showFarrowModal}
-        onClose={() => {
-          setShowFarrowModal(false);
-          setFarrowLogData(null);
-        }}
-        onSaved={refreshLogs}
-        onRegisterPiglets={(farrowDate) => {
-          if (farrowLogData) {
-            setPigletInitialData({
-              sowId: farrowLogData.sow_id,
-              penId: farrowLogData.pen_id || "",
-              dateOfBirth: farrowDate || "",
-            });
-          }
-          setShowPigletModal(true);
-        }}
-        loggedInUser={loggedInUser}
-        initialData={farrowLogData}
-      />
+          <LogFarrowingModal
+            isOpen={showFarrowModal}
+            onClose={() => {
+              setShowFarrowModal(false);
+              setFarrowLogData(null);
+            }}
+            onSaved={refreshLogs}
+            onRegisterPiglets={(farrowDate) => {
+              if (farrowLogData) {
+                setPigletInitialData({
+                  sowId: farrowLogData.sow_id,
+                  penId: farrowLogData.pen_id || "",
+                  dateOfBirth: farrowDate || "",
+                });
+              }
+              setShowPigletModal(true);
+            }}
+            loggedInUser={loggedInUser}
+            initialData={farrowLogData}
+          />
 
-      <AddPigletBatchModal
-        isOpen={showPigletModal}
-        onClose={() => {
-          setShowPigletModal(false);
-          setFarrowLogData(null);
-          setPigletInitialData(null);
-        }}
-        initialData={pigletInitialData}
-        onSave={handleSaveBatch}
-      />
+          <AddPigletBatchModal
+            isOpen={showPigletModal}
+            onClose={() => {
+              setShowPigletModal(false);
+              setFarrowLogData(null);
+              setPigletInitialData(null);
+            }}
+            initialData={pigletInitialData}
+            onSave={handleSaveBatch}
+          />
 
-      {/* Archive Modal */}
-      <ArchiveBreedingLogModal
-        isOpen={showArchiveModal}
-        onClose={() => {
-          setShowArchiveModal(false);
-          setArchiveLogData(null);
-        }}
-        onConfirm={confirmArchive}
-        sowTag={archiveLogData?.tag || archiveLogData?.id}
-        isArchiving={isArchiving}
-      />
+          <ArchiveBreedingLogModal
+            isOpen={showArchiveModal}
+            onClose={() => {
+              setShowArchiveModal(false);
+              setArchiveLogData(null);
+            }}
+            onConfirm={confirmArchive}
+            sowTag={archiveLogData?.tag || archiveLogData?.id}
+            isArchiving={isArchiving}
+          />
 
-      <ReportMiscarriageModal
-        isOpen={showAbortModal}
-        onClose={() => {
-          setShowAbortModal(false);
-          setAbortLogData(null);
-        }}
-        sowTag={abortLogData?.tag || abortLogData?.id}
-        isSubmitting={isAborting}
-        onConfirm={() => abortLogData && handleAbort(abortLogData.breeding_id)}
-      />
+          <ReportMiscarriageModal
+            isOpen={showAbortModal}
+            onClose={() => {
+              setShowAbortModal(false);
+              setAbortLogData(null);
+            }}
+            sowTag={abortLogData?.tag || abortLogData?.id}
+            isSubmitting={isAborting}
+            onConfirm={() => abortLogData && handleAbort(abortLogData.breeding_id)}
+          />
+        </>
+      )}
     </div>
   );
 }

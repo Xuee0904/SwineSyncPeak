@@ -11,6 +11,7 @@ import { supabase } from "../supabaseClient";
 import AddSupplyModal from "../components/Inventory/AddSupplyModal";
 import DailyFeedingPanel from "../components/Feeding/DailyFeedingPanel";
 import PigSnout from "../components/common/PigSnout";
+import { isAdminUser } from "../utils/rbac";
 
 const FONT_DISPLAY = "font-['Space_Grotesk',_sans-serif]";
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -955,7 +956,7 @@ function StatCard({
 /* ---------------------------------------------------------------------- */
 /* Template Card                                                          */
 /* ---------------------------------------------------------------------- */
-function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onViewBatches, onAddToInventory, onProgramFed }) {
+function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onViewBatches, onAddToInventory, onProgramFed, isAdmin = true }) {
   const guidelines = program.guidelines || [];
   const sorted = [...guidelines].sort((a, b) => a.days_after_birth - b.days_after_birth);
   const batchCount = program.enrolled_batch_count ?? 0;
@@ -1046,7 +1047,7 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
                       {g.daily_consumption_per_head > 0 && (
                         <span className="block text-[10px] text-neutral-500 mt-0.5">~{g.daily_consumption_per_head} kg/head</span>
                       )}
-                      {!g.item_id && !viewArchived && g.activity_type !== 'PROCEDURE' && g.task_name && g.task_name.trim() && onAddToInventory && (
+                      {isAdmin && !g.item_id && !viewArchived && g.activity_type !== 'PROCEDURE' && g.task_name && g.task_name.trim() && onAddToInventory && (
                         <button
                           type="button"
                           onClick={() => onAddToInventory(g, program)}
@@ -1128,35 +1129,37 @@ function ProgramCard({ program, onEdit, onArchive, viewArchived, onRestore, onVi
           )}
         </span>
 
-        <div className="flex items-center gap-2">
-          {!viewArchived ? (
-            <>
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            {!viewArchived ? (
+              <>
+                <button
+                  onClick={() => onEdit(program)}
+                  className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-emerald-800 hover:text-emerald-950 transition-colors cursor-pointer"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Edit
+                </button>
+                <span className="w-px h-4 bg-neutral-200" />
+                <button
+                  onClick={() => onArchive(program)}
+                  className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-rose-600 hover:text-rose-800 transition-colors cursor-pointer"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  Archive
+                </button>
+              </>
+            ) : (
               <button
-                onClick={() => onEdit(program)}
-                className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-emerald-800 hover:text-emerald-950 transition-colors cursor-pointer"
+                onClick={() => onRestore(program)}
+                className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
               >
-                <Pencil className="w-3.5 h-3.5" />
-                Edit
+                <Unlock className="w-3.5 h-3.5" />
+                Restore
               </button>
-              <span className="w-px h-4 bg-neutral-200" />
-              <button
-                onClick={() => onArchive(program)}
-                className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-rose-600 hover:text-rose-800 transition-colors cursor-pointer"
-              >
-                <Archive className="w-3.5 h-3.5" />
-                Archive
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => onRestore(program)}
-              className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
-            >
-              <Unlock className="w-3.5 h-3.5" />
-              Restore
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </article>
   );
@@ -1805,7 +1808,8 @@ function RestoreConfirmModal({ program, onCancel, onSuccess }) {
 /* ---------------------------------------------------------------------- */
 /* Page                                                                   */
 /* ---------------------------------------------------------------------- */
-export default function GrowthProgramManagement() {
+export default function GrowthProgramManagement({ loggedInUser }) {
+  const isAdmin = isAdminUser(loggedInUser);
   const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -1843,7 +1847,7 @@ export default function GrowthProgramManagement() {
     setEditProgram(null);
   };
 
-  if (showForm) {
+  if (isAdmin && showForm) {
     return (
       <ProgramFormModal
         isOpen={showForm}
@@ -1915,6 +1919,7 @@ export default function GrowthProgramManagement() {
       {!viewArchived && (
         <DailyFeedingPanel
           variant="banner"
+          isAdmin={isAdmin}
           onUpdated={fetchPrograms}
         />
       )}
@@ -1938,7 +1943,7 @@ export default function GrowthProgramManagement() {
             </button>
           </div>
         </div>
-        {!viewArchived && (
+        {!viewArchived && isAdmin && (
           <button
             onClick={() => { setEditProgram(null); setShowForm(true); }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all cursor-pointer"
@@ -1975,9 +1980,11 @@ export default function GrowthProgramManagement() {
       ) : programs.length === 0 ? (
         <div className="text-center py-20 bg-white border border-neutral-200 rounded-2xl shadow-sm">
           <p className="text-neutral-500 text-sm font-semibold">No growth programs found.</p>
-          <button onClick={() => setShowForm(true)} className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 transition-colors">
-            <Plus className="w-4 h-4" /> Create your first template
-          </button>
+          {isAdmin && (
+            <button onClick={() => setShowForm(true)} className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 transition-colors">
+              <Plus className="w-4 h-4" /> Create your first template
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -1985,6 +1992,7 @@ export default function GrowthProgramManagement() {
             <ProgramCard
               key={program.program_id}
               program={program}
+              isAdmin={isAdmin}
               onEdit={handleEdit}
               onArchive={setArchiveTarget}
               viewArchived={viewArchived}
@@ -1998,24 +2006,28 @@ export default function GrowthProgramManagement() {
       )}
 
       {/* Archive Confirm */}
-      <ArchiveConfirmModal
-        program={archiveTarget}
-        onSuccess={() => {
-          setArchiveTarget(null);
-          fetchPrograms();
-        }}
-        onCancel={() => setArchiveTarget(null)}
-      />
+      {isAdmin && (
+        <ArchiveConfirmModal
+          program={archiveTarget}
+          onSuccess={() => {
+            setArchiveTarget(null);
+            fetchPrograms();
+          }}
+          onCancel={() => setArchiveTarget(null)}
+        />
+      )}
 
       {/* Restore Confirm */}
-      <RestoreConfirmModal
-        program={restoreTarget}
-        onSuccess={() => {
-          setRestoreTarget(null);
-          fetchPrograms();
-        }}
-        onCancel={() => setRestoreTarget(null)}
-      />
+      {isAdmin && (
+        <RestoreConfirmModal
+          program={restoreTarget}
+          onSuccess={() => {
+            setRestoreTarget(null);
+            fetchPrograms();
+          }}
+          onCancel={() => setRestoreTarget(null)}
+        />
+      )}
 
       {/* Enrolled Batches */}
       <EnrolledBatchesModal
@@ -2025,7 +2037,7 @@ export default function GrowthProgramManagement() {
       />
 
       {/* Add Custom Growth Activity Supply to Inventory Modal */}
-      {addSupplyTarget && (
+      {isAdmin && addSupplyTarget && (
         <AddSupplyModal
           item={null}
           prefill={{

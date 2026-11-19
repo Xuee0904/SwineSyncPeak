@@ -25,6 +25,7 @@ import VaccinationFormModal from "../components/HealthManagement/VaccinationForm
 import AddHealthLogModal from "../components/HealthManagement/AddHealthLogModal";
 import Pagination from "../components/common/Pagination";
 import ExportDropdown from "../components/common/ExportDropdown";
+import { isAdminUser } from "../utils/rbac";
 
 // Export column definitions
 const vaccinationExportColumns = [
@@ -251,6 +252,7 @@ function StatCard({
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export default function HealthManagement({ setActiveTab, loggedInUser }) {
+  const isAdmin = isAdminUser(loggedInUser);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [vetFilter, setVetFilter] = useState("all");
@@ -1048,7 +1050,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   <th className="px-5 py-3 font-medium">Veterinarian</th>
                   <th className="px-5 py-3 font-medium">Dosage</th>
                   {!showArchived && <th className="px-5 py-3 font-medium">Status</th>}
-                  {!showArchived && <th className="px-5 py-3 font-medium text-right">Actions</th>}
+                  {!showArchived && isAdmin && <th className="px-5 py-3 font-medium text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
@@ -1087,7 +1089,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   )
                 ) : paginatedVacRegistry.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">
+                    <td colSpan={isAdmin ? 8 : 7} className="px-5 py-10 text-center text-sm text-slate-400">
                       No records match your filters.
                     </td>
                   </tr>
@@ -1108,40 +1110,42 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                       <td className="px-5 py-4">
                         <StatusPill status={row.status} />
                       </td>
-                      <td className="px-5 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => { setEditVacRecord(row); setVacModal(true); }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-emerald-300 transition-colors"
-                          >
-                            <Pencil className="h-3 w-3" /> Edit
-                          </button>
-                          <button
-                            disabled={archivingId === row._raw.vaccination_id}
-                            onClick={async () => {
-                              if (!confirm(`Archive vaccination record for ${row.pigHerdId}?`)) return;
-                              setArchivingId(row._raw.vaccination_id);
-                              try {
-                                const res = await fetch(`${API_BASE}/api/vaccination-records/${row._raw.vaccination_id}/archive`, {
-                                  method: "PATCH",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ performed_by: "Admin" }),
-                                });
-                                if (!res.ok) throw new Error("Failed to archive");
-                                toast.success("Record archived.");
-                                fetchData();
-                              } catch (e) {
-                                toast.error(e.message);
-                              } finally {
-                                setArchivingId(null);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
-                          >
-                            <Archive className="h-3 w-3" /> Archive
-                          </button>
-                        </div>
-                      </td>
+                      {isAdmin && (
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => { setEditVacRecord(row); setVacModal(true); }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-emerald-300 transition-colors"
+                            >
+                              <Pencil className="h-3 w-3" /> Edit
+                            </button>
+                            <button
+                              disabled={archivingId === row._raw.vaccination_id}
+                              onClick={async () => {
+                                if (!confirm(`Archive vaccination record for ${row.pigHerdId}?`)) return;
+                                setArchivingId(row._raw.vaccination_id);
+                                try {
+                                  const res = await fetch(`${API_BASE}/api/vaccination-records/${row._raw.vaccination_id}/archive`, {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ performed_by: loggedInUser?.name || loggedInUser?.email || "Admin" }),
+                                  });
+                                  if (!res.ok) throw new Error("Failed to archive");
+                                  toast.success("Record archived.");
+                                  fetchData();
+                                } catch (e) {
+                                  toast.error(e.message);
+                                } finally {
+                                  setArchivingId(null);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                            >
+                              <Archive className="h-3 w-3" /> Archive
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -1308,7 +1312,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   <th className="px-5 py-3 font-medium">Dosage</th>
                   <th className="px-5 py-3 font-medium">Examined By</th>
                   {!showHealthArchived && <th className="px-5 py-3 font-medium">Status</th>}
-                  {!showHealthArchived && <th className="px-5 py-3 font-medium text-right">Actions</th>}
+                  {!showHealthArchived && isAdmin && <th className="px-5 py-3 font-medium text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
@@ -1323,7 +1327,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                       <td className="px-5 py-4"><div className="h-4 w-16 bg-slate-200 rounded"></div></td>
                       <td className="px-5 py-4"><div className="h-4 w-24 bg-slate-200 rounded"></div></td>
                       {!showHealthArchived && <td className="px-5 py-4"><div className="h-6 w-16 bg-slate-200 rounded-full"></div></td>}
-                      {!showHealthArchived && <td className="px-5 py-4"><div className="h-6 w-24 bg-slate-200 rounded"></div></td>}
+                      {!showHealthArchived && isAdmin && <td className="px-5 py-4"><div className="h-6 w-24 bg-slate-200 rounded"></div></td>}
                     </tr>
                   ))
                 ) : showHealthArchived ? (
@@ -1353,7 +1357,7 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                   )
                 ) : paginatedHealthLog.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-400">
+                    <td colSpan={isAdmin ? 9 : 8} className="px-5 py-10 text-center text-sm text-slate-400">
                       No health events match your criteria.
                     </td>
                   </tr>
@@ -1375,77 +1379,79 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
                       <td className="px-5 py-4">
                         <HealthStatusPill status={row.status} />
                       </td>
-                      <td className="px-5 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {(row.status === "sick" || row.status === "monitoring") && (
+                      {isAdmin && (
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {(row.status === "sick" || row.status === "monitoring") && (
+                              <button
+                                type="button"
+                                disabled={resolvingHealthId === row._raw.health_id}
+                                onClick={async () => {
+                                  setResolvingHealthId(row._raw.health_id);
+                                  try {
+                                    const res = await fetch(`${API_BASE}/api/health-logs/${row._raw.health_id}`, {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        status: 'resolved',
+                                        performed_by: loggedInUser?.name || loggedInUser?.email || 'Admin',
+                                      }),
+                                    });
+                                    if (!res.ok) throw new Error('Failed to resolve health log');
+                                    toast.success(`Marked as resolved for ${row.swineId}. Herd status updated.`);
+                                    fetchData();
+                                  } catch (e) {
+                                    toast.error(e.message);
+                                  } finally {
+                                    setResolvingHealthId(null);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50/50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 transition-colors disabled:opacity-50"
+                                title="Mark case as resolved (restores swine status to Healthy)"
+                              >
+                                <CheckCircle2 className="h-3 w-3" />
+                                {resolvingHealthId === row._raw.health_id ? "Saving..." : "Resolve"}
+                              </button>
+                            )}
                             <button
                               type="button"
-                              disabled={resolvingHealthId === row._raw.health_id}
+                              onClick={() => {
+                                setEditHealthRecord(row);
+                                setPrefillHealth(null);
+                                setHealthModal(true);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-emerald-300 transition-colors"
+                            >
+                              <Pencil className="h-3 w-3" /> Edit
+                            </button>
+                            <button
+                              type="button"
+                              disabled={archivingHealthId === row._raw.health_id}
                               onClick={async () => {
-                                setResolvingHealthId(row._raw.health_id);
+                                if (!confirm(`Archive health record for ${row.swineId}?`)) return;
+                                setArchivingHealthId(row._raw.health_id);
                                 try {
-                                  const res = await fetch(`${API_BASE}/api/health-logs/${row._raw.health_id}`, {
+                                  const res = await fetch(`${API_BASE}/api/health-logs/${row._raw.health_id}/archive`, {
                                     method: 'PATCH',
                                     headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                      status: 'resolved',
-                                      performed_by: loggedInUser?.name || loggedInUser?.email || 'Admin',
-                                    }),
+                                    body: JSON.stringify({ performed_by: loggedInUser?.name || loggedInUser?.email || 'Admin' }),
                                   });
-                                  if (!res.ok) throw new Error('Failed to resolve health log');
-                                  toast.success(`Marked as resolved for ${row.swineId}. Herd status updated.`);
+                                  if (!res.ok) throw new Error('Failed to archive');
+                                  toast.success('Health record archived.');
                                   fetchData();
                                 } catch (e) {
                                   toast.error(e.message);
                                 } finally {
-                                  setResolvingHealthId(null);
+                                  setArchivingHealthId(null);
                                 }
                               }}
-                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50/50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 transition-colors disabled:opacity-50"
-                              title="Mark case as resolved (restores swine status to Healthy)"
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
                             >
-                              <CheckCircle2 className="h-3 w-3" />
-                              {resolvingHealthId === row._raw.health_id ? "Saving..." : "Resolve"}
+                              <Archive className="h-3 w-3" /> Archive
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditHealthRecord(row);
-                              setPrefillHealth(null);
-                              setHealthModal(true);
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:border-emerald-300 transition-colors"
-                          >
-                            <Pencil className="h-3 w-3" /> Edit
-                          </button>
-                          <button
-                            type="button"
-                            disabled={archivingHealthId === row._raw.health_id}
-                            onClick={async () => {
-                              if (!confirm(`Archive health record for ${row.swineId}?`)) return;
-                              setArchivingHealthId(row._raw.health_id);
-                              try {
-                                const res = await fetch(`${API_BASE}/api/health-logs/${row._raw.health_id}/archive`, {
-                                  method: 'PATCH',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ performed_by: loggedInUser?.name || loggedInUser?.email || 'Admin' }),
-                                });
-                                if (!res.ok) throw new Error('Failed to archive');
-                                toast.success('Health record archived.');
-                                fetchData();
-                              } catch (e) {
-                                toast.error(e.message);
-                              } finally {
-                                setArchivingHealthId(null);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
-                          >
-                            <Archive className="h-3 w-3" /> Archive
-                          </button>
-                        </div>
-                      </td>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
@@ -1479,7 +1485,14 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         editRecord={editVacRecord}
         prefillData={prefillVac}
         currentUser={loggedInUser}
+        isAdmin={isAdmin}
+        growthTaskId={activeGrowthTask?.task_id || null}
         onSuccess={async (createdLog) => {
+          if (createdLog?.pendingApproval) {
+            window.dispatchEvent(new CustomEvent('swinesync:approvals-updated'));
+            fetchData();
+            return;
+          }
           if (activeGrowthTask) {
             await fetch(`${API_BASE}/api/growth-tasks/${activeGrowthTask.task_id}`, {
               method: 'PATCH',
@@ -1502,7 +1515,14 @@ export default function HealthManagement({ setActiveTab, loggedInUser }) {
         editRecord={editHealthRecord}
         prefillData={prefillHealth}
         currentUser={loggedInUser}
+        isAdmin={isAdmin}
+        growthTaskId={activeGrowthTask?.task_id || null}
         onSuccess={async (createdLog) => {
+          if (createdLog?.pendingApproval) {
+            window.dispatchEvent(new CustomEvent('swinesync:approvals-updated'));
+            fetchData();
+            return;
+          }
           if (activeGrowthTask) {
             await fetch(`${API_BASE}/api/growth-tasks/${activeGrowthTask.task_id}`, {
               method: 'PATCH',

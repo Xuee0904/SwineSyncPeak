@@ -1,5 +1,6 @@
 import express from 'express';
 import { supabase, supabaseAdmin } from '../supabaseClient.js';
+import { verifyAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 const db = supabaseAdmin || supabase;
@@ -55,7 +56,7 @@ function formatTimeDisplay(ts) {
 
 // ─── GET /api/transactions/options ──────────────────────────────────────────
 // Returns live active pigs, batches, and inventory supplies for sale & restock modals
-router.get('/api/transactions/options', async (req, res) => {
+router.get('/api/transactions/options', verifyAdmin, async (req, res) => {
   try {
     const [pigsRes, batchesRes, itemsRes] = await Promise.all([
       db.from('pigs')
@@ -127,7 +128,7 @@ router.get('/api/transactions/options', async (req, res) => {
 
 // ─── GET /api/transactions ──────────────────────────────────────────────────
 // Returns unified list of sales and expenses with multi-criteria filtering
-router.get('/api/transactions', async (req, res) => {
+router.get('/api/transactions', verifyAdmin, async (req, res) => {
   try {
     const { tab = 'All', category = 'All categories', status = 'All statuses', range = 'All', search = '' } = req.query;
 
@@ -340,7 +341,7 @@ router.get('/api/transactions', async (req, res) => {
 
 // ─── GET /api/transactions/summary ──────────────────────────────────────────
 // Computes metrics: Total Sales, Total Expenses, Net Income, Pending Payments, and trend series
-router.get('/api/transactions/summary', async (req, res) => {
+router.get('/api/transactions/summary', verifyAdmin, async (req, res) => {
   try {
     const [expRes, salesRes] = await Promise.all([
       Promise.resolve(db.from('expenses').select('amount, date_incurred, status, created_at')).catch((e) => ({ data: null, error: e })),
@@ -540,7 +541,7 @@ router.get('/api/transactions/summary', async (req, res) => {
 
 // ─── POST /api/transactions/expense ─────────────────────────────────────────
 // Records a financial expense (and handles linked inventory restock if supplies were bought)
-router.post('/api/transactions/expense', async (req, res) => {
+router.post('/api/transactions/expense', verifyAdmin, async (req, res) => {
   try {
     const {
       category,
@@ -665,7 +666,7 @@ router.post('/api/transactions/expense', async (req, res) => {
 
 // ─── POST /api/transactions/sale ────────────────────────────────────────────
 // Records a swine sale and automatically updates herd state (archives sold pigs / deducts batch headcount)
-router.post('/api/transactions/sale', async (req, res) => {
+router.post('/api/transactions/sale', verifyAdmin, async (req, res) => {
   try {
     const {
       buyerName,
@@ -850,7 +851,7 @@ router.post('/api/transactions/sale', async (req, res) => {
 
 // ─── PATCH /api/transactions/:type/:id ──────────────────────────────────────
 // Updates payment status (e.g. Pending -> Completed) or transaction notes
-router.patch('/api/transactions/:type/:id', async (req, res) => {
+router.patch('/api/transactions/:type/:id', verifyAdmin, async (req, res) => {
   try {
     const { type, id } = req.params;
     const { status, notes, creator } = req.body;

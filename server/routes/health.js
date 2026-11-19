@@ -1,6 +1,8 @@
 import express from 'express';
 import { supabase, supabaseAdmin } from '../supabaseClient.js';
 import { deductInventoryStock } from '../helpers/inventoryDeduction.js';
+import { verifyAuth, verifyAdmin } from '../middleware/auth.js';
+import { createHttpError, queueApprovalRequest } from '../helpers/approvalQueue.js';
 
 const router = express.Router();
 
@@ -42,7 +44,7 @@ async function logActivity({ creator, event_title, event_desc, status = 'SUCCESS
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GET /api/health-logs
-router.get('/api/health-logs', async (req, res) => {
+router.get('/api/health-logs', verifyAuth, async (req, res) => {
   try {
     const { pig_id, batch_id, archived } = req.query;
 
@@ -148,15 +150,100 @@ const syncSwineStatus = async (healthStatus, pig_id, batch_id, mortality_count =
   }
 };
 
-// POST /api/health-logs
-router.post('/api/health-logs', async (req, res) => {
+async function resolveHealthDisplayMeta({ pig_id, batch_id, item_id }) {
+  let targetTag = null;
+  let itemName = null;
+  let itemUnit = null;
+
+  if (pig_id) {
+    const { data } = await supabaseAdmin.from('pigs').select('pig_tag').eq('pig_id', pig_id).maybeSingle();
+    targetTag = data?.pig_tag ? `#${data.pig_tag}` : null;
+  } else if (batch_id) {
+    const { data } = await supabaseAdmin.from('piglet_batches').select('batch_tag').eq('batch_id', batch_id).maybeSingle();
+    targetTag = data?.batch_tag || null;
+  }
+
+  if (item_id) {
+    const { data } = await supabaseAdmin.from('inventory_items').select('item_name, unit_of_measure').eq('item_id', item_id).maybeSingle();
+    itemName = data?.item_name || null;
+    itemUnit = data?.unit_of_measure || null;
+  }
+
+  return { targetTag, itemName, itemUnit };
+}
+
+async function completeLinkedGrowthTask(taskId, { linked_health_id = null, linked_vaccination_id = null, performed_by = 'Health Management' }) {
+  if (!taskId) return;
   try {
-    const {
+    const { data, error } = await supabaseAdmin
+      .from('growth_tasks')
+      .update({
+        status: 'completed',
+        linked_health_id: linked_health_id || null,
+        linked_vaccination_id: linked_vaccination_id || null,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('task_id', taskId)
+      .select();
+
+    if (error || !data || data.length === 0) return;
+    const task = data[0];
+    if (task.batch_id) {
+      await supabaseAdmin
+        .from('batch_activity_logs')
+        .insert({
+          batch_id: task.batch_id,
+          guideline_id: task.guideline_id || null,
+          activity_type: task.activity_type,
+          amount_given: 0,
+          performed_by,
+        })
+        .then(() => {})
+        .catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[Growth Task] Failed to complete linked task:', err.message);
+  }
+}
+
+export async function executeCreateHealthLog(body = {}) {
+  const {
+    pig_id,
+    batch_id,
+    log_date,
+    recorded_by,
+    examined_by,
+    symptoms,
+    diagnosis,
+    treatment,
+    medication_name,
+    dosage,
+    status,
+    notes,
+    item_id,
+    quantity_deducted,
+    mortality_count,
+    growth_task_id,
+    creator,
+  } = body;
+
+  if (!pig_id && !batch_id) {
+    throw createHttpError(400, 'Must provide pig_id or batch_id.');
+  }
+  if (!recorded_by) {
+    throw createHttpError(400, 'recorded_by is required.');
+  }
+
+  const deductionQty = quantity_deducted ? parseFloat(quantity_deducted) : null;
+
+  const { data, error } = await supabaseAdmin
+    .from('health_logs')
+    .insert([{
       pig_id,
       batch_id,
-      log_date,
+      log_date: log_date || new Date().toISOString(),
       recorded_by,
-      examined_by,
+      examined_by: examined_by || null,
       symptoms,
       diagnosis,
       treatment,
@@ -164,71 +251,101 @@ router.post('/api/health-logs', async (req, res) => {
       dosage,
       status,
       notes,
-      item_id,
-      quantity_deducted,
-      mortality_count,
-    } = req.body;
+      item_id: item_id || null,
+      quantity_deducted: deductionQty && deductionQty > 0 ? deductionQty : null
+    }])
+    .select();
 
+  if (error) throw error;
+
+  if (item_id && deductionQty && deductionQty > 0) {
+    await deductInventoryStock({
+      db: supabaseAdmin,
+      itemId: item_id,
+      quantity: deductionQty,
+      notes: `Health treatment: ${treatment || medication_name || 'Medication'}${pig_id ? ' (Individual Pig)' : ' (Batch)'} • By: ${creator || recorded_by}`,
+      performedBy: creator || recorded_by
+    }).catch(err => console.warn('[Health Log] Stock deduction warning:', err.message));
+  }
+
+  await logActivity({
+    creator: creator || recorded_by,
+    event_title: 'Health Log Added',
+    event_desc: `Recorded new health log${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}. Diagnosis: ${diagnosis || 'N/A'}.${examined_by ? ` Examined by: ${examined_by}.` : ''}`,
+  });
+
+  if (status) {
+    await syncSwineStatus(status, pig_id, batch_id, mortality_count, creator || recorded_by);
+  }
+
+  if (growth_task_id && data?.[0]?.health_id) {
+    await completeLinkedGrowthTask(growth_task_id, {
+      linked_health_id: data[0].health_id,
+      performed_by: creator || recorded_by,
+    });
+  }
+
+  return { data: data[0] };
+}
+
+// POST /api/health-logs
+router.post('/api/health-logs', verifyAuth, async (req, res) => {
+  try {
+    const { pig_id, batch_id, diagnosis, status, item_id, quantity_deducted } = req.body;
     if (!pig_id && !batch_id) {
       return res.status(400).json({ error: 'Must provide pig_id or batch_id.' });
     }
-    if (!recorded_by) {
+
+    const effectiveRecordedBy = req.isAdmin ? (req.body.recorded_by || req.userName) : req.userName;
+    if (!effectiveRecordedBy) {
       return res.status(400).json({ error: 'recorded_by is required.' });
     }
 
-    const deductionQty = quantity_deducted ? parseFloat(quantity_deducted) : null;
-
-    const { data, error } = await supabaseAdmin
-      .from('health_logs')
-      .insert([{
-        pig_id,
-        batch_id,
-        log_date: log_date || new Date().toISOString(),
-        recorded_by,
-        examined_by: examined_by || null,
-        symptoms,
-        diagnosis,
-        treatment,
-        medication_name,
-        dosage,
-        status,
-        notes,
-        item_id: item_id || null,
-        quantity_deducted: deductionQty && deductionQty > 0 ? deductionQty : null
-      }])
-      .select();
-
-    if (error) throw error;
-
-    // Deduct inventory stock if an item is linked and quantity > 0
-    if (item_id && deductionQty && deductionQty > 0) {
-      await deductInventoryStock({
-        db: supabaseAdmin,
-        itemId: item_id,
-        quantity: deductionQty,
-        notes: `Health treatment: ${treatment || medication_name || 'Medication'}${pig_id ? ' (Individual Pig)' : ' (Batch)'} • By: ${recorded_by}`,
-        performedBy: recorded_by
-      }).catch(err => console.warn('[Health Log] Stock deduction warning:', err.message));
+    if (req.isAdmin) {
+      const result = await executeCreateHealthLog({
+        ...req.body,
+        recorded_by: effectiveRecordedBy,
+        creator: req.body.creator || req.userName,
+      });
+      return res.json(result);
     }
 
-    await logActivity({
-      creator: recorded_by,
-      event_title: 'Health Log Added',
-      event_desc: `Recorded new health log${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}. Diagnosis: ${diagnosis || 'N/A'}.${examined_by ? ` Examined by: ${examined_by}.` : ''}`,
+    const meta = await resolveHealthDisplayMeta({ pig_id, batch_id, item_id });
+    const subjectLabel = meta.targetTag || (pig_id ? `Pig ${pig_id.substring(0, 8)}` : `Batch ${batch_id?.substring(0, 8)}`);
+    const statusText = status ? ` (${status})` : '';
+    const diagText = diagnosis ? `: ${diagnosis}` : '';
+    const summary = `Health event for ${subjectLabel}${statusText}${diagText}`;
+
+    const approvalRequest = await queueApprovalRequest({
+      req,
+      module: 'health',
+      action: 'create_health_log',
+      actionLabel: 'Log Health Event',
+      summary,
+      targetId: pig_id || batch_id,
+      payload: {
+        ...req.body,
+        recorded_by: req.userName,
+        performed_by: req.userName,
+        targetTag: meta.targetTag,
+        itemName: meta.itemName,
+        itemUnit: meta.itemUnit,
+        quantity_deducted: quantity_deducted ? parseFloat(quantity_deducted) : null,
+      },
     });
 
-    if (status) {
-      await syncSwineStatus(status, pig_id, batch_id, mortality_count, recorded_by);
-    }
-
-    res.json({ data: data[0] });
+    return res.status(202).json({
+      pendingApproval: true,
+      approvalRequest,
+      message: 'Health log submitted for administrator approval.',
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
 // PATCH /api/health-logs/:id
-router.patch('/api/health-logs/:id', async (req, res) => {
+router.patch('/api/health-logs/:id', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { performed_by, ...updates } = req.body;
@@ -259,7 +376,7 @@ router.patch('/api/health-logs/:id', async (req, res) => {
 });
 
 // PATCH /api/health-logs/:id/archive
-router.patch('/api/health-logs/:id/archive', async (req, res) => {
+router.patch('/api/health-logs/:id/archive', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { performed_by, archive_reasoning } = req.body;
@@ -293,7 +410,7 @@ router.patch('/api/health-logs/:id/archive', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GET /api/vaccination-records
-router.get('/api/vaccination-records', async (req, res) => {
+router.get('/api/vaccination-records', verifyAuth, async (req, res) => {
   try {
     const { pig_id, batch_id, archived } = req.query;
 
@@ -316,10 +433,59 @@ router.get('/api/vaccination-records', async (req, res) => {
   }
 });
 
-// POST /api/vaccination-records
-router.post('/api/vaccination-records', async (req, res) => {
-  try {
-    const {
+export async function validateCreateVaccination(body = {}) {
+  const { pig_id, batch_id, vaccine_name, administered_date, booster_due_date } = body;
+
+  if (!pig_id && !batch_id) {
+    throw createHttpError(400, 'Must provide pig_id or batch_id.');
+  }
+  if (!vaccine_name) throw createHttpError(400, 'vaccine_name is required.');
+  if (!administered_date) throw createHttpError(400, 'administered_date is required.');
+
+  if (booster_due_date) {
+    if (new Date(booster_due_date) <= new Date(administered_date)) {
+      throw createHttpError(400, 'Booster due date must be strictly after the administered date.');
+    }
+  }
+
+  let birthDate = null;
+  if (pig_id) {
+    const { data: pig } = await supabaseAdmin.from('pigs').select('date_of_birth').eq('pig_id', pig_id).single();
+    if (pig && pig.date_of_birth) birthDate = pig.date_of_birth;
+  } else if (batch_id) {
+    const { data: batch } = await supabaseAdmin.from('piglet_batches').select('date_of_birth').eq('batch_id', batch_id).single();
+    if (batch && batch.date_of_birth) birthDate = batch.date_of_birth;
+  }
+
+  if (birthDate && new Date(administered_date) < new Date(birthDate)) {
+    throw createHttpError(400, "Vaccination date cannot precede the swine's birthdate.");
+  }
+}
+
+export async function executeCreateVaccination(body = {}) {
+  const {
+    pig_id,
+    batch_id,
+    vaccine_name,
+    administered_date,
+    dosage,
+    lot_number,
+    booster_due_date,
+    administered_by,
+    recorded_by,
+    item_id,
+    quantity_deducted,
+    growth_task_id,
+    creator,
+  } = body;
+
+  await validateCreateVaccination(body);
+
+  const deductionQty = quantity_deducted ? parseFloat(quantity_deducted) : null;
+
+  const { data, error } = await supabaseAdmin
+    .from('vaccination_records')
+    .insert([{
       pig_id,
       batch_id,
       vaccine_name,
@@ -329,82 +495,93 @@ router.post('/api/vaccination-records', async (req, res) => {
       booster_due_date,
       administered_by,
       recorded_by,
-      item_id,
-      quantity_deducted
-    } = req.body;
+      item_id: item_id || null,
+      quantity_deducted: deductionQty && deductionQty > 0 ? deductionQty : null
+    }])
+    .select();
 
-    if (!pig_id && !batch_id) {
-      return res.status(400).json({ error: 'Must provide pig_id or batch_id.' });
-    }
-    if (!vaccine_name) return res.status(400).json({ error: 'vaccine_name is required.' });
-    if (!administered_date) return res.status(400).json({ error: 'administered_date is required.' });
+  if (error) throw error;
 
-    if (booster_due_date) {
-      if (new Date(booster_due_date) <= new Date(administered_date)) {
-        return res.status(400).json({ error: 'Booster due date must be strictly after the administered date.' });
-      }
-    }
+  if (item_id && deductionQty && deductionQty > 0) {
+    await deductInventoryStock({
+      db: supabaseAdmin,
+      itemId: item_id,
+      quantity: deductionQty,
+      notes: `Vaccination: ${vaccine_name}${pig_id ? ' (Individual Pig)' : ' (Batch)'} • By: ${creator || administered_by || recorded_by}`,
+      performedBy: creator || recorded_by || administered_by
+    }).catch(err => console.warn('[Vaccination] Stock deduction warning:', err.message));
+  }
 
-    // Fetch birth_date to ensure vaccination isn't before birth
-    let birthDate = null;
-    if (pig_id) {
-      const { data: pig } = await supabaseAdmin.from('pigs').select('date_of_birth').eq('pig_id', pig_id).single();
-      if (pig && pig.date_of_birth) birthDate = pig.date_of_birth;
-    } else if (batch_id) {
-      const { data: batch } = await supabaseAdmin.from('piglet_batches').select('date_of_birth').eq('batch_id', batch_id).single();
-      if (batch && batch.date_of_birth) birthDate = batch.date_of_birth;
-    }
+  await logActivity({
+    creator: creator || recorded_by || administered_by,
+    event_title: 'Vaccination Recorded',
+    event_desc: `Recorded ${vaccine_name} vaccination${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}.${administered_by ? ` Administered by: ${administered_by}.` : ''}`,
+  });
 
-    if (birthDate && new Date(administered_date) < new Date(birthDate)) {
-      return res.status(400).json({ error: "Vaccination date cannot precede the swine's birthdate." });
-    }
+  if (growth_task_id && data?.[0]?.vaccination_id) {
+    await completeLinkedGrowthTask(growth_task_id, {
+      linked_vaccination_id: data[0].vaccination_id,
+      performed_by: creator || recorded_by || administered_by,
+    });
+  }
 
-    const deductionQty = quantity_deducted ? parseFloat(quantity_deducted) : null;
+  return { data: data[0] };
+}
 
-    const { data, error } = await supabaseAdmin
-      .from('vaccination_records')
-      .insert([{
-        pig_id,
-        batch_id,
-        vaccine_name,
-        administered_date,
-        dosage,
-        lot_number,
-        booster_due_date,
-        administered_by,
-        recorded_by,
-        item_id: item_id || null,
-        quantity_deducted: deductionQty && deductionQty > 0 ? deductionQty : null
-      }])
-      .select();
+// POST /api/vaccination-records
+router.post('/api/vaccination-records', verifyAuth, async (req, res) => {
+  try {
+    await validateCreateVaccination(req.body);
 
-    if (error) throw error;
+    const effectiveRecordedBy = req.isAdmin ? (req.body.recorded_by || req.userName) : req.userName;
+    const effectiveAdministeredBy = req.body.administered_by || req.userName;
 
-    // Deduct inventory stock if an item is linked and quantity > 0
-    if (item_id && deductionQty && deductionQty > 0) {
-      await deductInventoryStock({
-        db: supabaseAdmin,
-        itemId: item_id,
-        quantity: deductionQty,
-        notes: `Vaccination: ${vaccine_name}${pig_id ? ' (Individual Pig)' : ' (Batch)'} • By: ${administered_by || recorded_by}`,
-        performedBy: recorded_by || administered_by
-      }).catch(err => console.warn('[Vaccination] Stock deduction warning:', err.message));
+    if (req.isAdmin) {
+      const result = await executeCreateVaccination({
+        ...req.body,
+        recorded_by: effectiveRecordedBy,
+        administered_by: effectiveAdministeredBy,
+        creator: req.body.creator || req.userName,
+      });
+      return res.json(result);
     }
 
-    await logActivity({
-      creator: recorded_by || administered_by,
-      event_title: 'Vaccination Recorded',
-      event_desc: `Recorded ${vaccine_name} vaccination${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}.${administered_by ? ` Administered by: ${administered_by}.` : ''}`,
+    const { pig_id, batch_id, vaccine_name, item_id, quantity_deducted } = req.body;
+    const meta = await resolveHealthDisplayMeta({ pig_id, batch_id, item_id });
+    const subjectLabel = meta.targetTag || (pig_id ? `Pig ${pig_id.substring(0, 8)}` : `Batch ${batch_id?.substring(0, 8)}`);
+    const summary = `Vaccination (${vaccine_name}) for ${subjectLabel}`;
+
+    const approvalRequest = await queueApprovalRequest({
+      req,
+      module: 'health',
+      action: 'create_vaccination',
+      actionLabel: 'Log Vaccination',
+      summary,
+      targetId: pig_id || batch_id,
+      payload: {
+        ...req.body,
+        recorded_by: req.userName,
+        administered_by: effectiveAdministeredBy,
+        performed_by: req.userName,
+        targetTag: meta.targetTag,
+        itemName: meta.itemName,
+        itemUnit: meta.itemUnit,
+        quantity_deducted: quantity_deducted ? parseFloat(quantity_deducted) : null,
+      },
     });
 
-    res.json({ data: data[0] });
+    return res.status(202).json({
+      pendingApproval: true,
+      approvalRequest,
+      message: 'Vaccination record submitted for administrator approval.',
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
 // PATCH /api/vaccination-records/:id
-router.patch('/api/vaccination-records/:id', async (req, res) => {
+router.patch('/api/vaccination-records/:id', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { performed_by, ...updates } = req.body;
@@ -431,7 +608,7 @@ router.patch('/api/vaccination-records/:id', async (req, res) => {
 });
 
 // PATCH /api/vaccination-records/:id/archive
-router.patch('/api/vaccination-records/:id/archive', async (req, res) => {
+router.patch('/api/vaccination-records/:id/archive', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { performed_by, archive_reasoning } = req.body;
@@ -465,7 +642,7 @@ router.patch('/api/vaccination-records/:id/archive', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GET /api/mortality-logs
-router.get('/api/mortality-logs', async (req, res) => {
+router.get('/api/mortality-logs', verifyAuth, async (req, res) => {
   try {
     const { pig_id, batch_id, pen_id, archived } = req.query;
 
@@ -489,38 +666,82 @@ router.get('/api/mortality-logs', async (req, res) => {
   }
 });
 
+export async function executeCreateMortality(body = {}) {
+  const { pen_id, batch_id, pig_id, cause, action_taken, recorded_by, creator } = body;
+
+  if (!pig_id && !batch_id) {
+    throw createHttpError(400, 'Must provide pig_id or batch_id.');
+  }
+  if (!cause) throw createHttpError(400, 'cause is required.');
+
+  const { data, error } = await supabaseAdmin
+    .from('mortality_logs')
+    .insert([{ pen_id, batch_id, pig_id, cause, action_taken, recorded_by }])
+    .select();
+
+  if (error) throw error;
+
+  await logActivity({
+    creator: creator || recorded_by,
+    bg_color: 'bg-rose-100 text-rose-700',
+    event_title: 'Mortality Log Added',
+    event_desc: `Recorded mortality event${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}. Cause: ${cause}.`,
+  });
+
+  return { data: data[0] };
+}
+
 // POST /api/mortality-logs
-router.post('/api/mortality-logs', async (req, res) => {
+router.post('/api/mortality-logs', verifyAuth, async (req, res) => {
   try {
-    const { pen_id, batch_id, pig_id, cause, action_taken, recorded_by } = req.body;
+    const { batch_id, pig_id, cause } = req.body;
 
     if (!pig_id && !batch_id) {
       return res.status(400).json({ error: 'Must provide pig_id or batch_id.' });
     }
     if (!cause) return res.status(400).json({ error: 'cause is required.' });
 
-    const { data, error } = await supabaseAdmin
-      .from('mortality_logs')
-      .insert([{ pen_id, batch_id, pig_id, cause, action_taken, recorded_by }])
-      .select();
+    const effectiveRecordedBy = req.isAdmin ? (req.body.recorded_by || req.userName) : req.userName;
 
-    if (error) throw error;
+    if (req.isAdmin) {
+      const result = await executeCreateMortality({
+        ...req.body,
+        recorded_by: effectiveRecordedBy,
+        creator: req.body.creator || req.userName,
+      });
+      return res.json(result);
+    }
 
-    await logActivity({
-      creator: recorded_by,
-      bg_color: 'bg-rose-100 text-rose-700',
-      event_title: 'Mortality Log Added',
-      event_desc: `Recorded mortality event${pig_id ? ` for pig ${pig_id.substring(0, 8)}` : ` for batch ${batch_id?.substring(0, 8)}`}. Cause: ${cause}.`,
+    const meta = await resolveHealthDisplayMeta({ pig_id, batch_id });
+    const subjectLabel = meta.targetTag || (pig_id ? `Pig ${pig_id.substring(0, 8)}` : `Batch ${batch_id?.substring(0, 8)}`);
+    const summary = `Mortality report for ${subjectLabel}: ${cause}`;
+
+    const approvalRequest = await queueApprovalRequest({
+      req,
+      module: 'health',
+      action: 'create_mortality',
+      actionLabel: 'Report Mortality',
+      summary,
+      targetId: pig_id || batch_id,
+      payload: {
+        ...req.body,
+        recorded_by: req.userName,
+        targetTag: meta.targetTag,
+      },
     });
 
-    res.json({ data: data[0] });
+    return res.status(202).json({
+      pendingApproval: true,
+      approvalRequest,
+      message: 'Mortality log submitted for administrator approval.',
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
 // PATCH /api/mortality-logs/:id
-router.patch('/api/mortality-logs/:id', async (req, res) => {
+router.patch('/api/mortality-logs/:id', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { performed_by, ...updates } = req.body;
@@ -547,7 +768,7 @@ router.patch('/api/mortality-logs/:id', async (req, res) => {
 });
 
 // PATCH /api/mortality-logs/:id/archive
-router.patch('/api/mortality-logs/:id/archive', async (req, res) => {
+router.patch('/api/mortality-logs/:id/archive', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { performed_by, archive_reasoning } = req.body;
@@ -581,7 +802,7 @@ router.patch('/api/mortality-logs/:id/archive', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // GET /api/growth-tasks
-router.get('/api/growth-tasks', async (req, res) => {
+router.get('/api/growth-tasks', verifyAuth, async (req, res) => {
   try {
     const { batch_id, status } = req.query;
     let dbQuery = supabaseAdmin
@@ -606,10 +827,11 @@ router.get('/api/growth-tasks', async (req, res) => {
 });
 
 // PATCH /api/growth-tasks/:id
-router.patch('/api/growth-tasks/:id', async (req, res) => {
+router.patch('/api/growth-tasks/:id', verifyAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, linked_health_id, linked_vaccination_id, performed_by } = req.body;
+    const actorName = req.isAdmin ? (performed_by || req.userName) : req.userName;
 
     const { data, error } = await supabaseAdmin
       .from('growth_tasks')
@@ -635,9 +857,15 @@ router.patch('/api/growth-tasks/:id', async (req, res) => {
         guideline_id: task.guideline_id || null,
         activity_type: task.activity_type,
         amount_given: 0,
-        performed_by: performed_by || 'Health Management',
+        performed_by: actorName || 'Health Management',
       }).then(() => {}).catch(err => console.warn('[Growth Task] batch_activity_logs sync warning:', err.message));
     }
+
+    await logActivity({
+      creator: actorName,
+      event_title: status === 'completed' ? 'Scheduled Task Completed' : 'Scheduled Task Updated',
+      event_desc: `${task.task_name || 'Growth task'} (${task.activity_type || 'Task'}) marked ${status}.`,
+    }).catch(() => {});
 
     res.json({ data: task });
   } catch (error) {

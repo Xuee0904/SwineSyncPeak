@@ -12,7 +12,7 @@ const formatKg = (val) => {
   return `${num.toFixed(num % 1 === 0 ? 0 : 1)} kg`;
 };
 
-export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, title = "Today's Feeding" }) {
+export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, title = "Today's Feeding", isAdmin = true }) {
   const [data, setData] = useState({ batches: [], breeder_summary: null });
   const [feedItems, setFeedItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -998,19 +998,21 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
                                     <span className="text-xs text-slate-600 font-medium whitespace-nowrap">
                                       {fedTime ? `Fed ${fedTime}` : 'Fed Today'}
                                     </span>
-                                    <button
-                                      type="button"
-                                      disabled={isUndoing}
-                                      onClick={() => handleUndoFeedBatch(b.batch_id)}
-                                      className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 cursor-pointer transition-colors disabled:opacity-50"
-                                    >
-                                      {isUndoing ? (
-                                        <Loader2 className="w-3 h-3 animate-spin" />
-                                      ) : (
-                                        <Undo2 className="w-3.5 h-3.5" />
-                                      )}
-                                      <span>Undo</span>
-                                    </button>
+                                    {isAdmin && (
+                                      <button
+                                        type="button"
+                                        disabled={isUndoing}
+                                        onClick={() => handleUndoFeedBatch(b.batch_id)}
+                                        className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 cursor-pointer transition-colors disabled:opacity-50"
+                                      >
+                                        {isUndoing ? (
+                                          <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : (
+                                          <Undo2 className="w-3.5 h-3.5" />
+                                        )}
+                                        <span>Undo</span>
+                                      </button>
+                                    )}
                                   </div>
                                 ) : (
                                   <button
@@ -1193,19 +1195,21 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
                             <span className="text-xs text-slate-600 font-medium whitespace-nowrap">
                               {formatFedTime(breeder.breeder_fed_time) ? `Fed ${formatFedTime(breeder.breeder_fed_time)}` : 'Fed Today'}
                             </span>
-                            <button
-                              type="button"
-                              disabled={undoingBreeder}
-                              onClick={handleUndoFeedBreeder}
-                              className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 cursor-pointer transition-colors disabled:opacity-50"
-                            >
-                              {undoingBreeder ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Undo2 className="w-3.5 h-3.5" />
-                              )}
-                              <span>Undo</span>
-                            </button>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                disabled={undoingBreeder}
+                                onClick={handleUndoFeedBreeder}
+                                className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 cursor-pointer transition-colors disabled:opacity-50"
+                              >
+                                {undoingBreeder ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Undo2 className="w-3.5 h-3.5" />
+                                )}
+                                <span>Undo</span>
+                              </button>
+                            )}
                           </div>
                         ) : (
                           <button

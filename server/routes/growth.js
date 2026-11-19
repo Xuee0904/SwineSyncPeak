@@ -1,9 +1,31 @@
 import express from 'express';
 import { supabaseAdmin } from '../supabaseClient.js';
 import { deductInventoryStock } from '../helpers/inventoryDeduction.js';
+import { verifyAuth, verifyAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 const db = supabaseAdmin;
+
+async function logGrowthActivity({ name, email, title, desc, bgColor = 'bg-emerald-100 text-emerald-700' }) {
+  const cleanName = String(name || 'Staff').trim() || 'Staff';
+  const parts = cleanName.split(/\s+/).filter(Boolean);
+  const initials = parts.length > 1
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : cleanName.substring(0, 2).toUpperCase();
+  await db
+    .from('activity_logs')
+    .insert({
+      user_name: cleanName,
+      user_email: email || 'staff@swinesync.ag',
+      user_initials: initials || 'ST',
+      user_bg_color: bgColor,
+      event_title: title,
+      event_desc: desc,
+      status: 'SUCCESS',
+    })
+    .then(() => {})
+    .catch((err) => console.warn('[Growth API] Failed to log activity:', err?.message));
+}
 
 // Helper to compute deterministic start of "Today" in the farm's timezone (Asia/Manila, UTC+8)
 function getStartOfTodayIso() {
@@ -31,7 +53,7 @@ function matchesBatchTag(notes, batchTag) {
 
 // GET /api/growth/programs
 // Fetch available growth program templates
-router.get('/api/growth/programs', async (req, res) => {
+router.get('/api/growth/programs', verifyAuth, async (req, res) => {
   try {
     const { archived } = req.query;
     const isArchived = archived === 'true';
@@ -192,7 +214,7 @@ router.get('/api/growth/programs', async (req, res) => {
 
 // GET /api/growth/analytics
 // Fetch analytics and DSS data for active batches assigned to a growth program
-router.get('/api/growth/analytics', async (req, res) => {
+router.get('/api/growth/analytics', verifyAuth, async (req, res) => {
   try {
     const [batchesRes, salesRes] = await Promise.all([
       db
@@ -338,7 +360,7 @@ router.get('/api/growth/analytics', async (req, res) => {
 
 // POST /api/growth/programs
 // Create a new growth program template with guidelines
-router.post('/api/growth/programs', async (req, res) => {
+router.post('/api/growth/programs', verifyAdmin, async (req, res) => {
   try {
     const { name, description, target_weight, guidelines, performed_by } = req.body;
 
@@ -396,7 +418,7 @@ router.post('/api/growth/programs', async (req, res) => {
 
 // PUT /api/growth/programs/:id
 // Update a growth program template (replaces all guidelines)
-router.put('/api/growth/programs/:id', async (req, res) => {
+router.put('/api/growth/programs/:id', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, target_weight, guidelines, performed_by } = req.body;
@@ -500,7 +522,7 @@ router.put('/api/growth/programs/:id', async (req, res) => {
 // GET /api/growth/unlinked-guidelines
 // Returns custom stocked supply guidelines (FEED, MEDICATION, SUPPLEMENT) from active programs where item_id is null.
 // PROCEDURES and on-demand VACCINATIONS are excluded as they are not warehouse inventory.
-router.get('/api/growth/unlinked-guidelines', async (req, res) => {
+router.get('/api/growth/unlinked-guidelines', verifyAuth, async (req, res) => {
   try {
     const { data, error } = await db
       .from('growth_program_guidelines')
@@ -536,7 +558,7 @@ router.get('/api/growth/unlinked-guidelines', async (req, res) => {
 
 // PATCH /api/growth/guidelines/link-inventory
 // Links a custom growth program guideline (and any matching unlinked guidelines/pending tasks) to a newly created inventory item
-router.patch('/api/growth/guidelines/link-inventory', async (req, res) => {
+router.patch('/api/growth/guidelines/link-inventory', verifyAdmin, async (req, res) => {
   try {
     const { guideline_id, item_id, item_name, original_task_name, activity_type } = req.body;
     if (!item_id) {
@@ -593,7 +615,7 @@ router.patch('/api/growth/guidelines/link-inventory', async (req, res) => {
 
 // PATCH /api/growth/programs/:id/archive
 // Archive a growth program template
-router.patch('/api/growth/programs/:id/archive', async (req, res) => {
+router.patch('/api/growth/programs/:id/archive', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { performed_by } = req.body;
@@ -633,7 +655,7 @@ router.patch('/api/growth/programs/:id/archive', async (req, res) => {
 
 // PATCH /api/growth/programs/:id/restore
 // Restore an archived growth program template
-router.patch('/api/growth/programs/:id/restore', async (req, res) => {
+router.patch('/api/growth/programs/:id/restore', verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { performed_by } = req.body;
@@ -672,7 +694,7 @@ router.patch('/api/growth/programs/:id/restore', async (req, res) => {
 
 // GET /api/growth/programs/:id/batches
 // Fetch piglet batches currently enrolled in a specific growth program
-router.get('/api/growth/programs/:id/batches', async (req, res) => {
+router.get('/api/growth/programs/:id/batches', verifyAuth, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -846,7 +868,7 @@ export function invalidateActiveFeedBatchesCache() {
 
 // GET /api/growth/active-feed-batches
 // Returns all active piglet batches along with their current estimated daily feed requirement and breeder herd summary
-router.get('/api/growth/active-feed-batches', async (req, res) => {
+router.get('/api/growth/active-feed-batches', verifyAuth, async (req, res) => {
   try {
     const now = Date.now();
     // Return cached data if fresh (15s TTL)
@@ -1110,10 +1132,10 @@ router.get('/api/growth/active-feed-batches', async (req, res) => {
 
 // POST /api/growth/log-breeder-feed
 // Log feeding for the breeding herd (sows & boars) and deduct from inventory
-router.post('/api/growth/log-breeder-feed', async (req, res) => {
+router.post('/api/growth/log-breeder-feed', verifyAuth, async (req, res) => {
   try {
     const { item_id, amount_kg, head_count, performed_by } = req.body;
-    const staffName = performed_by || 'Staff';
+    const staffName = req.isAdmin ? (performed_by || req.userName || 'Admin') : req.userName;
     const rawKg = parseFloat(amount_kg);
 
     if (!item_id) {
@@ -1150,7 +1172,15 @@ router.post('/api/growth/log-breeder-feed', async (req, res) => {
       itemId: item_id,
       quantity: deductionQty,
       notes: `Used in Feeding - Sows & Boars${headsText} (${rawKg} kg fed) • By: ${staffName}`,
-      performedBy: staffName
+      performedBy: staffName,
+      userId: req.user?.id || null,
+    });
+
+    await logGrowthActivity({
+      name: staffName,
+      email: req.userEmail,
+      title: 'Breeder Feed Logged',
+      desc: `Fed Breeder Herd${headsText} ${rawKg} kg of ${invItem.item_name} (deducted ${deductionQty} ${invItem.unit_of_measure}).`,
     });
 
     invalidateActiveFeedBatchesCache();
@@ -1160,7 +1190,7 @@ router.post('/api/growth/log-breeder-feed', async (req, res) => {
       amount_kg: rawKg,
       quantity_deducted: deductionQty,
       unit_of_measure: invItem.unit_of_measure,
-      new_stock_level: deductionResult?.newStockLevel ?? invItem.current_stock_level,
+      new_stock_level: deductionResult?.newStock ?? invItem.current_stock_level,
       message: `Logged ${rawKg} kg of ${invItem.item_name} for Breeder Herd.`
     });
   } catch (error) {
@@ -1171,7 +1201,7 @@ router.post('/api/growth/log-breeder-feed', async (req, res) => {
 
 // GET /api/growth/batches
 // Fetch enrolled batches and their progress
-router.get('/api/growth/batches', async (req, res) => {
+router.get('/api/growth/batches', verifyAuth, async (req, res) => {
   try {
     // 1. Fetch all batches that have an assigned program
     const { data: batches, error } = await db
@@ -1312,7 +1342,7 @@ router.get('/api/growth/batches', async (req, res) => {
 });
 
 // POST /api/growth/undo-feed
-router.post('/api/growth/undo-feed', async (req, res) => {
+router.post('/api/growth/undo-feed', verifyAdmin, async (req, res) => {
   try {
     const { batch_id, is_breeder } = req.body;
     const startOfTodayIso = getStartOfTodayIso();
@@ -1398,9 +1428,18 @@ router.post('/api/growth/undo-feed', async (req, res) => {
 
 // POST /api/growth/logs
 // Record an activity/feed for a batch
-router.post('/api/growth/logs', async (req, res) => {
+router.post('/api/growth/logs', verifyAuth, async (req, res) => {
   try {
     const { batch_id, activity_type, guideline_id, amount_given, item_id, quantity_deducted, performed_by } = req.body;
+    const normalizedType = String(activity_type || '').toUpperCase();
+
+    if (!req.isAdmin && normalizedType !== 'FEED') {
+      return res.status(403).json({
+        error: 'Staff must submit vaccination or medication records through Health Management for administrator approval.'
+      });
+    }
+
+    const actorName = req.isAdmin ? (performed_by || req.userName || 'System') : req.userName;
 
     let logResult = null;
     try {
@@ -1409,7 +1448,7 @@ router.post('/api/growth/logs', async (req, res) => {
         activity_type,
         guideline_id: guideline_id || null,
         amount_given: amount_given || 0,
-        performed_by: performed_by || 'System'
+        performed_by: actorName
       }).select().single();
       if (error) {
         console.warn('[Growth Log] batch_activity_logs insert warning:', error.message);
@@ -1453,7 +1492,7 @@ router.post('/api/growth/logs', async (req, res) => {
         resolvedDosage = g.dosage_instructions;
 
         // Auto-link guideline if it lacked an item_id but the caller supplied one
-        if (!g.item_id && resolvedItemId) {
+        if (!g.item_id && resolvedItemId && req.isAdmin) {
           await db
             .from('growth_program_guidelines')
             .update({ item_id: resolvedItemId })
@@ -1478,6 +1517,7 @@ router.post('/api/growth/logs', async (req, res) => {
 
     // Determine deduction quantity (container units)
     let deductionAmount = quantity_deducted ? parseFloat(quantity_deducted) : null;
+    let resolvedUnit = '';
     if (!deductionAmount && resolvedItemId && amount_given > 0) {
       const rawKg = parseFloat(amount_given);
       const { data: invItem } = await db
@@ -1485,8 +1525,8 @@ router.post('/api/growth/logs', async (req, res) => {
         .select('unit_of_measure')
         .eq('item_id', resolvedItemId)
         .single();
-      const unitStr = String(invItem?.unit_of_measure || '').trim();
-      const sackMatch = unitStr.match(/^(?:sacks?|bags?)(?:\s*\(\s*(\d+(?:\.\d+)?)\s*kg\s*\))?$/i);
+      resolvedUnit = String(invItem?.unit_of_measure || '').trim();
+      const sackMatch = resolvedUnit.match(/^(?:sacks?|bags?)(?:\s*\(\s*(\d+(?:\.\d+)?)\s*kg\s*\))?$/i);
       if (sackMatch) {
         const sackKg = sackMatch[1] ? Number(sackMatch[1]) : 25;
         deductionAmount = Number((rawKg / sackKg).toFixed(4));
@@ -1502,9 +1542,22 @@ router.post('/api/growth/logs', async (req, res) => {
         db,
         itemId: resolvedItemId,
         quantity: deductionAmount,
-        notes: `Used in Feeding - ${batchTag}${kgNote} • By: ${performed_by || 'Staff'}`,
-        performedBy: performed_by || 'Staff'
+        notes: `Used in Feeding - ${batchTag}${kgNote} • By: ${actorName}`,
+        performedBy: actorName,
+        userId: req.user?.id || null,
       }).catch(err => console.warn('[Growth Log] Stock deduction skipped/failed:', err.message));
+    }
+
+    if (normalizedType === 'FEED') {
+      const deductedText = deductionAmount && deductionAmount > 0
+        ? ` (deducted ${deductionAmount}${resolvedUnit ? ` ${resolvedUnit}` : ' units'})`
+        : '';
+      await logGrowthActivity({
+        name: actorName,
+        email: req.userEmail,
+        title: 'Daily Feeding Logged',
+        desc: `Logged ${amount_given || 0} kg feed for ${batchTag}${deductedText}.`,
+      });
     }
 
     // Integrate with Health & Vaccination modules
@@ -1515,7 +1568,7 @@ router.post('/api/growth/logs', async (req, res) => {
         item_id: resolvedItemId,
         quantity_deducted: deductionAmount,
         dosage: resolvedDosage || (amount_given > 0 ? `${amount_given}` : 'Standard'),
-        administered_by: performed_by || 'System',
+        administered_by: actorName,
         administered_date: new Date().toISOString().split('T')[0]
       });
     } else if (activity_type === 'MEDICATION') {
@@ -1528,7 +1581,7 @@ router.post('/api/growth/logs', async (req, res) => {
         quantity_deducted: deductionAmount,
         dosage: resolvedDosage || (amount_given > 0 ? `${amount_given}` : null),
         symptoms: 'None observed',
-        recorded_by: performed_by || 'System',
+        recorded_by: actorName,
         log_date: new Date().toISOString()
       });
     }
@@ -1543,11 +1596,11 @@ router.post('/api/growth/logs', async (req, res) => {
 
 // POST /api/growth/programs/:id/log-daily-feed
 // 1-Click Bulk Log for all active unfed batches in a growth program
-router.post('/api/growth/programs/:id/log-daily-feed', async (req, res) => {
+router.post('/api/growth/programs/:id/log-daily-feed', verifyAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const { performed_by } = req.body;
-    const staffName = performed_by || 'Staff';
+    const staffName = req.isAdmin ? (performed_by || req.userName || 'Admin') : req.userName;
 
     // 1. Fetch program guidelines with inventory items
     const { data: program, error: pErr } = await db
@@ -1724,8 +1777,18 @@ router.post('/api/growth/programs/:id/log-daily-feed', async (req, res) => {
           quantity: deductionQty,
           notes: `Program Feeding: ${program.name} - ${itemInfo.batches.join(', ')} (${rawKg.toFixed(1)} kg) • By: ${staffName}`,
           performedBy: staffName,
+          userId: req.user?.id || null,
         }).catch(err => console.warn('[Bulk Feed] Stock deduction error:', err.message));
       }
+    }
+
+    if (newLogs.length > 0) {
+      await logGrowthActivity({
+        name: staffName,
+        email: req.userEmail,
+        title: 'Bulk Program Feed Logged',
+        desc: `Logged ${totalFedKg.toFixed(1)} kg feed across ${newLogs.length} batch(es) in "${program.name}".`,
+      });
     }
 
     invalidateActiveFeedBatchesCache();

@@ -15,6 +15,7 @@ import { PigEditView } from './EditPigModal';
 import AddHealthLogModal from '../HealthManagement/AddHealthLogModal';
 import VaccinationFormModal from '../HealthManagement/VaccinationFormModal';
 import PigSnout from '../common/PigSnout';
+import { isAdminUser } from '../../utils/rbac';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Cull'];
@@ -42,7 +43,8 @@ const formatLogDateTime = (dateStr) => {
   }
 };
 
-export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUnarchive, onPromote, pigData, loggedInUser }) {
+export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUnarchive, onPromote, pigData, loggedInUser, isAdmin: propIsAdmin }) {
+  const isAdmin = typeof propIsAdmin === 'boolean' ? propIsAdmin : isAdminUser(loggedInUser);
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
     useModalAnimation(isOpen, onClose);
 
@@ -220,8 +222,10 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
               onBack={() => setMode('view')}
               onClose={() => requestClose()}
               showBackBtn={true}
+              isAdmin={isAdmin}
+              loggedInUser={loggedInUser}
               onSuccess={(savedRecord) => {
-                if (savedRecord) setDetail(savedRecord);
+                if (savedRecord && !savedRecord.pendingApproval) setDetail(savedRecord);
                 fetchDetail(true);
                 setMode('success');
               }}
@@ -1264,7 +1268,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                       <button
                         type="button"
                         onClick={() => onUnarchive(data)}
-                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm hover:shadow transition-all cursor-pointer"
+                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm hover:shadow transition-all cursor-pointer"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         <span>Unarchive Record</span>
@@ -1299,10 +1303,10 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                       <button
                         type="button"
                         onClick={switchToEdit}
-                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm hover:shadow transition-all cursor-pointer"
+                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-sm hover:shadow transition-all cursor-pointer"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
-                        <span>Edit Record</span>
+                        <span>{isAdmin ? 'Edit Record' : 'Propose Weight / Status Update'}</span>
                       </button>
                     </>
                   )}
@@ -1320,6 +1324,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
         onClose={() => setShowAddHealth(false)}
         prefillData={pigData ? { id: pigData.id, tag: tag, category: pigData.category || (isBatch ? 'Piglet Batch' : 'Pig'), targetType: isBatch ? 'batch' : 'pig' } : null}
         currentUser={loggedInUser}
+        isAdmin={isAdmin}
         onSuccess={() => {
           fetchDetail(true);
           setShowAddHealth(false);
@@ -1331,6 +1336,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
         onClose={() => setShowAddVaccine(false)}
         prefillData={pigData ? { id: pigData.id, tag: tag, category: pigData.category || (isBatch ? 'Piglet Batch' : 'Pig'), targetType: isBatch ? 'batch' : 'pig' } : null}
         currentUser={loggedInUser}
+        isAdmin={isAdmin}
         onSuccess={() => {
           fetchDetail(true);
           setShowAddVaccine(false);

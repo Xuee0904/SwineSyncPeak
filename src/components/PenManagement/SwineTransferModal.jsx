@@ -3,11 +3,13 @@ import { createPortal } from "react-dom";
 import { X, ArrowRightLeft, ArrowRight, Loader2, Search, CheckSquare, Square, AlertTriangle, Info } from "lucide-react";
 import toast from "../../utils/toast";
 import useModalAnimation from "../../hooks/useModalAnimation";
+import { isAdminUser } from "../../utils/rbac";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 export default function SwineTransferModal({ isOpen, onClose, pens = [], onSuccess, user, initialSourcePenId = "" }) {
   const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } = useModalAnimation(isOpen, onClose);
+  const isAdmin = isAdminUser(user);
 
   const [sourcePenId, setSourcePenId] = useState("");
   const [destPenId, setDestPenId] = useState("");
@@ -254,7 +256,12 @@ export default function SwineTransferModal({ isOpen, onClose, pens = [], onSucce
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Transfer failed");
 
-      toast.success(data.message || "Transfer successful!");
+      if (res.status === 202 || data.pendingApproval) {
+        toast.info(data.message || "Transfer request submitted for administrator approval.");
+        window.dispatchEvent(new CustomEvent("swinesync:approvals-updated"));
+      } else {
+        toast.success(data.message || "Transfer successful!");
+      }
       onSuccess?.();
       requestClose();
     } catch (err) {
@@ -296,7 +303,16 @@ export default function SwineTransferModal({ isOpen, onClose, pens = [], onSucce
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            
+            {!isAdmin && (
+              <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs leading-relaxed">
+                <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Approval Required</span>
+                  Staff transfers are queued for administrator approval before swine move between pens.
+                </div>
+              </div>
+            )}
+
             {/* Step 1: Pen Selection with Directional Flow */}
             <div className="flex flex-col md:flex-row md:items-center gap-3">
               <div className="flex-1 space-y-1.5">
@@ -469,16 +485,20 @@ export default function SwineTransferModal({ isOpen, onClose, pens = [], onSucce
             <button
               type="submit"
               disabled={submitting || validationError !== null || (selectedPigIds.size === 0 && selectedBatchIds.size === 0)}
-              className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-xs hover:shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="flex items-center gap-2 px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-sm font-bold shadow-xs hover:shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {submitting ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Transferring...</>
+                <><Loader2 className="w-4 h-4 animate-spin" /> {isAdmin ? "Transferring..." : "Submitting..."}</>
               ) : (
                 <>
                   <ArrowRightLeft className="w-4 h-4" />
-                  {totalIncomingHeadCount > 0
-                    ? `Transfer ${totalIncomingHeadCount} ${totalIncomingHeadCount === 1 ? 'Head' : 'Heads'}`
-                    : 'Confirm Transfer'}
+                  {!isAdmin
+                    ? (totalIncomingHeadCount > 0
+                        ? `Submit ${totalIncomingHeadCount} ${totalIncomingHeadCount === 1 ? 'Head' : 'Heads'} for Approval`
+                        : 'Submit Transfer for Approval')
+                    : (totalIncomingHeadCount > 0
+                        ? `Transfer ${totalIncomingHeadCount} ${totalIncomingHeadCount === 1 ? 'Head' : 'Heads'}`
+                        : 'Confirm Transfer')}
                 </>
               )}
             </button>

@@ -106,14 +106,14 @@ input::-ms-clear {
 
 /* Custom scroll animation utilities */
 .reveal-on-scroll {
-  opacity: 0;
-  transform: translateY(20px);
+  opacity: 1;
+  transform: translateY(0);
   transition: opacity 0.8s ease-out, transform 0.8s ease-out;
 }
 
-.reveal-on-scroll.active {
-  opacity: 1;
-  transform: translateY(0);
+.reveal-on-scroll.reveal-hidden {
+  opacity: 0;
+  transform: translateY(20px);
 }
 
 /* Custom modern scrollbar */
