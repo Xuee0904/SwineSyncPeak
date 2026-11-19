@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Users, TrendingUp,
   ClipboardList, Receipt, Settings, X, ChevronRight,
-  Grid3X3, HeartPulse, Dna, ClipboardCheck,
+  Grid3X3, HeartPulse, Dna, ClipboardCheck, LogOut,
 } from 'lucide-react';
 import PigSnout from './common/PigSnout';
 import farmLogo from '../assets/Logo.jpg';
 import { isAdminUser } from '../utils/rbac';
+import useConfirmDialog from '../hooks/useConfirmDialog';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const NAV_ITEMS = [
@@ -35,10 +36,13 @@ export default function SideNav({
   activeTab,
   onTabChange,
   onClose,
+  onLogout,
   loggedInUser,
   mobileOpen,
   pendingApprovalsCount = 0,
 }) {
+  const { confirmDialog, openConfirm } = useConfirmDialog();
+
   const [expanded, setExpanded] = useState(() => {
     const parentWithActiveChild = NAV_ITEMS.find(item =>
       item.children?.some(child => child.id === activeTab)
@@ -260,7 +264,35 @@ export default function SideNav({
             })}
           </nav>
         </div>
+
+        {/* Bottom Logout */}
+        <div className="px-3 py-4 border-t border-slate-800/80 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              openConfirm({
+                title: 'Log out of SwineSync?',
+                subtitle: 'End current session',
+                message: 'Are you sure you want to log out? Any unsaved changes will not be saved.',
+                icon: <LogOut className="w-4 h-4" />,
+                confirmLabel: 'Logout',
+                leftOffset: 'left-0',
+                onConfirm: () => {
+                  onClose?.();
+                  onLogout?.();
+                },
+              });
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-rose-300 hover:bg-rose-500/15 transition-all cursor-pointer"
+            id="sidenav-logout-btn"
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            <span>Logout</span>
+          </button>
+        </div>
       </aside>
+
+      {confirmDialog}
 
       {mobileOpen && (
         <div

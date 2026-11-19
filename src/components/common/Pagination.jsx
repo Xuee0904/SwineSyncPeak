@@ -88,7 +88,7 @@ export default function Pagination({
           p === '...' ? (
             <span
               key={`ellipsis-${index}`}
-              className="w-7 text-center text-slate-400 select-none font-bold text-xs"
+              className="w-7 text-center text-slate-500 select-none font-bold text-xs"
             >
               &hellip;
             </span>
@@ -100,7 +100,7 @@ export default function Pagination({
               onClick={() => onPageChange && onPageChange(p)}
               className={`${buttonClasses} flex items-center justify-center rounded-xl font-bold transition-all cursor-pointer active:scale-95 ${
                 p === safePage
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/10'
+                  ? 'bg-emerald-700 text-white shadow-md shadow-emerald-600/10'
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
               } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
@@ -126,7 +126,7 @@ export default function Pagination({
   if (totalItems !== undefined && showSummary) {
     return (
       <div
-        className={`p-4 border-t border-slate-100 bg-slate-50/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 font-medium ${className}`}
+        className={`p-4 border-t border-slate-100 bg-slate-50/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 font-medium ${className}`}
       >
         <span>
           Showing <strong>{startIndex} to {endIndex}</strong> of{' '}

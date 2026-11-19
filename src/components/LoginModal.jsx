@@ -1,81 +1,145 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import useModalAnimation from '../hooks/useModalAnimation';
+import { mapSupabaseUser } from '../utils/rbac';
 
-// ─── Minimalist Pig Nose Logo ─────────────────────────────────────────────────
-function PigNoseLogo({ className = 'w-9 h-9 sm:w-10 sm:h-10' }) {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-      <rect width="48" height="48" rx="14" fill="#16a34a" />
-      <ellipse cx="24" cy="29" rx="13" ry="10" stroke="white" strokeWidth="2.2" fill="none" />
-      <circle cx="19.5" cy="29.5" r="3.2" fill="white" />
-      <circle cx="28.5" cy="29.5" r="3.2" fill="white" />
-      <circle cx="19.5" cy="29.5" r="1.5" fill="#16a34a" />
-      <circle cx="28.5" cy="29.5" r="1.5" fill="#16a34a" />
-      <circle cx="18.5" cy="19.5" r="1.8" fill="white" />
-      <circle cx="29.5" cy="19.5" r="1.8" fill="white" />
-    </svg>
-  );
-}
-
-// ─── Validation ───────────────────────────────────────────────────────────────
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function validate(email, password) {
   const errs = {};
-  if (!email.trim())                     errs.email    = 'Email is required.';
-  else if (email !== email.trim())       errs.email    = 'Email cannot start or end with a space.';
-  else if (!EMAIL_RE.test(email))        errs.email    = 'Enter a valid email address.';
-  if (!password)                  errs.password = 'Password is required.';
-  else if (password.length < 8)  errs.password = 'Password must be at least 8 characters.';
+  if (!email.trim()) errs.email = 'Email is required.';
+  else if (email !== email.trim()) errs.email = 'Email cannot start or end with a space.';
+  else if (!EMAIL_RE.test(email)) errs.email = 'Enter a valid email address.';
+  if (!password) errs.password = 'Password is required.';
   return errs;
 }
 
-// ─── Field wrapper ────────────────────────────────────────────────────────────
-function Field({ label, htmlFor, error, touched, children }) {
+function AnimatedFieldError({ id, message }) {
+  const show = Boolean(message);
+  const [displayMessage, setDisplayMessage] = useState(message || '');
+
+  if (show && message !== displayMessage) {
+    setDisplayMessage(message);
+  }
+
   return (
-    <div className="space-y-1">
-      <label
-        htmlFor={htmlFor}
-        className="block text-[10px] font-semibold text-slate-500 uppercase tracking-widest"
-      >
-        {label}
-      </label>
-      {children}
-      {touched && error && (
-        <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium animate-fade-in">
-          <AlertCircle className="w-3 h-3 shrink-0" />
-          {error}
-        </p>
-      )}
+    <div
+      aria-hidden={!show}
+      className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none ${
+        show ? 'grid-rows-[1fr] opacity-100 mt-1.5' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+      }`}
+    >
+      <div className="overflow-hidden min-h-0">
+        {displayMessage && (
+          <p
+            id={show ? id : undefined}
+            role={show ? 'alert' : undefined}
+            className="flex items-center gap-1.5 text-xs text-rose-700 font-medium"
+          >
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span>{displayMessage}</span>
+          </p>
+        )}
+      </div>
     </div>
   );
 }
 
-// ─── Main Component ───
-export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPassword, onForcePasswordChange }) {
-  const [email, setEmail]               = useState('');
-  const [password, setPassword]         = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading]       = useState(false);
-  const [serverError, setServerError]   = useState('');
-  const [touched, setTouched]           = useState({ email: false, password: false });
+function AnimatedServerError({ message }) {
+  const show = Boolean(message);
+  const [displayMessage, setDisplayMessage] = useState(message || '');
 
-  const { shouldRender, requestClose, overlayClassName, panelClassName } =
-    useModalAnimation(isOpen, onClose);
+  if (show && message !== displayMessage) {
+    setDisplayMessage(message);
+  }
+
+  return (
+    <div
+      aria-hidden={!show}
+      className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none ${
+        show ? 'grid-rows-[1fr] opacity-100 mt-4' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+      }`}
+    >
+      <div className="overflow-hidden min-h-0">
+        {displayMessage && (
+          <div
+            role={show ? 'alert' : undefined}
+            className="flex items-start gap-2 p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-800 font-medium"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-700" aria-hidden="true" />
+            <span>{displayMessage}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, htmlFor, errorId, error, touched, children }) {
+  return (
+    <div>
+      <label
+        htmlFor={htmlFor}
+        className="block text-xs font-semibold text-slate-700 mb-1.5"
+      >
+        {label}
+      </label>
+      {children}
+      <AnimatedFieldError id={errorId} message={touched ? error : ''} />
+    </div>
+  );
+}
+
+export default function LoginModal({
+  isOpen,
+  onClose,
+  onLoginSuccess,
+  onForgotPassword,
+  onForcePasswordChange,
+  initialEmail = '',
+}) {
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  const [email, setEmail] = useState(initialEmail || '');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [serverError, setServerError] = useState('');
+  const [touched, setTouched] = useState({ email: false, password: false });
+  const emailInputRef = useRef(null);
+
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
+    setEmail(isOpen ? (initialEmail || '') : '');
+    setPassword('');
+    setShowPassword(false);
+    setIsLoading(false);
+    setServerError('');
+    setTouched({ email: false, password: false });
+  }
+
+  const handleResetAndClose = useCallback(() => {
+    setEmail('');
+    setPassword('');
+    setShowPassword(false);
+    setIsLoading(false);
+    setServerError('');
+    setTouched({ email: false, password: false });
+    onClose();
+  }, [onClose]);
+
+  const { shouldRender, requestClose, panelRef, overlayClassName, panelClassName } =
+    useModalAnimation(isOpen, handleResetAndClose, { initialFocusRef: emailInputRef });
 
   if (!shouldRender) return null;
 
   const fieldErrors = validate(email, password);
   const isFormValid = Object.keys(fieldErrors).length === 0;
 
-  const touch    = (f) => setTouched((t) => ({ ...t, [f]: true }));
-  const touchAll = ()  => setTouched({ email: true, password: true });
+  const touch = (field) => setTouched((t) => ({ ...t, [field]: true }));
+  const touchAll = () => setTouched({ email: true, password: true });
 
   const handleClose = (afterClose) => {
-    setEmail(''); setPassword(''); setServerError('');
-    setTouched({ email: false, password: false });
     requestClose(afterClose);
   };
 
@@ -118,17 +182,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
         }
       }
 
-      const displayName =
-        user.user_metadata?.full_name ||
-        user.user_metadata?.name ||
-        user.email.split('@')[0].charAt(0).toUpperCase() + user.email.split('@')[0].slice(1);
-
-      onLoginSuccess({
-        id: user.id,
-        name: displayName,
-        email: user.email,
-        role: user.app_metadata?.role || user.user_metadata?.role || 'Staff'
-      });
+      onLoginSuccess(mapSupabaseUser(user));
       handleClose();
     } catch (err) {
       setServerError('Something went wrong. Please try again.');
@@ -138,193 +192,189 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess, onForgotPa
     }
   };
 
-  const handleForgotPassword = (e) => {
-    e.preventDefault();
-    handleClose(() => { if (onForgotPassword) onForgotPassword(); });
+  const handleForgotPassword = () => {
+    const currentEmail = email.trim();
+    handleClose(() => {
+      if (onForgotPassword) onForgotPassword(currentEmail);
+    });
   };
 
   const inputBase = [
-    'w-full bg-white border rounded-xl text-slate-900 placeholder-slate-400',
-    'text-sm focus:outline-none focus:ring-2 transition-all',
-    'py-2 sm:py-2.5',               
+    'w-full min-h-[44px] py-2.5 bg-white border rounded-xl text-slate-900 placeholder-slate-500',
+    'text-base sm:text-sm focus:outline-none focus:ring-2 transition-colors',
   ].join(' ');
-  const inputOk  = 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500/20';
-  const inputErr = 'border-rose-400 focus:border-rose-400 focus:ring-rose-400/20 bg-rose-50/30';
+  const inputOk = 'border-slate-500 focus:border-emerald-700 focus:ring-emerald-700/25';
+  const inputErr = 'border-rose-600 focus:border-rose-700 focus:ring-rose-600/25 bg-rose-50/40';
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:py-6 bg-slate-900/50 backdrop-blur-sm overflow-y-auto ${overlayClassName}`}
+      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto ${overlayClassName}`}
       role="dialog"
       aria-modal="true"
+      aria-labelledby="login-modal-title"
       id="login-modal-overlay"
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
-      <style>{`
-        .modal-scroll-container::-webkit-scrollbar {
-          display: none;
-        }
-        .modal-scroll-container {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-        @keyframes modal-panel-in {
-          from { opacity: 0; transform: translateY(16px) scale(0.97); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes modal-panel-out {
-          from { opacity: 1; transform: translateY(0) scale(1); }
-          to   { opacity: 0; transform: translateY(16px) scale(0.97); }
-        }
-        .animate-modal-in  { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-        .animate-modal-out { animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
-      `}</style>
-
       <div
+        ref={panelRef}
         className={[
-          'relative w-full bg-white shadow-2xl border border-slate-100',
+          'relative w-full bg-white shadow-2xl border border-slate-200',
           'rounded-t-3xl sm:rounded-3xl',
-          'h-[85vh] sm:h-[490px]', 
-          'max-h-[92dvh] sm:max-h-[90vh]',
-          'sm:max-w-sm sm:my-auto',
+          'h-auto max-h-[92dvh] sm:max-h-[90dvh]',
+          'sm:max-w-md sm:my-auto',
           'flex flex-col overflow-hidden',
           panelClassName,
         ].join(' ')}
         id="login-modal-content"
       >
-        {/* Close Button */}
-        <button
-          onClick={handleClose}
-          className="absolute top-3 left-3 sm:top-4 sm:left-4 flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer z-10"
-          aria-label="Go back"
-          id="close-login-btn"
-        >
-          <X className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-          Back
-        </button>
-
-        {/* Mobile drag handle */}
-        <div className="flex justify-center pt-3 sm:hidden shrink-0">
-          <div className="w-10 h-1 rounded-full bg-slate-200" />
+        <div className="flex items-center justify-end px-3 pt-3 sm:px-4 sm:pt-4 shrink-0">
+          <button
+            type="button"
+            onClick={() => handleClose()}
+            className="w-11 h-11 flex items-center justify-center rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+            aria-label="Close sign in dialog"
+            id="close-login-btn"
+          >
+            <X className="w-5 h-5" aria-hidden="true" />
+          </button>
         </div>
 
-        {/* Scrollable Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto modal-scroll-container px-5 sm:px-8 pt-7 sm:pt-9 pb-4 sm:pb-5 space-y-3.5 sm:space-y-4">
-
-          {/* Logo + Title */}
-          <div className="flex flex-col items-center gap-1.5 sm:gap-2 text-center">
-            <PigNoseLogo />
-            <div>
-              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
-                SwineSync
-              </p>
-              <h2 className="text-xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-                Welcome
-              </h2>
+        <form
+          onSubmit={handleSubmit}
+          noValidate
+          className="flex-1 overflow-y-auto px-5 sm:px-8 pt-1 pb-6"
+        >
+          <div className="flex flex-col items-center gap-6 text-center">
+            <div className="flex items-center gap-2.5">
+              <span
+                aria-hidden="true"
+                className="flex items-center justify-center w-9 h-9 rounded-xl bg-emerald-700 text-white font-extrabold text-base shadow-sm shrink-0"
+              >
+                S
+              </span>
+              <div className="flex flex-col leading-tight text-left">
+                <span className="font-black font-display text-lg tracking-tight text-slate-900">
+                  Swine<span className="text-emerald-700">Sync</span>
+                </span>
+                <span className="text-xs font-semibold text-slate-600">
+                  for Ambo &amp; Ang&apos;s Oink Yard
+                </span>
+              </div>
             </div>
+
+            <h2
+              id="login-modal-title"
+              className="text-2xl font-extrabold font-display text-slate-900 tracking-tight"
+            >
+              Sign In
+            </h2>
           </div>
 
-          {/* Server error */}
-          {serverError && (
-            <div className="flex items-start gap-2 p-3 bg-rose-50 border border-rose-100 rounded-xl text-[11px] sm:text-xs text-rose-700 font-medium animate-fade-in">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-500" />
-              {serverError}
-            </div>
-          )}
+          <AnimatedServerError message={serverError} />
 
-          {/* Email */}
-          <Field
-            label="Email Address"
-            htmlFor="login-email"
-            error={fieldErrors.email}
-            touched={touched.email}
-          >
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none">
-                <Mail className="w-3.5 h-3.5" />
-              </span>
-              <input
-                type="text"
-                inputMode="email"
-                id="login-email"
-                autoComplete="email"
-                placeholder="manager@farm.com"
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setServerError(''); }}
-                onBlur={() => touch('email')}
-                className={`${inputBase} pl-8.5 sm:pl-9.5 pr-4 ${touched.email && fieldErrors.email ? inputErr : inputOk}`}
-              />
-            </div>
-          </Field>
+          <div className="mt-5 space-y-4">
+            <Field
+              label="Email address"
+              htmlFor="login-email"
+              errorId="login-email-error"
+              error={fieldErrors.email}
+              touched={touched.email}
+            >
+              <div className="relative">
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-y-0 left-0 w-10 flex items-center justify-center text-slate-600 pointer-events-none"
+                >
+                  <Mail className="w-4 h-4" />
+                </span>
+                <input
+                  ref={emailInputRef}
+                  type="email"
+                  inputMode="email"
+                  id="login-email"
+                  autoComplete="email"
+                  placeholder="manager@farm.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => touch('email')}
+                  aria-invalid={Boolean(touched.email && fieldErrors.email)}
+                  aria-describedby={touched.email && fieldErrors.email ? 'login-email-error' : undefined}
+                  className={`${inputBase} pl-10 pr-4 ${touched.email && fieldErrors.email ? inputErr : inputOk}`}
+                />
+              </div>
+            </Field>
 
-          {/* Password */}
-          <Field
-            label="Password"
-            htmlFor="login-password"
-            error={fieldErrors.password}
-            touched={touched.password}
-          >
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none">
-                <Lock className="w-3.5 h-3.5" />
-              </span>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                id="login-password"
-                autoComplete="current-password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); setServerError(''); }}
-                onBlur={() => touch('password')}
-                className={`${inputBase} pl-8.5 sm:pl-9.5 pr-10 ${touched.password && fieldErrors.password ? inputErr : inputOk}`}
-              />
+            <Field
+              label="Password"
+              htmlFor="login-password"
+              errorId="login-password-error"
+              error={fieldErrors.password}
+              touched={touched.password}
+            >
+              <div className="relative">
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-y-0 left-0 w-10 flex items-center justify-center text-slate-600 pointer-events-none"
+                >
+                  <Lock className="w-4 h-4" />
+                </span>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  id="login-password"
+                  autoComplete="current-password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onBlur={() => touch('password')}
+                  aria-invalid={Boolean(touched.password && fieldErrors.password)}
+                  aria-describedby={touched.password && fieldErrors.password ? 'login-password-error' : undefined}
+                  className={`${inputBase} pl-10 pr-12 ${touched.password && fieldErrors.password ? inputErr : inputOk}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 w-11 min-h-[44px] flex items-center justify-center rounded-r-xl text-slate-600 hover:text-slate-900 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" aria-hidden="true" />
+                  ) : (
+                    <Eye className="w-4 h-4" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+            </Field>
+
+            <div className="flex justify-end -mt-2 -mb-1">
               <button
                 type="button"
-                tabIndex={-1}
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-650 transition-colors cursor-pointer"
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                onClick={handleForgotPassword}
+                className="min-h-[44px] px-2 -mr-2 inline-flex items-center text-xs font-semibold text-emerald-700 hover:text-emerald-800 underline-offset-4 hover:underline transition-colors cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
               >
-                {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                Forgot password?
               </button>
             </div>
-          </Field>
 
-          {/* Forgot password */}
-          <div className="flex justify-end -mt-0.5">
             <button
-              type="button"
-              onClick={handleForgotPassword}
-              className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 transition-colors cursor-pointer"
+              type="submit"
+              disabled={isLoading}
+              className="w-full min-h-[44px] py-3 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-sm rounded-xl transition-colors flex items-center justify-center gap-2 shadow-md shadow-emerald-900/15 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-700"
+              id="login-submit-btn"
             >
-              Forgot password?
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                'Sign In'
+              )}
             </button>
           </div>
-
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            className={[
-              'w-full py-2.5 sm:py-3',
-              'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white',
-              'font-bold text-sm rounded-xl transition-colors',
-              'flex items-center justify-center gap-2',
-              'shadow-lg shadow-emerald-600/25 cursor-pointer',
-              'disabled:opacity-70 disabled:cursor-not-allowed',
-              'focus:outline-none focus:ring-4 focus:ring-emerald-500/30',
-            ].join(' ')}
-            id="login-submit-btn"
-          >
-            {isLoading ? (
-              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Signing in…</>
-            ) : (
-              <>Log In <span className="text-base leading-none">→</span></>
-            )}
-          </button>
         </form>
 
-        {/* Footer */}
-        <div className="sticky bottom-0 px-5 sm:px-8 py-3 bg-slate-50 border-t border-slate-100 text-[10px] text-center text-slate-400 tracking-wide shrink-0">
+        <div className="px-5 sm:px-8 py-3 bg-slate-50 border-t border-slate-200 text-xs text-center text-slate-600 shrink-0">
           Restricted to authorized SwineSync personnel only.
         </div>
       </div>

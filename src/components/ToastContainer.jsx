@@ -36,6 +36,9 @@ export default function ToastContainer() {
           100% { opacity: 1; transform: translateY(0) scale(1); }
         }
         .animate-toast-in { animation: toast-slide-up 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @media (prefers-reduced-motion: reduce) {
+          .animate-toast-in { animation: none !important; }
+        }
       `}</style>
       {toasts.map((t) => (
         <div
@@ -43,7 +46,7 @@ export default function ToastContainer() {
           className="pointer-events-auto animate-toast-in overflow-hidden rounded-2xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 p-4 shadow-2xl text-white flex items-start gap-3 transition-all duration-300 group"
           role="alert"
         >
-          <div className="shrink-0 mt-0.5">
+          <div className="shrink-0 mt-0.5" aria-hidden="true">
             {t.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
             {t.type === 'draft' && (
               <div className="w-7 h-7 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
@@ -62,10 +65,10 @@ export default function ToastContainer() {
           <button
             type="button"
             onClick={() => dismiss(t.id)}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+            className="min-w-[44px] min-h-[44px] -m-2 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
             aria-label="Dismiss notification"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
       ))}

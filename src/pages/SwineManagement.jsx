@@ -52,12 +52,12 @@ function StatCard({
         }`}
     >
       <div className="flex items-center justify-between w-full mb-3">
-        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">
+        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider truncate">
           {label}
         </span>
         <div
           className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isAlert
-            ? 'bg-rose-50 text-rose-600'
+            ? 'bg-rose-50 text-rose-700'
             : 'bg-slate-50 text-slate-500'
             }`}
         >
@@ -79,8 +79,8 @@ function StatCard({
               className={`text-xs font-semibold ${unitColor
                 ? unitColor
                 : isAlert
-                  ? 'text-rose-600 font-bold'
-                  : 'text-slate-400'
+                  ? 'text-rose-700 font-bold'
+                  : 'text-slate-500'
                 }`}
             >
               {unit}
@@ -94,7 +94,7 @@ function StatCard({
         </div>
 
         {subtext && !loading && (
-          <p className="text-[11px] font-medium text-slate-400 mt-1 truncate">
+          <p className="text-[11px] font-medium text-slate-500 mt-1 truncate">
             {subtext}
           </p>
         )}
@@ -560,7 +560,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
           label="Health Watch"
           value={stats?.healthWatch ?? 0}
           unit={(stats?.healthWatch ?? 0) > 0 ? 'under watch' : 'healthy'}
-          unitColor={(stats?.healthWatch ?? 0) > 0 ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'}
+          unitColor={(stats?.healthWatch ?? 0) > 0 ? 'text-rose-700 font-bold' : 'text-emerald-700 font-bold'}
           isAlert={(stats?.healthWatch ?? 0) > 0}
           loading={statsLoading}
         />
@@ -573,19 +573,19 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
             <div className="flex items-center gap-2.5 flex-wrap flex-1">
               {viewMode === 'records' ? (
                 <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
                   <input
                     type="text"
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}
                     placeholder="Search by tag or ID…"
-                    className="w-full h-9 pl-9 pr-8 text-xs font-medium border border-slate-200 rounded-xl bg-slate-50/60 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                    className="w-full h-9 pl-9 pr-8 text-xs font-medium text-slate-800 placeholder:text-slate-500 border border-slate-200 rounded-xl bg-slate-50/60 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
                     id="swine-search-input"
                   />
                   {searchInput && (
                     <button
                       onClick={() => { setSearchInput(''); setSearch(''); }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 cursor-pointer"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 cursor-pointer"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -602,7 +602,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
               <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/50">
                 <button
                   onClick={() => { setViewMode('records'); setViewArchived(false); }}
-                  className={`h-8 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${viewMode === 'records' && !viewArchived ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                  className={`h-8 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${viewMode === 'records' && !viewArchived ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   id="swine-tab-active"
                 >
@@ -610,7 +610,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                 </button>
                 <button
                   onClick={() => { setViewMode('records'); setViewArchived(true); }}
-                  className={`h-8 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${viewMode === 'records' && viewArchived ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                  className={`h-8 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${viewMode === 'records' && viewArchived ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   id="swine-tab-archived"
                 >
@@ -618,7 +618,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                 </button>
                 <button
                   onClick={() => setViewMode('analytics')}
-                  className={`h-8 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${viewMode === 'analytics' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                  className={`h-8 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${viewMode === 'analytics' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   id="swine-tab-analytics"
                 >
@@ -651,7 +651,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
               {(viewMode === 'analytics' || !viewArchived) && (
                 <button
                   onClick={() => setIsAddModalOpen(true)}
-                  className="h-9 flex items-center gap-1.5 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
+                  className="h-9 flex items-center gap-1.5 px-3.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
                   id="add-swine-btn"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add new swine
@@ -665,9 +665,9 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
               {/* ── Row 2: Filter Strip ── */}
               <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 mt-3 border-t border-slate-100">
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-1.5 text-slate-400 mr-1 shrink-0">
-                    <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Filters:</span>
+                  <div className="flex items-center gap-1.5 text-slate-500 mr-1 shrink-0">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Filters:</span>
                   </div>
 
                   {/* Pen Filter */}
@@ -739,7 +739,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                       }`}
                     id="status-filter-select"
                   >
-                    <option value="all">{viewArchived ? 'All Reasons' : 'All Statuses'}</option>
+                    <option value="all">{viewArchived ? 'All Reasons' : 'All Status'}</option>
                     {viewArchived ? (
                       <>
                         <option value="promoted">Promoted</option>
@@ -768,7 +768,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                         setSearchInput('');
                         setSearch('');
                       }}
-                      className="h-8.5 flex items-center gap-1.5 px-2.5 text-xs font-semibold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/70 border border-rose-200/80 rounded-lg transition-colors cursor-pointer"
+                      className="h-8.5 flex items-center gap-1.5 px-2.5 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100/70 border border-rose-200/80 rounded-lg transition-colors cursor-pointer"
                       title="Reset all filters"
                     >
                       <FilterX className="w-3.5 h-3.5" />
@@ -778,7 +778,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                 </div>
 
                 {/* Quick Context on Right */}
-                <div className="text-[11px] font-medium text-slate-400 hidden sm:block">
+                <div className="text-[11px] font-medium text-slate-500 hidden sm:block">
                   {hasActiveFilters ? (
                     <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
                       Filtered: {viewArchived ? archivedTotal : totalCount} records
@@ -801,7 +801,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                     {['Swine Tag', 'Pen', 'Breed', 'Age', 'Category', 'Status', 'Actions'].map(h => (
                       <th
                         key={h}
-                        className={`py-3 px-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap ${h === 'Actions' ? 'text-right pr-6' : ''
+                        className={`py-3 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap ${h === 'Actions' ? 'text-right pr-6' : ''
                           }`}
                       >
                         {h}
@@ -822,7 +822,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                           <p className="text-xs font-semibold text-slate-500">{listError}</p>
                           <button
                             onClick={fetchSwine}
-                            className="text-xs font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                            className="text-xs font-bold text-emerald-700 hover:text-emerald-800 cursor-pointer"
                           >
                             Try again
                           </button>
@@ -835,16 +835,16 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                         <div className="flex flex-col items-center gap-3">
                           <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center">
                             {viewArchived
-                              ? <ArchiveX className="w-5 h-5 text-slate-300" />
-                              : <PigSnout className="w-5 h-5 text-slate-300" />}
+                              ? <ArchiveX className="w-5 h-5 text-slate-500" />
+                              : <PigSnout className="w-5 h-5 text-slate-500" />}
                           </div>
-                          <p className="text-xs font-semibold text-slate-400">
+                          <p className="text-xs font-semibold text-slate-500">
                             {viewArchived ? 'No archived records found' : 'No swine match your filters'}
                           </p>
                           {!viewArchived && (
                             <button
                               onClick={() => { setFilterPen('all'); setFilterCat('all'); setFilterBreed('all'); setFilterStatus('all'); setSearchInput(''); setSearch(''); }}
-                              className="text-xs font-bold text-emerald-600 hover:text-emerald-700 cursor-pointer"
+                              className="text-xs font-bold text-emerald-700 hover:text-emerald-800 cursor-pointer"
                             >
                               Clear filters
                             </button>
@@ -866,7 +866,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                         <td className="py-3.5 px-4">
                           <span className={`text-xs font-bold transition-colors ${viewArchived
                             ? 'text-slate-400 group-hover:text-slate-600'
-                            : 'text-emerald-600 group-hover:text-emerald-700'
+                            : 'text-emerald-700 group-hover:text-emerald-800'
                             }`}>
                             {pig.pig_tag
                               ? (pig.pig_tag.startsWith('#') ? pig.pig_tag : `#${pig.pig_tag}`)
@@ -883,7 +883,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                                 {penName}
                               </span>
                             ) : (
-                              <span className="text-slate-300 font-medium text-xs">—</span>
+                              <span className="text-slate-500 font-medium text-xs">—</span>
                             );
                           })()}
                         </td>
@@ -891,7 +891,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                         {/* 3. Breed */}
                         <td className="py-3.5 px-4">
                           <span className="text-xs font-semibold text-slate-700">
-                            {pig.breed && pig.breed.trim() ? pig.breed : <span className="text-slate-300 font-medium text-xs">—</span>}
+                            {pig.breed && pig.breed.trim() ? pig.breed : <span className="text-slate-500 font-medium text-xs">—</span>}
                           </span>
                         </td>
 
@@ -904,7 +904,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                               <span className="text-xs font-semibold text-slate-700">{pig.age_weeks} wks</span>
                             )
                           ) : (
-                            <span className="text-slate-300 font-medium text-xs">—</span>
+                            <span className="text-slate-500 font-medium text-xs">—</span>
                           )}
                         </td>
 
@@ -945,7 +945,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                                 <button
                                   type="button"
                                   onClick={() => { setSelectedPig(pig); setIsEditModalOpen(true); }}
-                                  className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors active:scale-95 cursor-pointer"
+                                  className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors active:scale-95 cursor-pointer"
                                   title={isAdmin ? "Edit Record" : "Propose Weight or Status Update"}
                                   id={`swine-edit-${pig.id ?? idx}`}
                                 >
@@ -960,7 +960,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                                       e.stopPropagation();
                                       setPromoteBatch(pig);
                                     }}
-                                    className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors active:scale-95 cursor-pointer"
+                                    className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors active:scale-95 cursor-pointer"
                                     title="Promote to Breeder (Gilt / Boar)"
                                     id={`swine-promote-${pig.id ?? idx}`}
                                   >
@@ -973,7 +973,7 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                                   <button
                                     type="button"
                                     onClick={() => promptArchive(pig)}
-                                    className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors active:scale-95 cursor-pointer"
+                                    className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors active:scale-95 cursor-pointer"
                                     title="Archive Record"
                                     id={`swine-archive-${pig.id ?? idx}`}
                                   >

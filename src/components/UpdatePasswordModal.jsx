@@ -1,123 +1,235 @@
-import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, Mail, Loader2, AlertCircle, CheckCircle2, X, ShieldCheck } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ArrowLeft,
+  Eye,
+  EyeOff,
+  Lock,
+  Mail,
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  X,
+} from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import useModalAnimation from '../hooks/useModalAnimation';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// ─── Pig Nose Logo (mirrors LoginModal) ───────────────────────────────────────
-function PigNoseLogo({ className = 'w-9 h-9 sm:w-10 sm:h-10' }) {
-  return (
-    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-      <rect width="48" height="48" rx="14" fill="#16a34a" />
-      <ellipse cx="24" cy="29" rx="13" ry="10" stroke="white" strokeWidth="2.2" fill="none" />
-      <circle cx="19.5" cy="29.5" r="3.2" fill="white" />
-      <circle cx="28.5" cy="29.5" r="3.2" fill="white" />
-      <circle cx="19.5" cy="29.5" r="1.5" fill="#16a34a" />
-      <circle cx="28.5" cy="29.5" r="1.5" fill="#16a34a" />
-      <circle cx="18.5" cy="19.5" r="1.8" fill="white" />
-      <circle cx="29.5" cy="19.5" r="1.8" fill="white" />
-    </svg>
-  );
-}
-
-// ─── Password strength calculator ─────────────────────────────────────────────
 function calcStrength(password) {
   const checks = {
-    minLength:      password.length >= 8,
-    hasNumber:      /\d/.test(password),
-    hasUppercase:   /[A-Z]/.test(password),
-    hasSpecialChar: /[!@#$%^&*()_+\-=[\]{};':\"\\|,.<>/?]/.test(password),
+    minLength: password.length >= 8,
+    hasNumber: /\d/.test(password),
+    hasUppercase: /[A-Z]/.test(password),
+    hasSpecialChar: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password),
   };
   const score = Object.values(checks).filter(Boolean).length;
   const levels = [
-    { label: 'Too Weak', color: '#ef4444', pct: 15  },
-    { label: 'Weak',     color: '#f97316', pct: 30  },
-    { label: 'Fair',     color: '#eab308', pct: 55  },
-    { label: 'Medium',   color: '#3b82f6', pct: 75  },
-    { label: 'Strong',   color: '#16a34a', pct: 100 },
+    { label: 'Too Weak', color: '#b91c1c', pct: 15 },
+    { label: 'Weak', color: '#c2410c', pct: 30 },
+    { label: 'Fair', color: '#a16207', pct: 55 },
+    { label: 'Good', color: '#1d4ed8', pct: 75 },
+    { label: 'Strong', color: '#047857', pct: 100 },
   ];
   return { checks, score, ...(levels[score] ?? levels[0]) };
 }
 
-// ─── Requirement bullet ───────────────────────────────────────────────────────
 function Req({ met, label }) {
   return (
     <div className="flex items-center gap-2">
       <span
-        className="flex items-center justify-center w-3.5 h-3.5 rounded-full border-2 transition-all duration-300 shrink-0"
-        style={{ borderColor: met ? '#16a34a' : '#cbd5e1', backgroundColor: met ? '#16a34a' : 'transparent' }}
+        aria-hidden="true"
+        className="flex items-center justify-center w-4 h-4 rounded-full border-2 transition-colors duration-200 shrink-0"
+        style={{
+          borderColor: met ? '#047857' : '#64748b',
+          backgroundColor: met ? '#047857' : 'transparent',
+        }}
       >
         {met && (
-          <svg viewBox="0 0 10 8" className="w-2  h-2" fill="none">
-            <path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <svg viewBox="0 0 10 8" className="w-2.5 h-2.5" fill="none" aria-hidden="true">
+            <path
+              d="M1 4l3 3 5-6"
+              stroke="white"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         )}
       </span>
-      <span className="text-[10px] sm:text-[11px] font-medium transition-colors duration-200" style={{ color: met ? '#15803d' : '#94a3b8' }}>
+      <span
+        className="text-xs font-medium transition-colors duration-200"
+        style={{ color: met ? '#047857' : '#475569' }}
+      >
         {label}
       </span>
     </div>
   );
 }
 
-// ─── Field wrapper (mirrors LoginModal) ───────────────────────────────────────
-function Field({ label, htmlFor, error, touched, children }) {
+function AnimatedFieldError({ id, message }) {
+  const show = Boolean(message);
+  const [displayMessage, setDisplayMessage] = useState(message || '');
+
+  if (show && message !== displayMessage) {
+    setDisplayMessage(message);
+  }
+
   return (
-    <div className="space-y-1">
-      <label htmlFor={htmlFor} className="block text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
+    <div
+      aria-hidden={!show}
+      className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none ${
+        show ? 'grid-rows-[1fr] opacity-100 mt-1.5' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+      }`}
+    >
+      <div className="overflow-hidden min-h-0">
+        {displayMessage && (
+          <p
+            id={show ? id : undefined}
+            role={show ? 'alert' : undefined}
+            className="flex items-center gap-1.5 text-xs text-rose-700 font-medium"
+          >
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span>{displayMessage}</span>
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AnimatedServerError({ message }) {
+  const show = Boolean(message);
+  const [displayMessage, setDisplayMessage] = useState(message || '');
+
+  if (show && message !== displayMessage) {
+    setDisplayMessage(message);
+  }
+
+  return (
+    <div
+      aria-hidden={!show}
+      className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none ${
+        show ? 'grid-rows-[1fr] opacity-100 mt-4' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+      }`}
+    >
+      <div className="overflow-hidden min-h-0">
+        {displayMessage && (
+          <div
+            role={show ? 'alert' : undefined}
+            className="flex items-start gap-2 p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-800 font-medium"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-700" aria-hidden="true" />
+            <span>{displayMessage}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, htmlFor, errorId, error, touched, children }) {
+  return (
+    <div>
+      <label htmlFor={htmlFor} className="block text-xs font-semibold text-slate-700 mb-1.5">
         {label}
       </label>
       {children}
-      {touched && error && (
-        <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium animate-fade-in">
-          <AlertCircle className="w-3 h-3 shrink-0" />
-          {error}
-        </p>
-      )}
+      <AnimatedFieldError id={errorId} message={touched ? error : ''} />
     </div>
   );
 }
 
 const inputBase = [
-  'w-full bg-white border rounded-xl text-slate-900 placeholder-slate-400',
-  'text-sm focus:outline-none focus:ring-2 transition-all',
-  'py-2 sm:py-2.5',
+  'w-full min-h-[44px] py-2.5 bg-white border rounded-xl text-slate-900 placeholder-slate-500',
+  'text-base sm:text-sm focus:outline-none focus:ring-2 transition-colors',
 ].join(' ');
-const inputOk  = 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500/20';
-const inputErr = 'border-rose-400 focus:border-rose-400 focus:ring-rose-400/20 bg-rose-50/30';
+const inputOk = 'border-slate-500 focus:border-emerald-700 focus:ring-emerald-700/25';
+const inputErr = 'border-rose-600 focus:border-rose-700 focus:ring-rose-600/25 bg-rose-50/40';
 
-// ─── Main Component ───
-export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, onResetSuccess, initialView = 'send-email', oldPassword }) {
-  const [email,        setEmail]        = useState('');
+export default function UpdatePasswordModal({
+  isOpen,
+  onClose,
+  onBackToLogin,
+  onResetSuccess,
+  onCancelForcedReset,
+  initialView = 'send-email',
+  initialEmail = '',
+  isForcedReset = false,
+  oldPassword,
+}) {
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  const [prevInitialView, setPrevInitialView] = useState(initialView);
+
+  const [email, setEmail] = useState(initialEmail || '');
   const [emailTouched, setEmailTouched] = useState(false);
-  const [emailSent,    setEmailSent]    = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
-  const [newPassword,     setNewPassword]     = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showNew,         setShowNew]         = useState(false);
-  const [showConfirm,     setShowConfirm]     = useState(false);
-  const [pwTouched,       setPwTouched]       = useState({ newPassword: false, confirmPassword: false });
-  const [successMsg,      setSuccessMsg]      = useState('');
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pwTouched, setPwTouched] = useState({ newPassword: false, confirmPassword: false });
+  const [successMsg, setSuccessMsg] = useState('');
 
-  const [view,        setView]        = useState(initialView);
-  const [isLoading,   setIsLoading]   = useState(false);
+  const [view, setView] = useState(initialView);
+  const [isLoading, setIsLoading] = useState(false);
   const [serverError, setServerError] = useState('');
+  const [sessionExpired, setSessionExpired] = useState(false);
 
-  const { shouldRender, requestClose, overlayClassName, panelClassName } =
-    useModalAnimation(isOpen, onClose);
+  const firstInputRef = useRef(null);
+  const redirectTimerRef = useRef(null);
 
-  useEffect(() => { setView(initialView); }, [initialView]);
+  if (initialView !== prevInitialView) {
+    setPrevInitialView(initialView);
+    setView(initialView);
+    setSessionExpired(false);
+  }
+
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen) {
+      setView(initialView);
+      setEmail(initialView === 'send-email' ? (initialEmail || '') : '');
+      setEmailTouched(false);
+      setEmailSent(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowNew(false);
+      setShowConfirm(false);
+      setPwTouched({ newPassword: false, confirmPassword: false });
+      setSuccessMsg('');
+      setServerError('');
+      setSessionExpired(false);
+      setIsLoading(false);
+    } else {
+      setEmail('');
+      setEmailTouched(false);
+      setEmailSent(false);
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowNew(false);
+      setShowConfirm(false);
+      setPwTouched({ newPassword: false, confirmPassword: false });
+      setSuccessMsg('');
+      setServerError('');
+      setSessionExpired(false);
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
-    if (!isOpen) {
-      setEmail(''); setEmailTouched(false); setEmailSent(false);
-      setNewPassword(''); setConfirmPassword('');
-      setShowNew(false); setShowConfirm(false);
-      setPwTouched({ newPassword: false, confirmPassword: false });
-      setSuccessMsg(''); setServerError('');
-    }
-  }, [isOpen]);
+    return () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    };
+  }, []);
+
+  const canDismissModal = view !== 'update-password';
+
+  const { shouldRender, requestClose, panelRef, overlayClassName, panelClassName } =
+    useModalAnimation(isOpen, onClose, {
+      canClose: canDismissModal,
+      initialFocusRef: firstInputRef,
+    });
 
   if (!shouldRender) return null;
 
@@ -141,8 +253,8 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
         redirectTo: siteUrl,
       });
       if (error) setServerError(error.message);
-      else        setEmailSent(true);
-    } catch (err) {
+      else setEmailSent(true);
+    } catch {
       setServerError('Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
@@ -168,298 +280,446 @@ export default function UpdatePasswordModal({ isOpen, onClose, onBackToLogin, on
     pwErrors.confirmPassword = 'Passwords do not match. Please verify your entries.';
   }
 
-  const isPwValid  = Object.keys(pwErrors).length === 0;
-  const touchPw    = (f) => setPwTouched((t) => ({ ...t, [f]: true }));
-  const touchPwAll = ()  => setPwTouched({ newPassword: true, confirmPassword: true });
+  const isPwValid = Object.keys(pwErrors).length === 0;
+  const touchPw = (field) => setPwTouched((t) => ({ ...t, [field]: true }));
+  const touchPwAll = () => setPwTouched({ newPassword: true, confirmPassword: true });
 
   const handleUpdatePassword = async (e) => {
     e.preventDefault();
     touchPwAll();
     setServerError('');
+    setSessionExpired(false);
     if (!isPwValid) return;
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ 
+      const { error } = await supabase.auth.updateUser({
         password: newPassword,
-        data: { must_change_password: false } 
+        data: { must_change_password: false },
       });
       if (error) {
-        setServerError(error.message);
+        const lower = String(error.message || '').toLowerCase();
+        if (lower.includes('auth session missing') || lower.includes('session')) {
+          setSessionExpired(true);
+          setServerError('Your password reset link has expired or is invalid. Please request a new reset link.');
+        } else {
+          setServerError(error.message);
+        }
       } else {
-        setSuccessMsg('Your password has been successfully updated! Redirecting to the login screen...');
+        setSuccessMsg(
+          isForcedReset
+            ? 'Your password has been updated. Opening the staff portal...'
+            : 'Your password has been updated. Returning to sign in...'
+        );
         if (onResetSuccess) {
-          setTimeout(() => {
+          if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+          redirectTimerRef.current = setTimeout(() => {
             requestClose(onResetSuccess);
-          }, 2000);
+          }, 1200);
         }
       }
-    } catch (err) {
+    } catch {
       setServerError('Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleClose       = () => { if (initialView === 'update-password') return; requestClose(); };
-  const handleBackToLogin = () => { requestClose(onBackToLogin); };
+  const handleClose = () => {
+    if (!canDismissModal) return;
+    requestClose();
+  };
+
+  const handleBackToLogin = () => {
+    requestClose(onBackToLogin);
+  };
+
+  const handleCancelForcedReset = () => {
+    if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    requestClose(onCancelForcedReset || onClose);
+  };
 
   const titles = {
-    'send-email':      { heading: 'Forgot Password?',    sub: 'Enter your email to receive a reset link.' },
-    'update-password': { heading: 'Secure Your Account', sub: 'Please set a secure password to activate your portal session.' },
+    'send-email': {
+      heading: 'Reset Password',
+      sub: 'Enter your email to receive a password reset link.',
+    },
+    'update-password': {
+      heading: 'Create a New Password',
+      sub: isForcedReset
+        ? 'Set a new password to activate your account.'
+        : 'Choose a strong password to regain access.',
+    },
   };
   const { heading, sub } = titles[view] ?? titles['send-email'];
 
   const btnCls = [
-    'w-full py-2.5 sm:py-3',
-    'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white',
+    'w-full min-h-[44px] py-3',
+    'bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white',
     'font-bold text-sm rounded-xl transition-colors',
     'flex items-center justify-center gap-2',
-    'shadow-lg shadow-emerald-600/25 cursor-pointer',
+    'shadow-md shadow-emerald-900/15 cursor-pointer',
     'disabled:opacity-70 disabled:cursor-not-allowed',
-    'focus:outline-none focus:ring-4 focus:ring-emerald-500/30',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-700',
   ].join(' ');
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:py-6 bg-slate-900/50 backdrop-blur-sm overflow-y-auto ${overlayClassName}`}
+      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto ${overlayClassName}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="update-password-title"
       id="update-password-modal-overlay"
       onClick={(e) => e.target === e.currentTarget && handleClose()}
     >
-      {/* Scrollbar-suppression styling context */}
-      <style>{`
-        .modal-scroll-container::-webkit-scrollbar {
-          display: none;
-        }
-        .modal-scroll-container {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-        @keyframes modal-panel-in {
-          from { opacity: 0; transform: translateY(16px) scale(0.97); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes modal-panel-out {
-          from { opacity: 1; transform: translateY(0) scale(1); }
-          to   { opacity: 0; transform: translateY(16px) scale(0.97); }
-        }
-        .animate-modal-in  { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-        .animate-modal-out { animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
-      `}</style>
-
       <div
-        className={`relative w-full bg-white shadow-2xl border border-slate-100 rounded-t-3xl sm:rounded-3xl h-[85vh] sm:h-[530px] max-h-[92dvh] sm:max-h-[90vh] sm:max-w-sm sm:my-auto flex flex-col overflow-hidden ${panelClassName}`}
+        ref={panelRef}
+        className={[
+          'relative w-full bg-white shadow-2xl border border-slate-200',
+          'rounded-t-3xl sm:rounded-3xl',
+          'h-auto max-h-[92dvh] sm:max-h-[90dvh]',
+          'sm:max-w-md sm:my-auto',
+          'flex flex-col overflow-hidden',
+          panelClassName,
+        ].join(' ')}
         id="update-password-modal-content"
       >
-        {/* Close button */}
-        {initialView !== 'update-password' && (
-          <button
-            onClick={handleClose}
-            className="absolute top-3 left-3 sm:top-4 sm:left-4 flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer z-10"
-            aria-label="Close modal"
-            id="close-update-password-btn"
-          >
-            <X className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-            Back
-          </button>
-        )}
-
-        {/* Mobile drag handle */}
-        <div className="flex justify-center pt-3 sm:hidden shrink-0">
-          <div className="w-10 h-1 rounded-full bg-slate-200" />
+        <div className="flex items-center justify-end px-3 pt-3 sm:px-4 sm:pt-4 shrink-0">
+          {canDismissModal ? (
+            <button
+              type="button"
+              onClick={handleClose}
+              className="w-11 h-11 flex items-center justify-center rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+              aria-label="Close password reset dialog"
+              id="close-update-password-btn"
+            >
+              <X className="w-5 h-5" aria-hidden="true" />
+            </button>
+          ) : (
+            <div className="h-3" aria-hidden="true" />
+          )}
         </div>
 
-        {/* Scrollable Container (Uses suppression class) */}
-        <div className="flex-1 overflow-y-auto modal-scroll-container px-5 sm:px-8 pt-7 sm:pt-9 pb-4 sm:pb-5 space-y-3.5 sm:space-y-4">
-
-          <div className="flex flex-col items-center gap-1.5 sm:gap-2 text-center">
-            <div className="relative">
-              <PigNoseLogo />
-              <span className="absolute -bottom-1 -right-1 flex items-center justify-center w-5 h-5 bg-emerald-600 rounded-full ring-2 ring-white">
-                <ShieldCheck className="w-3.5 h-3.5 text-white" />
+        <div className="flex-1 overflow-y-auto px-5 sm:px-8 pt-1 pb-6">
+          <div className="flex flex-col items-center gap-6 text-center">
+            <div className="flex items-center gap-2.5">
+              <span
+                aria-hidden="true"
+                className="flex items-center justify-center w-9 h-9 rounded-xl bg-emerald-700 text-white font-extrabold text-base shadow-sm shrink-0"
+              >
+                S
               </span>
+              <div className="flex flex-col leading-tight text-left">
+                <span className="font-black font-display text-lg tracking-tight text-slate-900">
+                  Swine<span className="text-emerald-700">Sync</span>
+                </span>
+                <span className="text-xs font-semibold text-slate-600">
+                  for Ambo &amp; Ang&apos;s Oink Yard
+                </span>
+              </div>
             </div>
+
             <div>
-              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
-                SwineSync
-              </p>
-              <h2 id="update-password-title" className="text-xl font-extrabold text-slate-900 tracking-tight mt-0.5">
+              <h2
+                id="update-password-title"
+                className="text-2xl font-extrabold font-display text-slate-900 tracking-tight"
+              >
                 {heading}
               </h2>
-              <p className="text-[11px] sm:text-xs text-slate-500 mt-1 leading-relaxed">{sub}</p>
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed">{sub}</p>
             </div>
           </div>
 
-          {serverError && (
-            <div className="flex items-start gap-2 p-3 bg-rose-50 border border-rose-100 rounded-xl text-[11px] sm:text-xs text-rose-700 font-medium animate-fade-in">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-500" />
-              {serverError}
-            </div>
-          )}
+          <AnimatedServerError message={serverError} />
 
-          {/* ── PHASE 1: Send reset email ── */}
+          <div className="mt-5 space-y-4">
+
+          {/* PHASE 1: Send reset email */}
           {view === 'send-email' && !emailSent && (
-            <>
-              <Field label="Email Address" htmlFor="reset-email" error={emailError} touched={emailTouched}>
+            <form onSubmit={handleSendReset} noValidate className="space-y-4">
+              <Field
+                label="Email address"
+                htmlFor="reset-email"
+                errorId="reset-email-error"
+                error={emailError}
+                touched={emailTouched}
+              >
                 <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 pointer-events-none">
-                    <Mail className="w-3.5 h-3.5" />
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-y-0 left-0 w-10 flex items-center justify-center text-slate-600 pointer-events-none"
+                  >
+                    <Mail className="w-4 h-4" />
                   </span>
                   <input
-                    type="text"
+                    ref={firstInputRef}
+                    type="email"
                     inputMode="email"
                     id="reset-email"
                     autoComplete="email"
                     placeholder="manager@farm.com"
                     value={email}
-                    onChange={(e) => { setEmail(e.target.value); setServerError(''); }}
+                    onChange={(e) => setEmail(e.target.value)}
                     onBlur={() => setEmailTouched(true)}
-                    className={`${inputBase} pl-8.5 sm:pl-9.5 pr-4 ${emailTouched && emailError ? inputErr : inputOk}`}
+                    aria-invalid={Boolean(emailTouched && emailError)}
+                    aria-describedby={emailTouched && emailError ? 'reset-email-error' : undefined}
+                    className={`${inputBase} pl-10 pr-4 ${emailTouched && emailError ? inputErr : inputOk}`}
                   />
                 </div>
               </Field>
 
-              <button onClick={handleSendReset} disabled={isLoading} className={btnCls} id="send-reset-email-btn">
-                {isLoading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending…</> : 'Send Reset Link'}
+              <button type="submit" disabled={isLoading} className={btnCls} id="send-reset-email-btn">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                    <span>Sending...</span>
+                  </>
+                ) : (
+                  'Send Reset Link'
+                )}
               </button>
-            </>
+            </form>
           )}
 
           {/* Email sent confirmation */}
           {view === 'send-email' && emailSent && (
-            <div className="flex flex-col items-center gap-3 py-4 text-center">
-              <div className="flex items-center justify-center w-11 h-12 bg-emerald-50 rounded-full animate-fade-in">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            <div className="flex flex-col items-center gap-3 py-3 text-center">
+              <div className="flex items-center justify-center w-12 h-12 bg-emerald-50 border border-emerald-200 rounded-full animate-fade-in">
+                <CheckCircle2 className="w-6 h-6 text-emerald-700" aria-hidden="true" />
               </div>
               <div className="animate-fade-in">
-                <p className="text-sm font-bold text-slate-800">Check your inbox!</p>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                <p className="text-sm font-bold text-slate-900">Check your inbox</p>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
                   A password reset link was sent to{' '}
-                  <strong className="text-slate-700">{email}</strong>.<br />
-                  Click the link in the email to set your new password.
+                  <strong className="text-slate-800">{email}</strong>.<br />
+                  Open the link in that email to set a new password.
                 </p>
               </div>
-              <div className="flex items-start gap-2 w-full p-3 bg-amber-50 border border-amber-100 rounded-xl text-[11px] sm:text-xs text-amber-700 font-medium text-left animate-fade-in">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+              <div className="flex items-start gap-2 w-full p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 font-medium text-left animate-fade-in">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" aria-hidden="true" />
                 <span>
-                  Didn't get it? Check your spam folder or{' '}
+                  Didn&apos;t receive it? Check your spam folder or{' '}
                   <button
                     type="button"
                     onClick={() => { setEmailSent(false); setServerError(''); }}
-                    className="underline font-bold cursor-pointer hover:text-amber-800"
+                    className="underline font-bold cursor-pointer text-amber-900 hover:text-slate-950 rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
                   >
-                    try again
+                    try another email
                   </button>.
                 </span>
               </div>
             </div>
           )}
 
-          {/* ── PHASE 2: Set new password ── */}
+          {/* PHASE 2: Set new password */}
           {view === 'update-password' && !successMsg && (
-            <>
-              <Field label="New Password" htmlFor="update-new-password" error={pwErrors.newPassword} touched={pwTouched.newPassword}>
-                <div className="relative">
-                  <input
-                    type={showNew ? 'text' : 'password'}
-                    id="update-new-password"
-                    autoComplete="new-password"
-                    placeholder="••••••••"
-                    value={newPassword}
-                    onChange={(e) => { setNewPassword(e.target.value); setServerError(''); }}
-                    onBlur={() => touchPw('newPassword')}
-                    className={`${inputBase} pl-4 pr-10 ${pwTouched.newPassword && pwErrors.newPassword ? inputErr : inputOk}`}
-                  />
-                  <button type="button" tabIndex={-1} onClick={() => setShowNew(!showNew)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-455 hover:text-slate-655 transition-colors cursor-pointer"
-                    aria-label={showNew ? 'Hide password' : 'Show password'}>
-                    {showNew ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </Field>
+            <form onSubmit={handleUpdatePassword} noValidate>
+              <div className="space-y-4">
+                <Field
+                  label="New password"
+                  htmlFor="update-new-password"
+                  errorId="update-new-password-error"
+                  error={pwErrors.newPassword}
+                  touched={pwTouched.newPassword}
+                >
+                  <div className="relative">
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-y-0 left-0 w-10 flex items-center justify-center text-slate-600 pointer-events-none"
+                    >
+                      <Lock className="w-4 h-4" />
+                    </span>
+                    <input
+                      ref={firstInputRef}
+                      type={showNew ? 'text' : 'password'}
+                      id="update-new-password"
+                      autoComplete="new-password"
+                      placeholder="Enter new password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      onBlur={() => touchPw('newPassword')}
+                      aria-invalid={Boolean(pwTouched.newPassword && pwErrors.newPassword)}
+                      aria-describedby={
+                        pwTouched.newPassword && pwErrors.newPassword ? 'update-new-password-error' : undefined
+                      }
+                      className={`${inputBase} pl-10 pr-12 ${pwTouched.newPassword && pwErrors.newPassword ? inputErr : inputOk}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNew((prev) => !prev)}
+                      className="absolute inset-y-0 right-0 w-11 min-h-[44px] flex items-center justify-center rounded-r-xl text-slate-600 hover:text-slate-900 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+                      aria-label={showNew ? 'Hide new password' : 'Show new password'}
+                      aria-pressed={showNew}
+                    >
+                      {showNew ? (
+                        <EyeOff className="w-4 h-4" aria-hidden="true" />
+                      ) : (
+                        <Eye className="w-4 h-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                </Field>
 
-              <Field label="Confirm New Password" htmlFor="update-confirm-password" error={pwErrors.confirmPassword} touched={pwTouched.confirmPassword}>
-                <div className="relative">
-                  <input
-                    type={showConfirm ? 'text' : 'password'}
-                    id="update-confirm-password"
-                    autoComplete="new-password"
-                    placeholder="••••••••"
-                    value={confirmPassword}
-                    onChange={(e) => { setConfirmPassword(e.target.value); setServerError(''); }}
-                    onBlur={() => touchPw('confirmPassword')}
-                    className={`${inputBase} pl-4 pr-10 ${pwTouched.confirmPassword && pwErrors.confirmPassword ? inputErr : inputOk}`}
-                  />
-                  <button type="button" tabIndex={-1} onClick={() => setShowConfirm(!showConfirm)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-455 hover:text-slate-655 transition-colors cursor-pointer"
-                    aria-label={showConfirm ? 'Hide password' : 'Show password'}>
-                    {showConfirm ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </Field>
+                <Field
+                  label="Confirm new password"
+                  htmlFor="update-confirm-password"
+                  errorId="update-confirm-password-error"
+                  error={pwErrors.confirmPassword}
+                  touched={pwTouched.confirmPassword}
+                >
+                  <div className="relative">
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-y-0 left-0 w-10 flex items-center justify-center text-slate-600 pointer-events-none"
+                    >
+                      <Lock className="w-4 h-4" />
+                    </span>
+                    <input
+                      type={showConfirm ? 'text' : 'password'}
+                      id="update-confirm-password"
+                      autoComplete="new-password"
+                      placeholder="Confirm new password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      onBlur={() => touchPw('confirmPassword')}
+                      aria-invalid={Boolean(pwTouched.confirmPassword && pwErrors.confirmPassword)}
+                      aria-describedby={
+                        pwTouched.confirmPassword && pwErrors.confirmPassword
+                          ? 'update-confirm-password-error'
+                          : undefined
+                      }
+                      className={`${inputBase} pl-10 pr-12 ${pwTouched.confirmPassword && pwErrors.confirmPassword ? inputErr : inputOk}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirm((prev) => !prev)}
+                      className="absolute inset-y-0 right-0 w-11 min-h-[44px] flex items-center justify-center rounded-r-xl text-slate-600 hover:text-slate-900 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+                      aria-label={showConfirm ? 'Hide confirmation password' : 'Show confirmation password'}
+                      aria-pressed={showConfirm}
+                    >
+                      {showConfirm ? (
+                        <EyeOff className="w-4 h-4" aria-hidden="true" />
+                      ) : (
+                        <Eye className="w-4 h-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                </Field>
+              </div>
 
-              {/* Strength meter */}
-              {newPassword.length > 0 && (
-                <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 sm:p-4 space-y-3 animate-fade-in" id="password-strength-panel">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Password Strength</span>
-                      <span className="text-[11px] sm:text-xs font-bold transition-colors duration-300" style={{ color: strength.color }}>
-                        {strength.label}
-                      </span>
+              <div
+                aria-hidden={newPassword.length === 0}
+                className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none ${
+                  newPassword.length > 0
+                    ? 'grid-rows-[1fr] opacity-100 mt-4'
+                    : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+                }`}
+              >
+                <div className="overflow-hidden min-h-0">
+                  <div
+                    className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-3"
+                    id="password-strength-panel"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-700">
+                          Password strength
+                        </span>
+                        <span
+                          className="text-xs font-bold transition-colors duration-200"
+                          style={{ color: strength.color }}
+                        >
+                          {strength.label}
+                        </span>
+                      </div>
+                      <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-300 ease-out motion-reduce:transition-none"
+                          style={{ width: `${strength.pct}%`, backgroundColor: strength.color }}
+                        />
+                      </div>
                     </div>
-                    <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-500 ease-out"
-                        style={{ width: `${strength.pct}%`, backgroundColor: strength.color }} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+                      <Req met={strength.checks.minLength} label="Min. 8 characters" />
+                      <Req met={strength.checks.hasUppercase} label="One uppercase letter" />
+                      <Req met={strength.checks.hasNumber} label="One number" />
+                      <Req met={strength.checks.hasSpecialChar} label="One special character" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                    <Req met={strength.checks.minLength}      label="Min. 8 characters" />
-                    <Req met={strength.checks.hasUppercase}   label="One uppercase"     />
-                    <Req met={strength.checks.hasNumber}      label="Include number"    />
-                    <Req met={strength.checks.hasSpecialChar} label="Special character" />
-                  </div>
                 </div>
-              )}
+              </div>
 
-              <button onClick={handleUpdatePassword} disabled={isLoading} className={btnCls} id="update-password-submit-btn">
-                {isLoading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating…</> : 'Update Password'}
+              <button type="submit" disabled={isLoading} className={`${btnCls} mt-4`} id="update-password-submit-btn">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                    <span>Updating...</span>
+                  </>
+                ) : (
+                  'Update Password'
+                )}
               </button>
-            </>
+            </form>
           )}
 
           {/* Success state */}
           {view === 'update-password' && successMsg && (
-            <div className="flex flex-col items-center gap-3 py-4 text-center">
-              <div className="flex items-center justify-center w-11 h-12 bg-emerald-50 rounded-full animate-fade-in">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+            <div className="flex flex-col items-center gap-3 py-4 text-center" role="status">
+              <div className="flex items-center justify-center w-12 h-12 bg-emerald-50 border border-emerald-200 rounded-full animate-fade-in">
+                <CheckCircle2 className="w-6 h-6 text-emerald-700" aria-hidden="true" />
               </div>
               <div className="animate-fade-in">
-                <p className="text-sm font-bold text-slate-800">Password Updated!</p>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">{successMsg}</p>
+                <p className="text-sm font-bold text-slate-900">Password Updated</p>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">{successMsg}</p>
               </div>
             </div>
           )}
 
-          {/* Back to Log In (Hidden during forced reset) */}
-          {initialView !== 'update-password' && (
+          {/* Secondary action */}
+          {canDismissModal ? (
             <div className="flex justify-center pt-1">
               <button
                 type="button"
                 onClick={handleBackToLogin}
-                className="text-[11px] sm:text-xs font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-widest transition-colors cursor-pointer"
+                className="min-h-[44px] px-3 inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 hover:text-emerald-800 rounded-xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
                 id="back-to-login-link"
               >
-                Back to Log In
+                <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Back to sign in</span>
+              </button>
+            </div>
+          ) : !successMsg && (
+            <div className="flex flex-col items-center gap-1 pt-1">
+              {sessionExpired && !isForcedReset && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setView('send-email');
+                    setServerError('');
+                    setSessionExpired(false);
+                    setEmailSent(false);
+                    setEmailTouched(false);
+                  }}
+                  className="min-h-[44px] px-4 inline-flex items-center justify-center text-xs font-bold text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 rounded-xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+                  id="request-new-reset-btn"
+                >
+                  Request a new reset link
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleCancelForcedReset}
+                disabled={isLoading}
+                className="min-h-[44px] px-4 inline-flex items-center justify-center text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+                id="cancel-forced-reset-btn"
+              >
+                {isForcedReset ? 'Cancel and Sign Out' : 'Cancel'}
               </button>
             </div>
           )}
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="sticky bottom-0 px-5 sm:px-8 py-3 bg-slate-50 border-t border-slate-100 text-[10px] text-center text-slate-400 tracking-wide shrink-0">
+        <div className="px-5 sm:px-8 py-3 bg-slate-50 border-t border-slate-200 text-xs text-center text-slate-600 shrink-0">
           Restricted to authorized SwineSync personnel only.
         </div>
       </div>

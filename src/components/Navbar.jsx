@@ -1,9 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Menu, X, LogIn, LogOut } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Menu, X, LogOut } from 'lucide-react';
 
 export default function Navbar({ activeSection, scrollToSection, onOpenLogin, loggedInUser, onLogout, isLandingMode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+
+  const displayName =
+    loggedInUser && typeof loggedInUser === 'object'
+      ? loggedInUser.name || loggedInUser.email || 'Staff'
+      : loggedInUser
+        ? String(loggedInUser)
+        : '';
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -41,19 +48,25 @@ export default function Navbar({ activeSection, scrollToSection, onOpenLogin, lo
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-20">
 
-          {/* Logo Brand Area (Clean Footer Style) */}
+          {/* Logo Brand Area */}
           <div className="flex items-center shrink-0">
             <button
+              type="button"
               onClick={() => handleNavClick('home')}
-              className="flex items-center gap-2.5 cursor-pointer group"
+              className="flex items-center gap-2.5 cursor-pointer group text-left"
               id="brand-logo-btn"
             >
-              <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary-600 text-white font-extrabold text-base shadow-sm group-hover:bg-primary-500 transition-colors">
+              <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary-600 text-white font-extrabold text-base shadow-sm group-hover:bg-primary-500 transition-colors shrink-0">
                 S
               </div>
-              <span className="font-black font-display text-xl tracking-tight text-slate-900 group-hover:text-primary-700 transition-colors">
-                Swine<span className="text-primary-600">Sync</span>
-              </span>
+              <div className="flex flex-col leading-tight">
+                <span className="font-black font-display text-lg sm:text-xl tracking-tight text-slate-900 group-hover:text-primary-700 transition-colors">
+                  Swine<span className="text-primary-600">Sync</span>
+                </span>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  for Ambo &amp; Ang&apos;s Oink Yard
+                </span>
+              </div>
             </button>
           </div>
 
@@ -83,47 +96,51 @@ export default function Navbar({ activeSection, scrollToSection, onOpenLogin, lo
 
           {/* Desktop Action Area: Login / User Controls */}
           <div className="hidden lg:flex items-center gap-4">
-            {loggedInUser ? (
+            {displayName ? (
               <div className="flex items-center gap-3 bg-slate-50 pl-3 pr-2 py-1.5 rounded-2xl border border-slate-100" id="desktop-user-profile">
                 <div className="flex items-center gap-2">
                   <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary-100 text-primary-700 font-semibold text-xs">
-                    {loggedInUser.charAt(0)}
+                    {displayName.charAt(0).toUpperCase()}
                   </span>
                   <div className="flex flex-col text-left">
-                    <span className="text-xs text-slate-400 leading-none">Staff Portal</span>
-                    <span className="text-xs font-bold text-slate-700">{loggedInUser}</span>
+                    <span className="text-xs text-slate-600 leading-none">Staff Portal</span>
+                    <span className="text-xs font-bold text-slate-800">{displayName}</span>
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={onLogout}
-                  className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                  className="w-11 h-11 flex items-center justify-center rounded-xl text-slate-600 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+                  aria-label="Exit staff portal"
                   title="Exit Staff Portal"
                   id="nav-logout-btn-desktop"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <LogOut className="w-4 h-4" aria-hidden="true" />
                 </button>
               </div>
             ) : (
               <button
+                type="button"
                 onClick={onOpenLogin}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-xl shadow-md transition-all cursor-pointer hover:shadow-lg shadow-slate-950/10"
+                className="inline-flex items-center justify-center min-h-[44px] px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm rounded-xl shadow-md hover:shadow-lg shadow-slate-950/10 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
                 id="nav-login-btn-desktop"
               >
-                <LogIn className="w-4 h-4" />
                 Staff Login
               </button>
             )}
           </div>
 
-          {/* Mobile Menu Hamburguer Toggle */}
+          {/* Mobile Menu Hamburger Toggle */}
           <div className="flex items-center lg:hidden">
             <button
+              type="button"
               onClick={() => setIsOpen(!isOpen)}
-              className="p-2.5 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-50 focus:outline-none transition-colors cursor-pointer"
+              className="w-11 h-11 flex items-center justify-center rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 transition-colors cursor-pointer"
               aria-label="Toggle navigation menu"
+              aria-expanded={isOpen}
               id="mobile-menu-toggle"
             >
-              {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {isOpen ? <X className="w-6 h-6" aria-hidden="true" /> : <Menu className="w-6 h-6" aria-hidden="true" />}
             </button>
           </div>
         </div>
@@ -149,39 +166,40 @@ export default function Navbar({ activeSection, scrollToSection, onOpenLogin, lo
             ))}
 
             <div className="pt-4 border-t border-slate-100 mt-4">
-              {loggedInUser ? (
+              {displayName ? (
                 <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-2xl border border-slate-100" id="mobile-user-profile">
                   <div className="flex items-center gap-2.5">
                     <span className="flex items-center justify-center w-9 h-9 rounded-full bg-primary-100 text-primary-700 font-bold text-sm">
-                      {loggedInUser.charAt(0)}
+                      {displayName.charAt(0).toUpperCase()}
                     </span>
                     <div className="flex flex-col text-left">
-                      <span className="text-xs text-slate-400">Staff Portal</span>
-                      <span className="text-sm font-extrabold text-slate-800">{loggedInUser}</span>
+                      <span className="text-xs text-slate-600">Staff Portal</span>
+                      <span className="text-sm font-extrabold text-slate-800">{displayName}</span>
                     </div>
                   </div>
                   <button
+                    type="button"
                     onClick={() => {
                       onLogout();
                       setIsOpen(false);
                     }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
                     id="nav-logout-btn-mobile"
                   >
-                    <LogOut className="w-3.5 h-3.5" />
+                    <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
                     Exit Portal
                   </button>
                 </div>
               ) : (
                 <button
+                  type="button"
                   onClick={() => {
                     onOpenLogin();
                     setIsOpen(false);
                   }}
-                  className="flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-xl shadow-md transition-all cursor-pointer"
+                  className="flex items-center justify-center w-full min-h-[44px] py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-xl shadow-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
                   id="nav-login-btn-mobile"
                 >
-                  <LogIn className="w-4 h-4" />
                   Staff Login
                 </button>
               )}

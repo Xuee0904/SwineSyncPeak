@@ -13,7 +13,7 @@ import TransactionRecords from './TransactionRecords';
 import PigSnout from '../components/common/PigSnout';
 import { supabase } from '../supabaseClient';
 import { toast } from '../utils/toast';
-import { isAdminUser, canAccessTab } from '../utils/rbac';
+import { isAdminUser, canAccessTab, isValidTab } from '../utils/rbac';
 import {
   computeInventoryMetrics,
   getStockStatus,
@@ -27,7 +27,7 @@ import {
   Users, HeartPulse, Grid3X3, ArrowRight,
   CheckCircle2, RefreshCw, Calendar, Check,
   Dna, TrendingUp, Activity, MapPin, Plus, Syringe,
-  Wheat, Package, ChevronDown, LogOut,
+  Wheat, Package,
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -153,16 +153,44 @@ function SectionCard({ title, action, actionLabel, children, id }) {
 }
 
 export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('swinesync_active_tab');
+      if (saved && isValidTab(saved) && canAccessTab(loggedInUser, saved)) {
+        return saved;
+      }
+    } catch {
+      // Ignore storage access errors
+    }
+    return 'dashboard';
+  });
   const [mobileNav, setMobileNav] = useState(false);
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const isAdmin = isAdminUser(loggedInUser);
 
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('swinesync_active_tab', activeTab);
+    } catch {
+      // Ignore storage access errors
+    }
+  }, [activeTab]);
+
   const handleTabChange = useCallback((nextTab) => {
     if (!canAccessTab(loggedInUser, nextTab)) {
       toast.error('Access denied', 'Administrative privileges are required for that section.');
+      try {
+        sessionStorage.setItem('swinesync_active_tab', 'dashboard');
+      } catch {
+        // Ignore storage errors
+      }
       setActiveTab('dashboard');
       return;
+    }
+    try {
+      sessionStorage.setItem('swinesync_active_tab', nextTab);
+    } catch {
+      // Ignore storage errors
     }
     setActiveTab(nextTab);
   }, [loggedInUser]);
@@ -234,28 +262,6 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [notifOpen]);
-
-  // Header profile dropdown menu
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const profileMenuRef = useRef(null);
-
-  useEffect(() => {
-    if (!profileMenuOpen) return;
-    const handleClickOutside = (e) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) {
-        setProfileMenuOpen(false);
-      }
-    };
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') setProfileMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [profileMenuOpen]);
 
   // ─── Parallel Live Data Synchronizer ───
   const loadDashboardData = async () => {
@@ -985,13 +991,14 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
         activeTab={activeTab}
         onTabChange={handleTabChange}
         onClose={() => setMobileNav(false)}
+        onLogout={onLogout}
         loggedInUser={loggedInUser}
         mobileOpen={mobileNav}
         pendingApprovalsCount={pendingApprovalsCount}
       />
 
       <div className="flex-1 flex flex-col ml-0 lg:ml-64 min-w-0 overflow-hidden">
-        <header className={`sticky top-0 ${profileMenuOpen || notifOpen ? 'z-30' : 'z-10'} h-16 bg-white border-b border-slate-200/80 px-5 lg:px-6 flex items-center justify-between gap-4 shrink-0`}>
+        <header className={`sticky top-0 ${notifOpen ? 'z-30' : 'z-10'} h-16 bg-white border-b border-slate-200/80 px-5 lg:px-6 flex items-center justify-between gap-4 shrink-0`}>
           <div className="flex items-center gap-3 min-w-0">
             <button
               className="lg:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-50 cursor-pointer"
@@ -1018,7 +1025,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
             <div className="relative" ref={notifRef}>
               <button
                 type="button"
-                onClick={() => { setNotifOpen(prev => !prev); setProfileMenuOpen(false); }}
+                onClick={() => setNotifOpen(prev => !prev)}
                 className={`relative p-2 rounded-xl transition-colors cursor-pointer ${notifOpen ? 'bg-slate-100 text-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`}
                 aria-label="Notifications"
                 aria-expanded={notifOpen}
@@ -1099,65 +1106,18 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
 
             <div className="hidden sm:block h-6 w-px bg-slate-200/80" aria-hidden="true" />
 
-            <div className="relative" ref={profileMenuRef}>
-              <button
-                type="button"
-                id="header-profile-menu-btn"
-                onClick={() => { setProfileMenuOpen(prev => !prev); setNotifOpen(false); }}
-                aria-expanded={profileMenuOpen}
-                aria-haspopup="menu"
-                aria-label="Account menu"
-                className={`flex items-center gap-2.5 p-1 pr-2 rounded-xl border transition-all cursor-pointer ${profileMenuOpen
-                    ? 'bg-slate-50 border-slate-200 shadow-2xs'
-                    : 'border-transparent hover:bg-slate-50 hover:border-slate-200/80'
-                  }`}
-              >
-                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-xs shadow-emerald-600/20 select-none">
-                  {getInitials()}
-                </div>
-                <div className="hidden sm:block min-w-0 text-left">
-                  <p className="text-xs font-bold text-slate-800 truncate max-w-[140px] leading-tight" title={getDisplayName() || 'Staff'}>
-                    {getDisplayName() || 'Staff'}
-                  </p>
-                  <p className="text-[10px] text-slate-400 font-semibold tracking-wide truncate mt-0.5">
-                    {getUserRole()?.toLowerCase() === 'admin' ? 'Administrator' : 'Staff Portal'}
-                  </p>
-                </div>
-                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-200 ${profileMenuOpen ? 'rotate-180 text-slate-600' : ''}`} />
-              </button>
-
-              {profileMenuOpen && (
-                <div
-                  role="menu"
-                  className="absolute right-0 mt-2 w-56 rounded-2xl bg-white border border-slate-200/90 shadow-lg shadow-slate-900/10 py-1.5 z-50 origin-top-right"
-                >
-                  <div className="px-3.5 py-2.5 border-b border-slate-100">
-                    <p className="text-xs font-bold text-slate-900 truncate">
-                      {getDisplayName() || 'Staff'}
-                    </p>
-                    <p className="text-[11px] font-medium text-slate-400 truncate mt-0.5">
-                      {typeof loggedInUser === 'object' && loggedInUser?.email
-                        ? loggedInUser.email
-                        : (getUserRole()?.toLowerCase() === 'admin' ? 'Administrator' : 'Staff Portal')}
-                    </p>
-                  </div>
-                  <div className="p-1.5">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      id="header-logout-btn"
-                      onClick={() => {
-                        setProfileMenuOpen(false);
-                        onLogout?.();
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 active:bg-rose-100/70 transition-colors cursor-pointer"
-                    >
-                      <LogOut className="w-4 h-4 shrink-0" />
-                      <span>Logout</span>
-                    </button>
-                  </div>
-                </div>
-              )}
+            <div className="flex items-center gap-2.5 pl-1" id="header-profile-badge">
+              <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-xs shadow-emerald-600/20 select-none">
+                {getInitials()}
+              </div>
+              <div className="hidden sm:block min-w-0 text-left">
+                <p className="text-xs font-bold text-slate-800 truncate max-w-[140px] leading-tight" title={getDisplayName() || 'Staff'}>
+                  {getDisplayName() || 'Staff'}
+                </p>
+                <p className="text-[10px] text-slate-400 font-semibold tracking-wide truncate mt-0.5">
+                  {getUserRole()?.toLowerCase() === 'admin' ? 'Administrator' : 'Staff Portal'}
+                </p>
+              </div>
             </div>
           </div>
         </header>

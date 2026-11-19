@@ -73,30 +73,30 @@ export default function ExportDropdown({ data, columns, filename, pdfTitle, onFe
         disabled={isLoading}
       >
         {isLoading
-          ? <Loader2 className="w-4 h-4 text-emerald-600 animate-spin" />
-          : <Download className="w-4 h-4 text-emerald-600" />}
+          ? <Loader2 className="w-4 h-4 text-emerald-700 animate-spin" />
+          : <Download className="w-4 h-4 text-emerald-700" />}
         <span>{isLoading ? 'Exporting…' : 'Export'}</span>
-        {!isLoading && <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
+        {!isLoading && <ChevronDown className={`w-3.5 h-3.5 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
       </button>
 
       {isOpen && (
         <div className="absolute right-0 mt-2 w-52 bg-white rounded-xl shadow-lg border border-slate-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="px-3 py-2 border-b border-slate-50">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Export All Records</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Export All Records</p>
           </div>
           <div className="p-1">
             <button
               onClick={handleExportExcel}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 rounded-lg transition-colors cursor-pointer"
             >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
               Download as Excel
             </button>
             <button
               onClick={handleExportPDF}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-rose-50 hover:text-rose-700 rounded-lg transition-colors cursor-pointer"
             >
-              <FileText className="w-4 h-4 text-rose-600" />
+              <FileText className="w-4 h-4 text-rose-700" />
               Download as PDF
             </button>
           </div>

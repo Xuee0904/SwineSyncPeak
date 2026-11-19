@@ -297,5 +297,20 @@ input::-ms-clear {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bar-grow { animation: none; }
+  .animate-overlay-in,
+  .animate-overlay-out,
+  .animate-panel-in,
+  .animate-panel-out,
+  .animate-fade-in,
+  .tab-crossfade,
+  .tab-enter,
+  .tab-enter-stagger > *,
+  .field-error,
+  .skeleton,
+  .bar-grow {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
