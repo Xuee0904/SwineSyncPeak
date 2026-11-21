@@ -77,7 +77,8 @@ export default function TransactionHistoryModal({
   const status = getStockStatus(
     item.current_stock_level,
     item.low_stock_threshold,
-    metrics?.daysUntilLow
+    metrics?.daysUntilLow,
+    metrics
   );
   const burnRate = metrics?.dailyBurnRate || 0;
   const daysUntilLow = metrics?.daysUntilLow;
@@ -219,7 +220,7 @@ export default function TransactionHistoryModal({
                   ~{formatSubUnitEquivalent(burnRate, item.unit_of_measure)}/day
                 </p>
               )}
-              <p className="text-[10px] font-semibold text-amber-600 mt-0.5">
+              <p className="text-[10px] font-semibold text-amber-700 mt-0.5">
                 {burnRate <= 0
                   ? "No usage in last 14d"
                   : daysUntilLow === 0

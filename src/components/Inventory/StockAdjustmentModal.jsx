@@ -4,6 +4,7 @@ import { X, ArrowUpDown, Loader2, TrendingUp, TrendingDown, CheckCircle2, Users 
 import { supabase } from "../../supabaseClient";
 import { toast } from "../../utils/toast";
 import useModalAnimation from "../../hooks/useModalAnimation";
+import AnimatedNotice from "../common/AnimatedNotice";
 import {
   formatTransactionNotes,
   getStaffDetails,
@@ -393,34 +394,34 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
 
             {/* Current stock & Max Capacity banner */}
             <div className="px-7 pt-4">
-              <div className="flex items-center justify-between bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              <div className="flex items-start justify-between gap-4 bg-slate-50 rounded-2xl px-4 py-3 border border-slate-100">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-4">
                     Current Stock / {isMedicalCategory(item?.category) ? "Par Level" : "Max Capacity"}
                   </p>
-                  <p className="text-lg font-black text-slate-900">
+                  <p className="text-lg font-black text-slate-900 leading-tight mt-0.5 tabular-nums">
                     {Number(currentLevel.toFixed(2))}{" "}
                     <span className="text-xs font-semibold text-slate-400">
                       / {maxCapacity} {unitName}
                     </span>
                   </p>
                   {sackKg && (
-                    <p className="text-[11px] font-semibold text-slate-500">
+                    <p className="text-[11px] font-semibold text-slate-500 mt-0.5 tabular-nums">
                       {toSubUnitQty(currentLevel, sackKg)} {subUnit} / {toSubUnitQty(maxCapacity, sackKg)} {subUnit}
                     </p>
                   )}
-                  <p className="text-[10px] font-semibold text-slate-400">
+                  <p className="text-[10px] font-semibold text-slate-400 mt-0.5">
                     {spaceLeft > 0
                       ? `${fmt(spaceLeft)} space available`
                       : isMedicalCategory(item?.category) ? "At par level" : "At full storage capacity"}
                   </p>
                 </div>
                 {form.quantity && (
-                  <div className="text-right">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">After Adjustment</p>
+                  <div className="text-right shrink-0">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-4">After Adjustment</p>
                     <p
-                      className={`text-lg font-black ${maxCapacity > 0 && remaining > maxCapacity
-                        ? "text-amber-600"
+                      className={`text-lg font-black leading-tight mt-0.5 tabular-nums ${maxCapacity > 0 && remaining > maxCapacity
+                        ? "text-amber-700"
                         : remaining < currentLevel
                           ? "text-rose-600"
                           : "text-emerald-600"
@@ -429,11 +430,11 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
                       {Number(remaining.toFixed(2))} <span className="text-xs font-semibold">{unitName}</span>
                     </p>
                     {sackKg && (
-                      <p className="text-[11px] font-semibold text-slate-500">{toSubUnitQty(remaining, sackKg)} {subUnit}</p>
+                      <p className="text-[11px] font-semibold text-slate-500 mt-0.5 tabular-nums">{toSubUnitQty(remaining, sackKg)} {subUnit}</p>
                     )}
-                    {maxCapacity > 0 && remaining > maxCapacity && (
-                      <p className="text-[10px] font-bold text-amber-600">Over max capacity</p>
-                    )}
+                    <AnimatedNotice show={!!(maxCapacity > 0 && remaining > maxCapacity)}>
+                      <p className="pt-0.5 text-[10px] font-bold text-amber-700">Over max capacity</p>
+                    </AnimatedNotice>
                   </div>
                 )}
               </div>
@@ -581,7 +582,9 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
                           : `${rawNum} ${unitName} = ${toSubUnitQty(rawNum, sackKg)} ${subUnit}`}
                       </p>
                     )}
-                    {errors.quantity && <p className="mt-1 text-xs text-rose-600 field-error">{errors.quantity}</p>}
+                    <AnimatedNotice show={!!errors.quantity}>
+                      <p className="pt-1 text-xs text-rose-600">{errors.quantity}</p>
+                    </AnimatedNotice>
                   </div>
                 );
               })()}
@@ -628,7 +631,9 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
                     </>
                   )}
                 </select>
-                {errors.reason && <p className="mt-1 text-xs text-rose-600 field-error">{errors.reason}</p>}
+                <AnimatedNotice show={!!errors.reason}>
+                  <p className="pt-1 text-xs text-rose-600">{errors.reason}</p>
+                </AnimatedNotice>
               </div>
 
               {/* Feeding Target Selection (shown when adjusting out for feeding) */}
@@ -724,12 +729,15 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
               )}
 
               {/* Footer */}
-              {errors.submit && (
-                <div className="p-3 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-100 rounded-xl">
-                  {errors.submit}
-                </div>
-              )}
-              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+              <div>
+                <AnimatedNotice show={!!errors.submit}>
+                  <div className="pb-3">
+                    <div className="p-3 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-100 rounded-xl">
+                      {errors.submit}
+                    </div>
+                  </div>
+                </AnimatedNotice>
+                <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={requestClose}
@@ -748,6 +756,7 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
                   {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   {form.type === "in" ? "Record Stock In" : "Record Stock Out"}
                 </button>
+              </div>
               </div>
             </form>
           </div>

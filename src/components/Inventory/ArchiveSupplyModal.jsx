@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X, AlertTriangle, Loader2, Unlock, Check, Package, Archive, RotateCcw, ArrowUpDown } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
+import AnimatedNotice from "../common/AnimatedNotice";
 import { supabase } from "../../supabaseClient";
 import { toast } from "../../utils/toast";
 import { logInventoryActivity } from "./inventoryUtils";
@@ -176,15 +177,18 @@ export default function ArchiveSupplyModal({
             </div>
 
             <div className="p-7 pt-5 space-y-5">
-              {error && (
-                <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 text-left animate-fade-in">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
-                  <span>{error}</span>
-                </div>
-              )}
+              <div>
+                <AnimatedNotice show={!!error}>
+                  <div className="pb-4">
+                    <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2 text-left">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+                      <span>{error}</span>
+                    </div>
+                  </div>
+                </AnimatedNotice>
 
-              {/* Item Profile Card */}
-              <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80">
+                {/* Item Profile Card */}
+                <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80">
                 <div className="w-11 h-11 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-600 shrink-0 shadow-xs">
                   <Package className="w-5 h-5 text-emerald-600" />
                 </div>
@@ -193,6 +197,7 @@ export default function ArchiveSupplyModal({
                   <p className="text-xs font-medium text-slate-500">
                     Category: <span className="font-semibold text-slate-700">{item.category || "General"}</span> &bull; Stock: <span className="font-semibold text-slate-700">{item.current_stock_level} {item.unit_of_measure}</span>
                   </p>
+                </div>
                 </div>
               </div>
 
@@ -251,11 +256,11 @@ export default function ArchiveSupplyModal({
                       />
                     </div>
                   )}
-                  {reasonError && (
+                  <AnimatedNotice show={!!reasonError}>
                     <p className="text-[11px] font-semibold text-rose-600 flex items-center gap-1">
                       <span>•</span> {reasonError}
                     </p>
-                  )}
+                  </AnimatedNotice>
                 </div>
               ) : null}
 

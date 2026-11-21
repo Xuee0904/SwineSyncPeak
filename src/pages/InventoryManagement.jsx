@@ -45,6 +45,7 @@ import {
   hasSubUnit,
   getShortUnit,
   formatSubUnitEquivalent,
+  formatSupplyName,
   getContainerMeta,
   toSubUnitQty,
 } from "../components/Inventory/inventoryUtils";
@@ -191,9 +192,7 @@ export function getCategoryIconConfig(category) {
 
 // ----- CriticalStockCard Helpers -----
 function toTitleCase(name) {
-  if (!name || typeof name !== "string") return "";
-  if (/[A-Z]/.test(name)) return name;
-  return name.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+  return formatSupplyName(name);
 }
 
 function formatStatQty(n, unit, appendUnit = true) {
@@ -214,8 +213,7 @@ function getRunwayInsight(item, metrics, current, statusKey) {
     cat.includes("medic");
 
   if (isMedication) {
-    if (current <= 0) return "Out of stock";
-    if (statusKey === "critical") return "Immediate restock needed";
+    if (current <= 0 || statusKey === "out") return "Out of stock";
     if (statusKey === "low") return "Below par-level threshold";
     return "Par-level buffer maintained";
   }
@@ -239,8 +237,7 @@ function getRunwayInsight(item, metrics, current, statusKey) {
   }
 
   if (isVaccine && !hasUpcoming && burnRate <= 0) {
-    if (current <= 0) return "Out of stock";
-    if (statusKey === "critical") return "Critical · Restock required";
+    if (current <= 0 || statusKey === "out") return "Out of stock";
     if (statusKey === "low") return "Low stock · Reorder soon";
     return "No scheduled doses (14d)";
   }
@@ -268,8 +265,7 @@ function getRunwayInsight(item, metrics, current, statusKey) {
   }
 
   // Fallback for items with no consumption history recorded yet
-  if (current <= 0) return "Out of stock";
-  if (statusKey === "critical") return "Immediate restock needed";
+  if (current <= 0 || statusKey === "out") return "Out of stock";
   if (statusKey === "low") return "Reorder threshold reached";
   return "Adequate supply buffer";
 }
@@ -285,33 +281,18 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory, isAdmin = t
   const rawUnit = item.unit_of_measure || "";
   const unitLabel = getShortUnit(rawUnit);
 
-  // Unified Threshold System
-  const thresholdRatio = item.low_stock_threshold && capacity > 0
-    ? item.low_stock_threshold / capacity
-    : 0.25;
-  const criticalRatio = 0.10; // Exactly 10% of max capacity
-
-  // Single source of truth evaluation (3 tiers: Critical, Low Stock, Healthy)
-  let statusKey = "healthy";
-  if (
-    current <= 0 ||
-    level <= criticalRatio ||
-    pct <= 10 ||
-    (metrics?.hasUpcomingShortfall && current <= (metrics?.upcomingDemandUnits || 0) * 0.10)
-  ) {
-    statusKey = "critical";
-  } else if (
-    current <= item.low_stock_threshold ||
-    level <= thresholdRatio ||
-    metrics?.hasUpcomingShortfall ||
-    metrics?.willFallBelowThreshold
-  ) {
-    statusKey = "low";
-  }
+  // Single source of truth evaluation (3 tiers: Out of Stock, Low Stock, Healthy)
+  const evalStatus = getStockStatus(current, item.low_stock_threshold, metrics?.daysUntilLow, metrics);
+  const statusKey =
+    evalStatus.key === "out_of_stock"
+      ? "out"
+      : evalStatus.key === "low_stock"
+        ? "low"
+        : "healthy";
 
   const CONFIG = {
-    critical: {
-      label: current <= 0 ? "Out of Stock" : (metrics?.hasUpcomingShortfall ? "Shortfall" : "Critical"),
+    out: {
+      label: "Out of Stock",
       barClass: "bg-rose-500",
       badgeClass: "bg-rose-50 text-rose-700 ring-1 ring-rose-600/20 border border-rose-200",
       dotClass: "bg-rose-500 animate-pulse",
@@ -320,10 +301,10 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory, isAdmin = t
     },
     low: {
       label: metrics?.hasUpcomingShortfall ? "Shortfall" : "Low Stock",
-      barClass: "bg-amber-500",
-      badgeClass: "bg-amber-50 text-amber-700 ring-1 ring-amber-600/20 border border-amber-200",
-      dotClass: "bg-amber-500",
-      buttonClass: "bg-amber-500 hover:bg-amber-600 text-white shadow-2xs",
+      barClass: "bg-amber-700",
+      badgeClass: "bg-amber-50 text-amber-800 ring-1 ring-amber-600/20 border border-amber-300",
+      dotClass: "bg-amber-700",
+      buttonClass: "bg-amber-700 hover:bg-amber-800 text-white shadow-2xs",
       buttonLabel: "Restock",
     },
     healthy: {
@@ -406,7 +387,7 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory, isAdmin = t
             className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden"
           >
             <div
-              className={`h-full rounded-full transition-all duration-500 ${cfg.barClass}`}
+              className={`h-full rounded-full bar-grow-x transition-[width,background-color] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${cfg.barClass}`}
               style={{ width: `${Math.min(pct, 100)}%` }}
             />
           </div>
@@ -416,7 +397,7 @@ function CriticalStockCard({ item, metrics, onAdjust, onViewHistory, isAdmin = t
       {/* Footer Row: Supply Runway Insight on Left, Action Buttons on Right */}
       <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100/80">
         <p
-          className={`text-xs font-medium truncate min-w-0 flex-1 ${statusKey === "critical"
+          className={`text-xs font-medium truncate min-w-0 flex-1 ${statusKey === "out"
               ? "text-rose-600 font-semibold"
               : statusKey === "low"
                 ? "text-amber-700 font-semibold"
@@ -597,7 +578,7 @@ export default function InventoryManagement({ loggedInUser }) {
       return {
         ...parsed,
         item: parent || null,
-        item_name: parent?.item_name || "Deleted Supply",
+        item_name: parent ? formatSupplyName(parent.item_name) : "Deleted Supply",
         category: parent?.category || "General",
         unit_of_measure: parent?.unit_of_measure || "units",
       };
@@ -646,47 +627,6 @@ export default function InventoryManagement({ loggedInUser }) {
     return unlinkedGuidelines.slice(start, start + UNREG_PER_PAGE);
   }, [unlinkedGuidelines, safeUnregPage]);
 
-  // Derived stats for active inventory
-  const lowOrAtRiskItems = useMemo(
-    () =>
-      activeItems.filter((i) => {
-        const m = itemMetrics[i.item_id];
-        return (
-          i.current_stock_level <= i.low_stock_threshold ||
-          m?.hasUpcomingShortfall ||
-          m?.willFallBelowThreshold
-        );
-      }),
-    [activeItems, itemMetrics]
-  );
-  const criticalItems = useMemo(
-    () =>
-      activeItems.filter((i) => {
-        const m = itemMetrics[i.item_id];
-        const cur = Number(i.current_stock_level) || 0;
-        const capacity = Number(i.ideal_stock_level) || 0;
-        const isTenPercent = capacity > 0 ? cur <= capacity * 0.10 : cur <= (Number(i.low_stock_threshold) || 0) * 0.25;
-        return (
-          cur <= 0 ||
-          isTenPercent ||
-          (m?.hasUpcomingShortfall && cur <= (m?.upcomingDemandUnits || 0) * 0.10)
-        );
-      }),
-    [activeItems, itemMetrics]
-  );
-  const healthyItems = useMemo(
-    () =>
-      activeItems.filter((i) => {
-        const m = itemMetrics[i.item_id];
-        return (
-          i.current_stock_level > i.low_stock_threshold &&
-          !m?.hasUpcomingShortfall &&
-          !m?.willFallBelowThreshold
-        );
-      }),
-    [activeItems, itemMetrics]
-  );
-
   const criticalDisplay = useMemo(
     () =>
       [...activeItems]
@@ -707,9 +647,8 @@ export default function InventoryManagement({ loggedInUser }) {
           );
           const priority = {
             out_of_stock: 0,
-            critical: 1,
-            low_stock: 2,
-            healthy: 3,
+            low_stock: 1,
+            healthy: 2,
           };
           if (priority[stA.key] !== priority[stB.key]) {
             return priority[stA.key] - priority[stB.key];
@@ -769,9 +708,8 @@ export default function InventoryManagement({ loggedInUser }) {
     // Active items: Display the most low stock at the top of the list and so on
     const statusPriority = {
       out_of_stock: 0,
-      critical: 1,
-      low_stock: 2,
-      healthy: 3,
+      low_stock: 1,
+      healthy: 2,
     };
 
     return filteredItems.sort((a, b) => {
@@ -1503,6 +1441,12 @@ export default function InventoryManagement({ loggedInUser }) {
                         item.current_stock_level,
                         item.ideal_stock_level
                       );
+                      const rowStatus = getStockStatus(
+                        item.current_stock_level,
+                        item.low_stock_threshold,
+                        m.daysUntilLow,
+                        m
+                      );
                       const catCfg = getCategoryIconConfig(item.category);
                       const CatIcon = catCfg.Icon;
                       return (
@@ -1523,7 +1467,7 @@ export default function InventoryManagement({ loggedInUser }) {
                               </div>
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-slate-900 group-hover/title:text-emerald-600 transition-colors truncate">
-                                  {item.item_name}
+                                  {formatSupplyName(item.item_name)}
                                 </p>
                                 <p className="text-[11px] text-slate-400">
                                   {item.category || "General"} &bull;{" "}
@@ -1549,7 +1493,7 @@ export default function InventoryManagement({ loggedInUser }) {
                                   )}
                                   <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden mt-0.5">
                                     <div
-                                      className={`h-full rounded-full ${getBarColor(pct)}`}
+                                      className={`h-full rounded-full bar-grow-x transition-[width,background-color] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${getBarColor(pct, rowStatus.key)}`}
                                       style={{ width: `${pct}%` }}
                                     />
                                   </div>
@@ -1571,7 +1515,7 @@ export default function InventoryManagement({ loggedInUser }) {
                                     <span
                                       className={`text-[10px] font-semibold mt-0.5 ${m.daysUntilLow != null &&
                                         m.daysUntilLow <= 7
-                                        ? "text-amber-600"
+                                        ? "text-amber-700"
                                         : "text-slate-400"
                                         }`}
                                     >
@@ -1586,7 +1530,7 @@ export default function InventoryManagement({ loggedInUser }) {
                                       className={`text-[10px] font-semibold mt-0.5 ${m.hasUpcomingShortfall
                                           ? "text-rose-600 font-bold"
                                           : m.willFallBelowThreshold
-                                            ? "text-amber-600"
+                                            ? "text-amber-700"
                                             : "text-slate-400"
                                         }`}
                                       title={`Scheduled in next 14 days for ${m.upcomingBatchesCount} batch(es)`}
@@ -1757,6 +1701,12 @@ export default function InventoryManagement({ loggedInUser }) {
             setAddModal(false);
             setEditItem(null);
             setPrefillSupply(null);
+          }}
+          onSwitchToAdjust={(targetItem) => {
+            setAddModal(false);
+            setEditItem(null);
+            setPrefillSupply(null);
+            setAdjustItem(targetItem);
           }}
           onSaved={handleSaved}
           loggedInUser={loggedInUser}

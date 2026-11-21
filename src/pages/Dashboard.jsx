@@ -752,9 +752,8 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
 
       const priorityOrder = {
         out_of_stock: 0,
-        critical: 1,
-        low_stock: 2,
-        healthy: 3,
+        low_stock: 1,
+        healthy: 2,
       };
 
       const enrichedInv = activeItems
@@ -1464,11 +1463,11 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                         {dashboardInventory.slice(0, 3).map((item) => {
                           const isOut = item.status.key === 'out_of_stock' || Number(item.current) <= 0;
                           const isLowStock =
-                            isOut ||
-                            item.status.key === 'critical' ||
-                            item.status.key === 'low_stock' ||
-                            (item.threshold != null && Number(item.current) <= Number(item.threshold)) ||
-                            item.percent <= 10;
+                            !isOut && (
+                              item.status.key === 'low_stock' ||
+                              (item.threshold != null && Number(item.current) <= Number(item.threshold))
+                            );
+                          const isAlert = isOut || isLowStock;
                           const catCfg = getInventoryCategoryConfig(item.category, item.name);
                           const CatIcon = catCfg.Icon;
                           const thresholdRatio = item.threshold && item.ideal > 0 ? (item.threshold / item.ideal) : 0.25;
@@ -1477,23 +1476,36 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                             <div
                               key={item.id}
                               onClick={() => setActiveTab('inventory')}
-                              className={`group w-full px-3 py-2.5 rounded-xl border transition-all cursor-pointer space-y-1.5 text-left shadow-2xs hover:shadow-xs ${isLowStock
+                              className={`group w-full px-3 py-2.5 rounded-xl border transition-all cursor-pointer space-y-1.5 text-left shadow-2xs hover:shadow-xs ${isOut
                                   ? 'bg-rose-50/25 border-rose-200/90 hover:border-rose-300'
-                                  : 'bg-white border-slate-200/80 hover:border-emerald-300'
+                                  : isLowStock
+                                    ? 'bg-amber-50/25 border-amber-200/90 hover:border-amber-300'
+                                    : 'bg-white border-slate-200/80 hover:border-emerald-300'
                                 }`}
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isLowStock ? 'bg-rose-50 border border-rose-100 text-rose-600' : `${catCfg.bg} border ${catCfg.border}`
+                                  <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isOut
+                                      ? 'bg-rose-50 border border-rose-100 text-rose-600'
+                                      : isLowStock
+                                        ? 'bg-amber-50 border border-amber-200 text-amber-700'
+                                        : `${catCfg.bg} border ${catCfg.border}`
                                     }`}>
-                                    <CatIcon className={`w-3.5 h-3.5 ${isLowStock ? 'text-rose-600' : catCfg.color}`} />
+                                    <CatIcon className={`w-3.5 h-3.5 ${isOut ? 'text-rose-600' : isLowStock ? 'text-amber-700' : catCfg.color}`} />
                                   </div>
-                                  <span className={`text-xs font-bold truncate transition-colors ${isLowStock ? 'text-slate-900 group-hover:text-rose-700' : 'text-slate-900 group-hover:text-emerald-700'
+                                  <span className={`text-xs font-bold truncate transition-colors ${isOut
+                                      ? 'text-slate-900 group-hover:text-rose-700'
+                                      : isLowStock
+                                        ? 'text-slate-900 group-hover:text-amber-800'
+                                        : 'text-slate-900 group-hover:text-emerald-700'
                                     }`}>
                                     {item.name}
                                   </span>
-                                  {isLowStock && (
-                                    <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200/80 shrink-0">
+                                  {isAlert && (
+                                    <span className={`text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded border shrink-0 ${isOut
+                                        ? 'bg-rose-100 text-rose-700 border-rose-200/80'
+                                        : 'bg-amber-50 text-amber-800 border-amber-300'
+                                      }`}>
                                       {isOut ? 'Empty' : 'Low Stock'}
                                     </span>
                                   )}
@@ -1504,7 +1516,7 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
                                     <strong className="text-slate-800 font-bold">{formatCleanNumber(item.current)}</strong> / {formatCleanNumber(item.ideal)} {getShortUnit(item.unit)}
                                   </span>
                                   <span
-                                    className={`text-[11px] font-extrabold min-w-[34px] text-right ${isLowStock ? 'text-rose-600' : 'text-emerald-600'
+                                    className={`text-[11px] font-extrabold min-w-[34px] text-right ${isOut ? 'text-rose-600' : isLowStock ? 'text-amber-700' : 'text-emerald-700'
                                       }`}
                                   >
                                     {item.percent}%
@@ -1514,12 +1526,12 @@ export default function Dashboard({ scrollToSection, loggedInUser, onLogout }) {
 
                               <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                                 <div
-                                  className={`h-full rounded-full transition-all duration-500 ${isLowStock ? 'bg-rose-500' : 'bg-emerald-600'
+                                  className={`h-full rounded-full transition-all duration-500 ${isOut ? 'bg-rose-500' : isLowStock ? 'bg-amber-700' : 'bg-emerald-600'
                                     }`}
                                   style={{ width: `${Math.min(item.percent, 100)}%` }}
                                 />
                                 <div
-                                  className={`absolute top-0 bottom-0 w-[2px] z-10 -translate-x-1/2 ${isLowStock ? 'bg-rose-300' : 'bg-slate-300'
+                                  className={`absolute top-0 bottom-0 w-[2px] z-10 -translate-x-1/2 ${isOut ? 'bg-rose-300' : isLowStock ? 'bg-amber-300' : 'bg-slate-300'
                                     }`}
                                   style={{ left: `${Math.min(Math.max(thresholdRatio * 100, 0), 100)}%` }}
                                   title={`Reorder threshold: ${Math.round(thresholdRatio * 100)}%`}

@@ -276,7 +276,7 @@ input::-ms-clear {
   to {
     opacity: 1;
     transform: translateY(0);
-    max-height: 40px;
+    max-height: 96px;
   }
 }
 
@@ -296,6 +296,17 @@ input::-ms-clear {
   animation: bar-grow 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Horizontal progress bar: sweep cleanly from the left edge */
+@keyframes bar-grow-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.bar-grow-x {
+  transform-origin: left;
+  animation: bar-grow-x 550ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-overlay-in,
   .animate-overlay-out,
@@ -307,7 +318,8 @@ input::-ms-clear {
   .tab-enter-stagger > *,
   .field-error,
   .skeleton,
-  .bar-grow {
+  .bar-grow,
+  .bar-grow-x {
     animation: none !important;
     transition: none !important;
     opacity: 1 !important;

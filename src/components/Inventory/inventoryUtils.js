@@ -99,6 +99,133 @@ export function formatSubUnitEquivalent(qty, unit) {
 export const formatKgEquivalent = formatSubUnitEquivalent;
 
 /**
+ * Normalize an inventory item name into clean Title Case while preserving
+ * short uppercase acronyms (e.g. PCV2, PRRS, FMD, B12) and lowercase unit
+ * suffixes (e.g. (100mg), (25kg), 100ml).
+ */
+export function formatSupplyName(rawName) {
+  if (!rawName || typeof rawName !== "string") return "";
+  const cleaned = rawName.trim().replace(/\s+/g, " ");
+  if (!cleaned) return "";
+
+  const isAllCapsInput = cleaned === cleaned.toUpperCase() && cleaned !== cleaned.toLowerCase();
+  const knownAcronyms = /^(pcv2|prrs|fmd|csf|asf|ped|b12|ad3e|ml|iu)$/i;
+
+  return cleaned
+    .split(" ")
+    .map((token) => {
+      // Preserve tokens with numbers + unit suffixes like "(100mg)", "(25kg)", "100ml"
+      if (/^\(?\d+(\.\d+)?\s*(mg|kg|g|ml|l|cc|iu|mcg|doses?|%)\)?$/i.test(token)) {
+        return token.toLowerCase();
+      }
+      return token
+        .split("-")
+        .map((part) => {
+          const match = part.match(/^([([{"']*)(.*?)([)\]}"']*)$/);
+          if (!match) return part;
+          const [, prefix, core, suffix] = match;
+          if (!core) return part;
+          if (/^(mg|kg|g|ml|l|cc|iu|mcg|doses?)$/i.test(core)) {
+            return `${prefix}${core.toLowerCase()}${suffix}`;
+          }
+          if (knownAcronyms.test(core) && !/^(ml|iu)$/i.test(core)) {
+            return `${prefix}${core.toUpperCase()}${suffix}`;
+          }
+          // Preserve mixed-input short uppercase acronyms/codes (e.g. "PCV2", "B12", "MVP")
+          if (!isAllCapsInput && /^[A-Z0-9]{2,5}$/.test(core)) {
+            return `${prefix}${core}${suffix}`;
+          }
+          return `${prefix}${core.charAt(0).toUpperCase()}${core.slice(1).toLowerCase()}${suffix}`;
+        })
+        .join("-");
+    })
+    .join(" ");
+}
+
+function levenshteinDistance(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  const curr = new Array(b.length + 1);
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+  }
+  return prev[b.length];
+}
+
+const singularizePhrase = (str) =>
+  str
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => (w.length > 3 && w.endsWith("s") ? w.slice(0, -1) : w))
+    .join(" ");
+
+/**
+ * Find exact (case-insensitive) and near-duplicate supply names to warn staff
+ * against accidental typos, hyphenation differences, or plural duplicates.
+ */
+export function findSimilarSupplyItems(rawName, existingItems = [], excludeItemId = null) {
+  const trimmed = String(rawName || "").trim().replace(/\s+/g, " ");
+  if (trimmed.length < 3 || !Array.isArray(existingItems) || existingItems.length === 0) {
+    return { exactMatch: null, similarMatches: [] };
+  }
+
+  const lowerInput = trimmed.toLowerCase();
+  const cleanInput = lowerInput.replace(/[^a-z0-9]/g, "");
+  const singularInput = singularizePhrase(trimmed);
+
+  let exactMatch = null;
+  const similarMatches = [];
+
+  for (const row of existingItems) {
+    if (!row?.item_name) continue;
+    if (excludeItemId && row.item_id === excludeItemId) continue;
+
+    const existingTrimmed = row.item_name.trim().replace(/\s+/g, " ");
+    const lowerExisting = existingTrimmed.toLowerCase();
+
+    if (lowerExisting === lowerInput) {
+      exactMatch = row;
+      continue;
+    }
+
+    const cleanExisting = lowerExisting.replace(/[^a-z0-9]/g, "");
+    const singularExisting = singularizePhrase(existingTrimmed);
+    const cleanSingularInput = singularInput.replace(/\s+/g, "");
+    const cleanSingularExisting = singularExisting.replace(/\s+/g, "");
+
+    const sameAlphaNum = cleanInput.length >= 3 && cleanInput === cleanExisting;
+    const sameSingular = singularInput.length >= 3 && singularInput === singularExisting;
+    const isContained =
+      Math.min(cleanSingularInput.length, cleanSingularExisting.length) >= 4 &&
+      (cleanSingularInput.includes(cleanSingularExisting) || cleanSingularExisting.includes(cleanSingularInput));
+    const closeTypo =
+      cleanInput.length >= 5 &&
+      cleanExisting.length >= 5 &&
+      Math.abs(cleanInput.length - cleanExisting.length) <= 2 &&
+      levenshteinDistance(cleanInput, cleanExisting) <= 2;
+
+    if (sameAlphaNum || sameSingular || isContained || closeTypo) {
+      similarMatches.push(row);
+    }
+  }
+
+  return {
+    exactMatch,
+    similarMatches: similarMatches.slice(0, 3),
+  };
+}
+
+/**
  * Extract readable staff name & email from loggedInUser prop.
  */
 export function getStaffDetails(loggedInUser) {
@@ -302,16 +429,14 @@ export function parseDosePerHead(dosageInstructions, unitOfMeasure) {
 }
 
 /**
- * Evaluate stock status using static thresholds and 10% max capacity rule.
- * - Out of Stock: stock <= 0 (Critical red).
- * - Critical: stock <= 10% of max capacity (Critical red).
- * - Low Stock: stock <= low stock threshold (Amber).
+ * Evaluate stock status using each item's configured threshold and upcoming demand.
+ * - Out of Stock: stock <= 0 (Red).
+ * - Low Stock: stock <= low stock threshold or upcoming milestone shortfall (Amber).
  * - Healthy: stock > low stock threshold (Emerald green).
  */
 export function getStockStatus(current, threshold, daysUntilLow = null, extra = null) {
   const cur = Number(current) || 0;
   const thr = Number(threshold) || 0;
-  const ideal = Number(extra?.ideal_stock_level ?? extra?.ideal ?? 0);
 
   if (cur <= 0) {
     return {
@@ -322,28 +447,13 @@ export function getStockStatus(current, threshold, daysUntilLow = null, extra = 
     };
   }
 
-  // 1. Critical when stock hits <= 10% of max capacity
-  const isSevereMilestoneShortfall =
-    extra?.hasUpcomingShortfall && cur <= (Number(extra?.upcomingDemandUnits) || 0) * 0.10;
-
-  const isTenPercentCapacity = ideal > 0 ? cur <= ideal * 0.10 : cur <= thr * 0.25;
-
-  if (isTenPercentCapacity || isSevereMilestoneShortfall) {
-    return {
-      label: "Critical",
-      key: "critical",
-      cls: "bg-rose-50 text-rose-600 ring-rose-200",
-      barColor: "#ef4444",
-    };
-  }
-
-  // 2. Low Stock when supply reaches or falls below the threshold (or upcoming milestone shortfall)
+  // Low Stock when supply reaches or falls below the configured threshold (or upcoming milestone shortfall)
   if (cur <= thr || extra?.hasUpcomingShortfall || extra?.willFallBelowThreshold) {
     return {
       label: "Low Stock",
       key: "low_stock",
-      cls: "bg-amber-50 text-amber-700 ring-amber-200",
-      barColor: "#f59e0b",
+      cls: "bg-amber-50 text-amber-800 ring-amber-300",
+      barColor: "#b45309",
     };
   }
 
@@ -362,9 +472,12 @@ export function getStockPercent(current, ideal) {
   return Math.max(0, Math.min(100, Math.round((cur / idl) * 100)));
 }
 
-export function getBarColor(pct) {
-  if (pct <= 10) return "bg-rose-500";
-  if (pct <= 40) return "bg-amber-400";
+export function getBarColor(pct, statusKey = null) {
+  if (statusKey === "out_of_stock") return "bg-rose-500";
+  if (statusKey === "low_stock") return "bg-amber-700";
+  if (statusKey === "healthy") return "bg-emerald-500";
+  if (pct <= 0) return "bg-rose-500";
+  if (pct <= 25) return "bg-amber-700";
   return "bg-emerald-500";
 }
 

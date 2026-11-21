@@ -592,9 +592,8 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                   )}
                 </div>
               ) : (
-                <div className="flex flex-col justify-center w-full sm:w-64 h-9 px-0.5 shrink-0">
-                  <p className="text-xs font-black text-slate-800 leading-tight truncate">Herd Insights</p>
-                  <p className="text-[11px] font-medium text-slate-400 leading-tight truncate">Composition, health, survival &amp; breeds</p>
+                <div className="flex items-center w-full sm:w-64 h-9 px-0.5 shrink-0">
+                  <h2 className="text-base font-extrabold text-slate-900 tracking-tight leading-tight truncate">Herd Insights</h2>
                 </div>
               )}
 
@@ -1045,7 +1044,6 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
           onRetry={fetchAnalytics}
           onFilterCategory={(cat) => jumpToFilteredRecords({ category: cat })}
           onFilterStatus={(st) => jumpToFilteredRecords({ status: st })}
-          onFilterBreed={(breedName) => jumpToFilteredRecords({ breed: breedName })}
         />
       )}
 

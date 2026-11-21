@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { X, Package, Loader2, Check, PlusCircle, CheckCircle2 } from "lucide-react";
+import { X, Package, Loader2, Check, PlusCircle, CheckCircle2, AlertTriangle, Lock } from "lucide-react";
 import { supabase } from "../../supabaseClient";
 import { toast } from "../../utils/toast";
 import useModalAnimation from "../../hooks/useModalAnimation";
+import AnimatedNotice from "../common/AnimatedNotice";
 import {
   formatTransactionNotes,
+  formatSupplyName,
+  findSimilarSupplyItems,
   getStaffDetails,
   logInventoryActivity,
   getContainerMeta,
@@ -67,7 +70,7 @@ const EMPTY_FORM = {
   unit_cost: "",
 };
 
-export default function AddSupplyModal({ item, prefill, onClose, onSaved, loggedInUser }) {
+export default function AddSupplyModal({ item, prefill, onClose, onSaved, onSwitchToAdjust, loggedInUser }) {
   const isEdit = !!item;
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -75,10 +78,31 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
   const [successInfo, setSuccessInfo] = useState(null);
   const [lowAlertManuallyEdited, setLowAlertManuallyEdited] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const [existingItems, setExistingItems] = useState([]);
 
   const { shouldRender, requestClose, overlayClassName, panelClassName } = useModalAnimation(
     true,
     onClose
+  );
+
+  // Load existing supply names once for live near-duplicate / case guardrail hints
+  useEffect(() => {
+    let active = true;
+    supabase
+      .from("inventory_items")
+      .select("item_id, item_name, category, is_archived")
+      .then(({ data }) => {
+        if (active && Array.isArray(data)) setExistingItems(data);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const nameMatchInfo = useMemo(
+    () => findSimilarSupplyItems(form.item_name, existingItems, item?.item_id),
+    [form.item_name, existingItems, item?.item_id]
   );
 
   // Prefill for edit mode or prefill from Growth Program custom item
@@ -119,8 +143,10 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
 
     if (f.ideal_stock_level !== "" && (isNaN(max) || max <= 0)) {
       errs.ideal_stock_level = "Max capacity must be greater than 0";
+    } else if (isEdit && !isNaN(cur) && !isNaN(max) && max > 0 && cur > max) {
+      errs.ideal_stock_level = `Cannot be lower than current stock (${cur} ${getShortUnit(f.unit_of_measure)})`;
     }
-    if (f.current_stock_level !== "") {
+    if (!isEdit && f.current_stock_level !== "") {
       if (isNaN(cur) || cur < 0) {
         errs.current_stock_level = "Enter a valid quantity (0 or more)";
       } else if (!isNaN(max) && max > 0 && cur > max) {
@@ -204,11 +230,15 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
 
     if (form.ideal_stock_level === "" || isNaN(max) || max <= 0) {
       e.ideal_stock_level = "Max capacity is required (> 0)";
+    } else if (isEdit && !isNaN(cur) && cur > max) {
+      e.ideal_stock_level = `Cannot be lower than current stock (${cur} ${getShortUnit(form.unit_of_measure)})`;
     }
-    if (form.current_stock_level === "" || isNaN(cur) || cur < 0) {
-      e.current_stock_level = "Valid stock quantity is required";
-    } else if (!isNaN(max) && max > 0 && cur > max) {
-      e.current_stock_level = `Cannot exceed max capacity (${max} ${getShortUnit(form.unit_of_measure)})`;
+    if (!isEdit) {
+      if (form.current_stock_level === "" || isNaN(cur) || cur < 0) {
+        e.current_stock_level = "Valid stock quantity is required";
+      } else if (!isNaN(max) && max > 0 && cur > max) {
+        e.current_stock_level = `Cannot exceed max capacity (${max} ${getShortUnit(form.unit_of_measure)})`;
+      }
     }
     if (form.low_stock_threshold === "" || isNaN(low) || low < 0) {
       e.low_stock_threshold = "Low stock threshold is required";
@@ -229,11 +259,37 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
     setSubmitError(null);
     setSaving(true);
     try {
+      const normalizedName = formatSupplyName(form.item_name);
+      const lockedCurrentStock = isEdit
+        ? Number(item.current_stock_level) || 0
+        : parseFloat(form.current_stock_level);
+
+      // Case-insensitive duplicate name check before saving
+      const { data: existingMatches } = await supabase
+        .from("inventory_items")
+        .select("item_id, item_name, is_archived")
+        .ilike("item_name", normalizedName);
+
+      const conflict = (existingMatches || []).find(
+        (row) =>
+          row.item_name?.trim().toLowerCase() === normalizedName.toLowerCase() &&
+          (!isEdit || row.item_id !== item.item_id)
+      );
+
+      if (conflict) {
+        const dupMsg = conflict.is_archived
+          ? `"${conflict.item_name}" already exists in Archived Supplies. Restore it instead of creating a duplicate.`
+          : `An item named "${conflict.item_name}" already exists.`;
+        setErrors((er) => ({ ...er, item_name: dupMsg }));
+        setSaving(false);
+        return;
+      }
+
       const payload = {
-        item_name: form.item_name.trim(),
+        item_name: normalizedName,
         category: form.category,
         unit_of_measure: form.unit_of_measure.trim() || "units",
-        current_stock_level: parseFloat(form.current_stock_level),
+        current_stock_level: lockedCurrentStock,
         low_stock_threshold: parseFloat(form.low_stock_threshold),
         ideal_stock_level: parseFloat(form.ideal_stock_level),
         unit_cost: form.unit_cost ? parseFloat(form.unit_cost) : 0,
@@ -253,30 +309,10 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
 
         if (error) throw error;
 
-        // If stock level was manually changed during edit, log a CORRECTION transaction
-        const prevStock = Number(item.current_stock_level) || 0;
-        const delta = Number((payload.current_stock_level - prevStock).toFixed(2));
-        if (delta !== 0) {
-          const { error: corrErr } = await supabase.from("inventory_transactions").insert({
-            item_id: item.item_id,
-            user_id: staff.id,
-            transaction_type: "CORRECTION",
-            quantity: Math.abs(delta),
-            notes: formatTransactionNotes({
-              txType: "CORRECTION",
-              direction: delta > 0 ? "in" : "out",
-              reason: "Manual Stock Edit",
-              notes: `${prevStock} → ${payload.current_stock_level} ${getShortUnit(payload.unit_of_measure)}`,
-              loggedInUser,
-            }),
-          });
-          if (corrErr) console.warn("Failed to log stock edit transaction:", corrErr);
-        }
-
         logInventoryActivity({
           loggedInUser,
           event_title: "Inventory Supply Updated",
-          event_desc: `Updated supply "${payload.item_name}" (${payload.category}, Stock: ${payload.current_stock_level} ${getShortUnit(payload.unit_of_measure)}).`,
+          event_desc: `Updated supply details for "${payload.item_name}" (${payload.category}, Threshold: ${payload.low_stock_threshold}, Max: ${payload.ideal_stock_level} ${getShortUnit(payload.unit_of_measure)}).`,
         });
       } else {
         const { data: inserted, error } = await supabase
@@ -466,11 +502,49 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
                 <input
                   value={form.item_name}
                   onChange={set("item_name")}
+                  onBlur={() => {
+                    if (form.item_name.trim()) {
+                      setForm((f) => ({ ...f, item_name: formatSupplyName(f.item_name) }));
+                    }
+                  }}
                   placeholder="e.g. Corn Mix (Pre-Starter)"
                   className={`w-full rounded-xl border py-2.5 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${errors.item_name ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
                     }`}
                 />
-                {errors.item_name && <p className="mt-1 text-xs text-rose-600 field-error">{errors.item_name}</p>}
+                <AnimatedNotice
+                  show={!!(errors.item_name || nameMatchInfo.exactMatch || nameMatchInfo.similarMatches.length > 0)}
+                >
+                  {errors.item_name ? (
+                    <p className="pt-1 text-xs text-rose-600">{errors.item_name}</p>
+                  ) : nameMatchInfo.exactMatch ? (
+                    <div className="pt-1.5">
+                      <div className="flex items-start gap-1.5 rounded-lg bg-rose-50 border border-rose-200/80 px-2.5 py-1.5 text-[11px] text-rose-700">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-500" />
+                        <span>
+                          <strong>{formatSupplyName(nameMatchInfo.exactMatch.item_name)}</strong> already exists
+                          {nameMatchInfo.exactMatch.is_archived
+                            ? " in Archived Supplies. Restore it instead of adding a duplicate."
+                            : "."}
+                        </span>
+                      </div>
+                    </div>
+                  ) : nameMatchInfo.similarMatches.length > 0 ? (
+                    <div className="pt-1.5">
+                      <div className="flex items-start gap-1.5 rounded-lg bg-amber-50 border border-amber-200/80 px-2.5 py-1.5 text-[11px] text-amber-800">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+                        <span>
+                          Similar existing {nameMatchInfo.similarMatches.length === 1 ? "supply" : "supplies"}:{" "}
+                          <strong>
+                            {nameMatchInfo.similarMatches
+                              .map((m) => `${formatSupplyName(m.item_name)}${m.is_archived ? " (Archived)" : ""}`)
+                              .join(", ")}
+                          </strong>
+                          {" — "}double-check to avoid duplicates.
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+                </AnimatedNotice>
               </div>
 
               {/* Category + Unit */}
@@ -513,7 +587,9 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
                       1 {getContainerSingular(form.unit_of_measure)} = {containerMeta.size} {containerMeta.subUnit}
                     </p>
                   )}
-                  {errors.unit_of_measure && <p className="mt-1 text-xs text-rose-600 field-error">{errors.unit_of_measure}</p>}
+                  <AnimatedNotice show={!!errors.unit_of_measure}>
+                    <p className="pt-1 text-xs text-rose-600">{errors.unit_of_measure}</p>
+                  </AnimatedNotice>
                 </div>
               </div>
 
@@ -547,11 +623,13 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
                   )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      {isMedicalCategory(form.category) ? "Par Level" : "Max Capacity"} <span className="text-rose-500">*</span>
-                    </label>
+                    <div className="flex items-center justify-between gap-1 mb-1 min-h-[18px]">
+                      <label className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">
+                        {isMedicalCategory(form.category) ? "Par Level" : "Max Capacity"} <span className="text-rose-500">*</span>
+                      </label>
+                    </div>
                     <input
                       type="number"
                       min="1"
@@ -562,25 +640,32 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
                       className={`w-full rounded-xl border bg-white py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${errors.ideal_stock_level ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
                         }`}
                     />
-                    <p className="mt-1 text-[10px] text-slate-400">
-                      {kgHint(form.ideal_stock_level) || (isMedicalCategory(form.category) ? "Max stock to keep on hand" : "100% full storage")}
+                    <p className="mt-1 text-[10px] text-slate-400 min-h-[15px]">
+                      {kgHint(form.ideal_stock_level) || (isMedicalCategory(form.category) ? "Max stock on hand" : "100% full storage")}
                     </p>
-                    {errors.ideal_stock_level && <p className="mt-0.5 text-[10px] font-semibold text-rose-600">{errors.ideal_stock_level}</p>}
+                    <AnimatedNotice show={!!errors.ideal_stock_level}>
+                      <p className="pt-0.5 text-[10px] font-semibold text-rose-600">{errors.ideal_stock_level}</p>
+                    </AnimatedNotice>
                   </div>
 
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-[11px] font-semibold text-slate-700">
-                        Current Stock <span className="text-rose-500">*</span>
+                    <div className="flex items-center justify-between gap-1 mb-1 min-h-[18px]">
+                      <label className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 whitespace-nowrap">
+                        <span>Current Stock</span>
+                        {isEdit ? (
+                          <Lock className="w-3 h-3 text-slate-400 shrink-0" title="Locked in edit mode" />
+                        ) : (
+                          <span className="text-rose-500">*</span>
+                        )}
                       </label>
-                      {form.ideal_stock_level && (
+                      {!isEdit && form.ideal_stock_level && (
                         <button
                           type="button"
                           onClick={() => {
                             setForm(f => ({ ...f, current_stock_level: f.ideal_stock_level }));
                             setErrors(er => ({ ...er, current_stock_level: undefined }));
                           }}
-                          className="text-[10px] font-bold text-emerald-600 hover:underline cursor-pointer"
+                          className="text-[10px] font-bold text-emerald-600 hover:underline cursor-pointer whitespace-nowrap"
                         >
                           Full
                         </button>
@@ -591,22 +676,51 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
                       min="0"
                       max={form.ideal_stock_level || undefined}
                       step="any"
+                      disabled={isEdit}
+                      readOnly={isEdit}
                       value={form.current_stock_level}
                       onChange={set("current_stock_level")}
                       placeholder="0"
-                      className={`w-full rounded-xl border bg-white py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${errors.current_stock_level ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
+                      className={`w-full rounded-xl border py-2 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${isEdit
+                          ? "bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed"
+                          : errors.current_stock_level
+                            ? "border-rose-300 bg-rose-50 text-slate-800"
+                            : "bg-white border-slate-200 text-slate-800 focus:border-emerald-400"
                         }`}
                     />
-                    <p className="mt-1 text-[10px] text-slate-400">
-                      {kgHint(form.current_stock_level) || "On-hand count"}
-                    </p>
-                    {errors.current_stock_level && <p className="mt-0.5 text-[10px] font-semibold text-rose-600">{errors.current_stock_level}</p>}
+                    <div className="mt-1 flex items-center justify-between gap-1 text-[10px] min-h-[15px]">
+                      {isEdit ? (
+                        <>
+                          <span className="text-slate-400 truncate">
+                            {kgHint(form.current_stock_level) || "Locked"}
+                          </span>
+                          {onSwitchToAdjust && (
+                            <button
+                              type="button"
+                              onClick={() => onSwitchToAdjust(item)}
+                              className="font-bold text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer shrink-0 whitespace-nowrap"
+                            >
+                              Adjust &rarr;
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-slate-400">
+                          {kgHint(form.current_stock_level) || "On-hand count"}
+                        </span>
+                      )}
+                    </div>
+                    <AnimatedNotice show={!!errors.current_stock_level}>
+                      <p className="pt-0.5 text-[10px] font-semibold text-rose-600">{errors.current_stock_level}</p>
+                    </AnimatedNotice>
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Low Alert <span className="text-rose-500">*</span>
-                    </label>
+                    <div className="flex items-center justify-between gap-1 mb-1 min-h-[18px]">
+                      <label className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">
+                        Low Alert <span className="text-rose-500">*</span>
+                      </label>
+                    </div>
                     <input
                       type="number"
                       min="0"
@@ -617,10 +731,12 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
                       className={`w-full rounded-xl border bg-white py-2 px-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-100 transition-colors ${errors.low_stock_threshold ? "border-rose-300 bg-rose-50" : "border-slate-200 focus:border-emerald-400"
                         }`}
                     />
-                    <p className="mt-1 text-[10px] text-slate-400">
+                    <p className="mt-1 text-[10px] text-slate-400 min-h-[15px]">
                       {kgHint(form.low_stock_threshold) || "Reorder trigger"}
                     </p>
-                    {errors.low_stock_threshold && <p className="mt-0.5 text-[10px] font-semibold text-rose-600">{errors.low_stock_threshold}</p>}
+                    <AnimatedNotice show={!!errors.low_stock_threshold}>
+                      <p className="pt-0.5 text-[10px] font-semibold text-rose-600">{errors.low_stock_threshold}</p>
+                    </AnimatedNotice>
                   </div>
                 </div>
               </div>
@@ -649,34 +765,38 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
                     = ₱{(parseFloat(form.unit_cost) / containerMeta.size).toFixed(2)} per {subUnitLabel}
                   </p>
                 )}
-                {errors.unit_cost && (
-                  <p className="mt-1 text-xs text-rose-600 field-error">{errors.unit_cost}</p>
-                )}
+                <AnimatedNotice show={!!errors.unit_cost}>
+                  <p className="pt-1 text-xs text-rose-600">{errors.unit_cost}</p>
+                </AnimatedNotice>
               </div>
 
               {/* Footer */}
-              {submitError && (
-                <div className="p-3 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-100 rounded-xl">
-                  {submitError}
+              <div>
+                <AnimatedNotice show={!!submitError}>
+                  <div className="pb-3">
+                    <div className="p-3 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-100 rounded-xl">
+                      {submitError}
+                    </div>
+                  </div>
+                </AnimatedNotice>
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={requestClose}
+                    disabled={saving}
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-60 shadow-sm shadow-emerald-600/20"
+                  >
+                    {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    {isEdit ? "Save Changes" : "Add Supply"}
+                  </button>
                 </div>
-              )}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={requestClose}
-                  disabled={saving}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors cursor-pointer disabled:opacity-60 shadow-sm shadow-emerald-600/20"
-                >
-                  {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  {isEdit ? "Save Changes" : "Add Supply"}
-                </button>
               </div>
             </form>
           </div>
@@ -701,7 +821,7 @@ export default function AddSupplyModal({ item, prefill, onClose, onSaved, logged
               </h4>
               <p className="text-xs text-slate-500 font-medium mt-1 max-w-xs mx-auto leading-relaxed">
                 {successInfo.isEdit
-                  ? `"${successInfo.item_name}" details and stock levels have been updated.`
+                  ? `"${successInfo.item_name}" supply details and thresholds have been updated.`
                   : `"${successInfo.item_name}" was successfully registered in your inventory ledger.`}
               </p>
             </div>
