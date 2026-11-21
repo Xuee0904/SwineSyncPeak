@@ -83,7 +83,7 @@ router.get('/api/pigs/breeding-logs', verifyAuth, async (req, res) => {
     const { data, error } = await supabase
       .from('pigs')
       .select('pig_id, pig_tag, parity_count, breeding_date, created_at, breeds(name)')
-      .eq('status', 'pregnant')
+      .ilike('status', 'pregnant')
       .eq('is_archived', false)
       .order('created_at', { ascending: false });
 
@@ -137,10 +137,8 @@ const getBatchHeads = (b) => {
 router.get('/api/pigs/stats', verifyAuth, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
-    const [pigsRes, sickRes, quarRes, batchesRes] = await Promise.all([
+    const [pigsRes, batchesRes] = await Promise.all([
       db.from('pigs').select('*').eq('is_archived', false),
-      db.from('pigs').select('*', { count: 'exact' }).eq('status', 'sick').eq('is_archived', false),
-      db.from('pigs').select('*', { count: 'exact' }).eq('status', 'quarantine').eq('is_archived', false),
       db.from('piglet_batches').select('*').eq('is_archived', false),
     ]);
 
@@ -150,15 +148,17 @@ router.get('/api/pigs/stats', verifyAuth, async (req, res) => {
     const batchesCount = batchesList.length;
 
     const pigletCount = batchesList.reduce((sum, b) => sum + getBatchHeads(b), 0);
+    const sickPigsCount = pigsList.filter(p => (p.status || '').trim().toLowerCase() === 'sick').length;
+    const quarPigsCount = pigsList.filter(p => (p.status || '').trim().toLowerCase() === 'quarantine').length;
     const sickBatchHeads = batchesList
-      .filter(b => (b.status || '').toLowerCase() === 'sick')
+      .filter(b => (b.status || '').trim().toLowerCase() === 'sick')
       .reduce((sum, b) => sum + getBatchHeads(b), 0);
     const quarBatchHeads = batchesList
-      .filter(b => (b.status || '').toLowerCase() === 'quarantine')
+      .filter(b => (b.status || '').trim().toLowerCase() === 'quarantine')
       .reduce((sum, b) => sum + getBatchHeads(b), 0);
 
-    const sickCount = (sickRes.count ?? 0) + sickBatchHeads;
-    const quarCount = (quarRes.count ?? 0) + quarBatchHeads;
+    const sickCount = sickPigsCount + sickBatchHeads;
+    const quarCount = quarPigsCount + quarBatchHeads;
     const totalCount = pigsCount + pigletCount;
     const femalePigs = pigsList.filter(p => {
       const g = (p.gender || '').toLowerCase();
@@ -463,18 +463,17 @@ router.get('/api/pigs', verifyAuth, async (req, res) => {
     const queryBatches = !category || ['all', 'piglet_batch'].includes(category);
 
     const isHealthWatch = (status || '').toLowerCase() === 'health_watch';
+    const applyStatusFilter = (q) => {
+      if (!status || status === 'all') return q;
+      if (isHealthWatch) return q.in('status', ['sick', 'quarantine', 'Sick', 'Quarantine']);
+      return q.ilike('status', status.trim().toLowerCase());
+    };
 
     if (queryPigs) {
       // Join breeds so we get the breed name, not just the breed_id UUID stored on pigs.
       let q = supabase.from('pigs').select('*, breeds(name), pens(pen_code)').eq('is_archived', false);
       if (pen && pen !== 'all') q = q.eq('pen_id', pen);
-      if (status && status !== 'all') {
-        if (isHealthWatch) {
-          q = q.in('status', ['sick', 'quarantine']);
-        } else {
-          q = q.eq('status', status.toLowerCase());
-        }
-      }
+      q = applyStatusFilter(q);
       if (search) q = q.ilike('pig_tag', `%${search}%`);
       const { data } = await q;
       pigData = data || [];
@@ -483,13 +482,7 @@ router.get('/api/pigs', verifyAuth, async (req, res) => {
     if (queryBatches) {
       let q = supabase.from('piglet_batches').select('*, breeds(name), pens(pen_code)').eq('is_archived', false);
       if (pen && pen !== 'all') q = q.eq('pen_id', pen);
-      if (status && status !== 'all') {
-        if (isHealthWatch) {
-          q = q.in('status', ['sick', 'quarantine']);
-        } else {
-          q = q.eq('status', status.toLowerCase());
-        }
-      }
+      q = applyStatusFilter(q);
       if (search) q = q.ilike('batch_tag', `%${search}%`);
       const { data } = await q;
       batchData = data || [];

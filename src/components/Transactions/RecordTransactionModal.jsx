@@ -14,17 +14,10 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import useModalAnimation from "../../hooks/useModalAnimation";
+import AnimatedNotice from "../common/AnimatedNotice";
 import toast from "../../utils/toast";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
-
-const PAYMENT_METHODS = [
-  "Cash",
-  "Bank transfer",
-  "GCash",
-  "Check",
-  "Over the counter",
-];
 
 const EXPENSE_CATEGORIES = [
   "Feeds",
@@ -37,9 +30,88 @@ const EXPENSE_CATEGORIES = [
   "Other",
 ];
 
-const isBatchWeaner = (batch) =>
-  batch?.marketType === "Weaner" ||
-  ["weaner", "weaned"].includes((batch?.status || "").trim().toLowerCase());
+const isBatchWeaner = (batch) => {
+  if (!batch) return false;
+  if (batch.marketType) return batch.marketType === "Weaner";
+  return (batch.status || "").trim().toLowerCase() === "weaner";
+};
+
+const fieldBorderClass = (hasError) =>
+  hasError
+    ? "border-rose-300 bg-rose-50/50 focus:border-rose-400 focus:ring-rose-500/15"
+    : "border-slate-200 bg-white focus:border-emerald-500 focus:ring-emerald-500/20";
+
+function getFieldError(field, rawValue, ctx = {}) {
+  const str = String(rawValue ?? "").trim();
+
+  switch (field) {
+    case "headsToSell": {
+      if (!str) return "Headcount is required.";
+      const num = Number(str);
+      if (isNaN(num) || num <= 0) return "Headcount must be at least 1.";
+      if (!Number.isInteger(num)) return "Enter a whole number of heads.";
+      if (ctx.selectedBatch && num > ctx.selectedBatch.current_count) {
+        const avail = ctx.selectedBatch.current_count;
+        return `Cannot exceed available count (${avail} head${avail === 1 ? "" : "s"}).`;
+      }
+      return null;
+    }
+    case "pricePerHead": {
+      if (!str) return "Price per head is required.";
+      const num = Number(str);
+      if (isNaN(num) || num <= 0) return "Price per head must be greater than ₱0.";
+      return null;
+    }
+    case "totalScaleWeight": {
+      if (!str) return "Scale weight is required.";
+      const num = Number(str);
+      if (isNaN(num) || num <= 0) return "Scale weight must be greater than 0 kg.";
+      return null;
+    }
+    case "pricePerKg": {
+      if (!str) return "Price per kg is required.";
+      const num = Number(str);
+      if (isNaN(num) || num <= 0) return "Price per kg must be greater than ₱0.";
+      return null;
+    }
+    case "buyerName":
+      return str ? null : "Buyer name is required.";
+    case "saleDate":
+      return str ? null : "Sale date is required.";
+    case "inventoryQty": {
+      if (!str) return "Quantity is required.";
+      const num = Number(str);
+      if (isNaN(num) || num <= 0) return "Quantity must be greater than 0.";
+      const curStock = Number(ctx.selectedItem?.current_stock_level) || 0;
+      const maxCap = Number(ctx.selectedItem?.ideal_stock_level) || 0;
+      const unit = ctx.selectedItem?.unit_of_measure || "units";
+      if (maxCap > 0 && curStock + num > maxCap + 1e-9) {
+        const spaceLeft = Math.max(0, Number((maxCap - curStock).toFixed(4)));
+        if (spaceLeft <= 0) {
+          return `Already at max capacity (${maxCap} ${unit}). No space left to restock.`;
+        }
+        return `Exceeds max capacity of ${maxCap} ${unit} (only ${spaceLeft} ${unit} of space left).`;
+      }
+      return null;
+    }
+    case "inventoryUnitPrice": {
+      if (!str) return "Unit price is required.";
+      const num = Number(str);
+      if (isNaN(num) || num <= 0) return "Unit price must be greater than ₱0.";
+      return null;
+    }
+    case "expenseAmount": {
+      if (!str) return "Expense amount is required.";
+      const num = Number(str);
+      if (isNaN(num) || num <= 0) return "Expense amount must be greater than ₱0.";
+      return null;
+    }
+    case "expenseDate":
+      return str ? null : "Date incurred is required.";
+    default:
+      return null;
+  }
+}
 
 export default function RecordTransactionModal({
   isOpen,
@@ -98,34 +170,56 @@ export default function RecordTransactionModal({
           const firstBatch = data.batches[0];
           setSelectedTarget(`batch:${firstBatch.batch_id}`);
           setSalePricingMode(isBatchWeaner(firstBatch) ? "per_head" : "per_kg");
-        } else if (data.pigs?.length > 0) {
-          setSelectedTarget(`pig:${data.pigs[0].pig_id}`);
-          setSalePricingMode("per_kg");
+        } else {
+          const cullPig = (data.pigs || []).find((p) => p.isHighParity);
+          if (cullPig) {
+            setSelectedTarget(`pig:${cullPig.pig_id}`);
+            setSalePricingMode("per_kg");
+            if (cullPig.weight) setTotalScaleWeight(String(cullPig.weight));
+          }
         }
         if (data.inventoryItems?.length > 0) {
           setSelectedItemId(data.inventoryItems[0].item_id);
           setInventoryUnitPrice(data.inventoryItems[0].unit_cost || "");
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setOptionsLoading(false));
   }, [isOpen]);
-
-  // Update unit price when inventory item changes
-  const handleItemSelect = (itemId) => {
-    setSelectedItemId(itemId);
-    const it = options.inventoryItems.find((i) => i.item_id === itemId);
-    if (it) {
-      setInventoryUnitPrice(it.unit_cost || "");
-      if (it.category) setExpenseCategory(it.category);
-    }
-  };
 
   const [targetType, targetId] = selectedTarget ? selectedTarget.split(":") : ["batch", ""];
   const isBatch = targetType === "batch";
   const selectedBatch = isBatch ? options.batches.find((b) => b.batch_id === targetId) : null;
   const selectedPig = !isBatch ? options.pigs.find((p) => p.pig_id === targetId) : null;
   const selectedItem = options.inventoryItems.find((i) => i.item_id === selectedItemId);
+
+  const currentItemStock = Number(selectedItem?.current_stock_level) || 0;
+  const maxItemCapacity = Number(selectedItem?.ideal_stock_level) || 0;
+  const itemSpaceLeft = maxItemCapacity > 0
+    ? Math.max(0, Number((maxItemCapacity - currentItemStock).toFixed(4)))
+    : null;
+  const itemUnitLabel = selectedItem?.unit_of_measure || "units";
+
+  const validationCtx = { selectedBatch, selectedItem };
+
+  // Update unit price and re-check restock quantity against newly selected capacity
+  const handleItemSelect = (itemId) => {
+    setSelectedItemId(itemId);
+    const it = options.inventoryItems.find((i) => i.item_id === itemId);
+    if (it) {
+      setInventoryUnitPrice(it.unit_cost || "");
+      if (it.category) setExpenseCategory(it.category);
+      setErrors((prev) => ({
+        ...prev,
+        item: undefined,
+        inventoryUnitPrice: undefined,
+        inventoryQty:
+          inventoryQty.trim() !== ""
+            ? getFieldError("inventoryQty", inventoryQty, { selectedItem: it }) || undefined
+            : undefined,
+      }));
+    }
+  };
 
   const handleTargetChange = (val) => {
     setSelectedTarget(val);
@@ -153,6 +247,17 @@ export default function RecordTransactionModal({
     }
   };
 
+  const handleFieldChange = (field, setter) => (e) => {
+    const val = e.target.value;
+    setter(val);
+    if (val.trim() === "") {
+      setErrors((prev) => ({ ...prev, [field]: undefined }));
+      return;
+    }
+    const msg = getFieldError(field, val, validationCtx);
+    setErrors((prev) => ({ ...prev, [field]: msg || undefined }));
+  };
+
   const isWeanerBatch = isBatch && isBatchWeaner(selectedBatch);
   const isPerHeadSale = isWeanerBatch && salePricingMode === "per_head";
 
@@ -160,8 +265,8 @@ export default function RecordTransactionModal({
   const derivedCategory = !isBatch
     ? "Breeding sows (Culled)"
     : isWeanerBatch
-      ? "Piglets"
-      : "Finisher hogs";
+      ? "Weaners"
+      : "Fatteners";
 
   // Compute sale total (per head for weaner default, per kg otherwise)
   const computedSaleTotal = () => {
@@ -194,43 +299,35 @@ export default function RecordTransactionModal({
         errs.target = "Select an active batch or culled sow.";
       }
       if (isBatch) {
-        const qty = parseInt(headsToSell, 10);
-        if (isNaN(qty) || qty <= 0) {
-          errs.headsToSell = "Enter valid headcount.";
-        } else if (selectedBatch && qty > selectedBatch.current_count) {
-          errs.headsToSell = `Cannot exceed available count (${selectedBatch.current_count}).`;
-        }
+        const headsErr = getFieldError("headsToSell", headsToSell, validationCtx);
+        if (headsErr) errs.headsToSell = headsErr;
       }
       if (isPerHeadSale) {
-        const rate = parseFloat(pricePerHead);
-        if (isNaN(rate) || rate <= 0) {
-          errs.pricePerHead = "Price per head is required (> ₱0).";
-        }
+        const headPriceErr = getFieldError("pricePerHead", pricePerHead, validationCtx);
+        if (headPriceErr) errs.pricePerHead = headPriceErr;
       } else {
-        const weight = parseFloat(totalScaleWeight);
-        if (isNaN(weight) || weight <= 0) {
-          errs.totalScaleWeight = "Scale weight is required (> 0 kg).";
-        }
-        const rate = parseFloat(pricePerKg);
-        if (isNaN(rate) || rate <= 0) {
-          errs.pricePerKg = "Price per kg is required (> ₱0).";
-        }
+        const weightErr = getFieldError("totalScaleWeight", totalScaleWeight, validationCtx);
+        if (weightErr) errs.totalScaleWeight = weightErr;
+        const kgPriceErr = getFieldError("pricePerKg", pricePerKg, validationCtx);
+        if (kgPriceErr) errs.pricePerKg = kgPriceErr;
       }
-      if (!buyerName.trim()) {
-        errs.buyerName = "Buyer / Client name is required.";
-      }
+      const buyerErr = getFieldError("buyerName", buyerName, validationCtx);
+      if (buyerErr) errs.buyerName = buyerErr;
+      const saleDateErr = getFieldError("saleDate", saleDate, validationCtx);
+      if (saleDateErr) errs.saleDate = saleDateErr;
     } else {
-      // Expense
       if (expenseMode === "inventory") {
         if (!selectedItemId) errs.item = "Select an inventory supply.";
-        const qty = parseFloat(inventoryQty);
-        if (isNaN(qty) || qty <= 0) errs.inventoryQty = "Enter a valid quantity.";
-        const price = parseFloat(inventoryUnitPrice);
-        if (isNaN(price) || price <= 0) errs.inventoryUnitPrice = "Enter a valid unit price.";
+        const qtyErr = getFieldError("inventoryQty", inventoryQty, validationCtx);
+        if (qtyErr) errs.inventoryQty = qtyErr;
+        const unitPriceErr = getFieldError("inventoryUnitPrice", inventoryUnitPrice, validationCtx);
+        if (unitPriceErr) errs.inventoryUnitPrice = unitPriceErr;
       } else {
-        const amt = parseFloat(expenseAmount);
-        if (isNaN(amt) || amt <= 0) errs.expenseAmount = "Enter a valid expense amount (> ₱0).";
+        const amtErr = getFieldError("expenseAmount", expenseAmount, validationCtx);
+        if (amtErr) errs.expenseAmount = amtErr;
       }
+      const expDateErr = getFieldError("expenseDate", expenseDate, validationCtx);
+      if (expDateErr) errs.expenseDate = expDateErr;
     }
     setErrors(errs);
     return {
@@ -241,11 +338,8 @@ export default function RecordTransactionModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { isValid, firstError } = validate();
-    if (!isValid) {
-      toast.error("Required Field Missing", firstError || "Please check required fields.");
-      return;
-    }
+    const { isValid } = validate();
+    if (!isValid) return;
     setSaving(true);
 
     try {
@@ -339,14 +433,14 @@ export default function RecordTransactionModal({
           creator: loggedInUser,
           inventoryItems: isInv
             ? [
-                {
-                  itemId: selectedItemId,
-                  quantityBought: parseFloat(inventoryQty),
-                  unitPrice: parseFloat(inventoryUnitPrice),
-                  batchNumber: null,
-                  expirationDate: null,
-                },
-              ]
+              {
+                itemId: selectedItemId,
+                quantityBought: parseFloat(inventoryQty),
+                unitPrice: parseFloat(inventoryUnitPrice),
+                batchNumber: null,
+                expirationDate: null,
+              },
+            ]
             : [],
         };
 
@@ -417,11 +511,10 @@ export default function RecordTransactionModal({
                 setMainType("sale");
                 setErrors({});
               }}
-              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all ${
-                mainType === "sale"
-                  ? "bg-white text-emerald-700 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
+              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all ${mainType === "sale"
+                ? "bg-white text-emerald-700 shadow-sm"
+                : "text-slate-500 hover:text-slate-800"
+                }`}
             >
               <TrendingUp className="w-4 h-4 text-emerald-600" /> Record Swine Sale (Revenue)
             </button>
@@ -431,11 +524,10 @@ export default function RecordTransactionModal({
                 setMainType("expense");
                 setErrors({});
               }}
-              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all ${
-                mainType === "expense"
-                  ? "bg-white text-slate-800 shadow-sm"
-                  : "text-slate-500 hover:text-slate-800"
-              }`}
+              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all ${mainType === "expense"
+                ? "bg-white text-slate-800 shadow-sm"
+                : "text-slate-500 hover:text-slate-800"
+                }`}
             >
               <TrendingDown className="w-4 h-4 text-rose-500" /> Record Expense / Restock
             </button>
@@ -443,19 +535,25 @@ export default function RecordTransactionModal({
         </div>
 
         {/* Scrollable Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+        <form noValidate onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {mainType === "sale" ? (
             /* ═══════════════════ SWINE SALE SECTION ═══════════════════ */
             <>
               {/* Single Batch / Culled Swine Selector (No category or source dropdowns needed) */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                <label htmlFor="sale-target" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                   Select Active Batch / Swine *
                 </label>
                 <select
+                  id="sale-target"
                   value={selectedTarget}
                   onChange={(e) => handleTargetChange(e.target.value)}
-                  className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                  aria-invalid={!!errors.target}
+                  className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 transition-colors ${
+                    errors.target
+                      ? "border-rose-300 bg-rose-50/50 focus:border-rose-400 focus:ring-rose-500/15"
+                      : "border-slate-200 bg-slate-50/70 focus:bg-white focus:border-emerald-500 focus:ring-emerald-500/20"
+                  }`}
                 >
                   {options.batches.length === 0 && options.pigs.length === 0 ? (
                     <option value="">No healthy batches or culled swine available</option>
@@ -479,14 +577,16 @@ export default function RecordTransactionModal({
                             ))
                         ) : (
                           <option disabled value="">
-                            No breeding sows currently at cull parity (parity ≥ 5)
+                            No breeding sows currently at cull parity (less than 5)
                           </option>
                         )}
                       </optgroup>
                     </>
                   )}
                 </select>
-                {errors.target && <p className="text-[11px] text-rose-500 mt-1">{errors.target}</p>}
+                <AnimatedNotice show={!!errors.target}>
+                  <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.target}</p>
+                </AnimatedNotice>
               </div>
 
               {/* Pricing basis toggle for Weaner batches (defaults to per head) */}
@@ -517,11 +617,10 @@ export default function RecordTransactionModal({
                             pricePerHead: undefined,
                           }));
                         }}
-                        className={`min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
-                          salePricingMode === opt.id
-                            ? "bg-white text-emerald-700 shadow-xs"
-                            : "text-slate-600 hover:text-slate-900"
-                        }`}
+                        className={`min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${salePricingMode === opt.id
+                          ? "bg-white text-emerald-700 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                          }`}
                       >
                         {opt.label}
                       </button>
@@ -532,7 +631,7 @@ export default function RecordTransactionModal({
 
               {/* Quantities & Pricing */}
               {isPerHeadSale ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 items-start gap-3">
                   <div>
                     <label htmlFor="sale-heads" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
                       Heads to Sell *
@@ -543,11 +642,14 @@ export default function RecordTransactionModal({
                       min="1"
                       max={selectedBatch?.current_count || 999}
                       value={headsToSell}
-                      onChange={(e) => setHeadsToSell(e.target.value)}
+                      onChange={handleFieldChange("headsToSell", setHeadsToSell)}
+                      aria-invalid={!!errors.headsToSell}
                       placeholder={`Max ${selectedBatch?.current_count || 0}`}
-                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                      className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.headsToSell)}`}
                     />
-                    {errors.headsToSell && <p className="text-[10px] text-rose-500 mt-1">{errors.headsToSell}</p>}
+                    <AnimatedNotice show={!!errors.headsToSell}>
+                      <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.headsToSell}</p>
+                    </AnimatedNotice>
                   </div>
 
                   <div>
@@ -560,15 +662,18 @@ export default function RecordTransactionModal({
                       min="0"
                       step="1"
                       value={pricePerHead}
-                      onChange={(e) => setPricePerHead(e.target.value)}
+                      onChange={handleFieldChange("pricePerHead", setPricePerHead)}
+                      aria-invalid={!!errors.pricePerHead}
                       placeholder="e.g. 2800"
-                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                      className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.pricePerHead)}`}
                     />
-                    {errors.pricePerHead && <p className="text-[10px] text-rose-500 mt-1">{errors.pricePerHead}</p>}
+                    <AnimatedNotice show={!!errors.pricePerHead}>
+                      <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.pricePerHead}</p>
+                    </AnimatedNotice>
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 items-start gap-3">
                   {isBatch ? (
                     <div>
                       <label htmlFor="sale-heads" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
@@ -580,11 +685,14 @@ export default function RecordTransactionModal({
                         min="1"
                         max={selectedBatch?.current_count || 999}
                         value={headsToSell}
-                        onChange={(e) => setHeadsToSell(e.target.value)}
+                        onChange={handleFieldChange("headsToSell", setHeadsToSell)}
+                        aria-invalid={!!errors.headsToSell}
                         placeholder={`Max ${selectedBatch?.current_count || 0}`}
-                        className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                        className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.headsToSell)}`}
                       />
-                      {errors.headsToSell && <p className="text-[10px] text-rose-500 mt-1">{errors.headsToSell}</p>}
+                      <AnimatedNotice show={!!errors.headsToSell}>
+                        <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.headsToSell}</p>
+                      </AnimatedNotice>
                     </div>
                   ) : (
                     <div>
@@ -611,11 +719,14 @@ export default function RecordTransactionModal({
                       min="0"
                       step="0.5"
                       value={totalScaleWeight}
-                      onChange={(e) => setTotalScaleWeight(e.target.value)}
+                      onChange={handleFieldChange("totalScaleWeight", setTotalScaleWeight)}
+                      aria-invalid={!!errors.totalScaleWeight}
                       placeholder="e.g. 105.0"
-                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                      className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.totalScaleWeight)}`}
                     />
-                    {errors.totalScaleWeight && <p className="text-[10px] text-rose-500 mt-1">{errors.totalScaleWeight}</p>}
+                    <AnimatedNotice show={!!errors.totalScaleWeight}>
+                      <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.totalScaleWeight}</p>
+                    </AnimatedNotice>
                   </div>
 
                   <div>
@@ -628,48 +739,61 @@ export default function RecordTransactionModal({
                       min="0"
                       step="1"
                       value={pricePerKg}
-                      onChange={(e) => setPricePerKg(e.target.value)}
+                      onChange={handleFieldChange("pricePerKg", setPricePerKg)}
+                      aria-invalid={!!errors.pricePerKg}
                       placeholder="e.g. 220"
-                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                      className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.pricePerKg)}`}
                     />
-                    {errors.pricePerKg && <p className="text-[10px] text-rose-500 mt-1">{errors.pricePerKg}</p>}
+                    <AnimatedNotice show={!!errors.pricePerKg}>
+                      <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.pricePerKg}</p>
+                    </AnimatedNotice>
                   </div>
                 </div>
               )}
 
               {/* Buyer Name, Sale Date, Payment Status */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 items-start gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                  <label htmlFor="sale-buyer" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
                     Buyer / Client Name *
                   </label>
                   <input
+                    id="sale-buyer"
                     type="text"
                     value={buyerName}
-                    onChange={(e) => setBuyerName(e.target.value)}
+                    onChange={handleFieldChange("buyerName", setBuyerName)}
+                    aria-invalid={!!errors.buyerName}
                     placeholder="e.g. Green Valley Organics"
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                    className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.buyerName)}`}
                   />
-                  {errors.buyerName && <p className="text-[11px] text-rose-500 mt-1">{errors.buyerName}</p>}
+                  <AnimatedNotice show={!!errors.buyerName}>
+                    <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.buyerName}</p>
+                  </AnimatedNotice>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                  <label htmlFor="sale-date" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
                     Sale Date *
                   </label>
                   <input
+                    id="sale-date"
                     type="date"
                     value={saleDate}
-                    onChange={(e) => setSaleDate(e.target.value)}
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                    onChange={handleFieldChange("saleDate", setSaleDate)}
+                    aria-invalid={!!errors.saleDate}
+                    className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.saleDate)}`}
                   />
+                  <AnimatedNotice show={!!errors.saleDate}>
+                    <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.saleDate}</p>
+                  </AnimatedNotice>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                  <label htmlFor="sale-status" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
                     Payment Status
                   </label>
                   <select
+                    id="sale-status"
                     value={saleStatus}
                     onChange={(e) => setSaleStatus(e.target.value)}
                     className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
@@ -731,23 +855,27 @@ export default function RecordTransactionModal({
               <div className="flex gap-2 p-1 bg-slate-100 rounded-xl text-xs font-semibold">
                 <button
                   type="button"
-                  onClick={() => setExpenseMode("inventory")}
-                  className={`flex-1 py-1.5 rounded-lg transition-all ${
-                    expenseMode === "inventory"
-                      ? "bg-white text-slate-900 shadow-sm"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
+                  onClick={() => {
+                    setExpenseMode("inventory");
+                    setErrors({});
+                  }}
+                  className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${expenseMode === "inventory"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                    }`}
                 >
                   Inventory Supply Restock
                 </button>
                 <button
                   type="button"
-                  onClick={() => setExpenseMode("operational")}
-                  className={`flex-1 py-1.5 rounded-lg transition-all ${
-                    expenseMode === "operational"
-                      ? "bg-white text-slate-900 shadow-sm"
-                      : "text-slate-500 hover:text-slate-800"
-                  }`}
+                  onClick={() => {
+                    setExpenseMode("operational");
+                    setErrors({});
+                  }}
+                  className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${expenseMode === "operational"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800"
+                    }`}
                 >
                   Operational Expense (Labor, Utilities, Vet)
                 </button>
@@ -757,71 +885,98 @@ export default function RecordTransactionModal({
                 <>
                   {/* Select Inventory Supply */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                    <label htmlFor="expense-supply-item" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                       Select Inventory Supply to Restock *
                     </label>
                     <select
+                      id="expense-supply-item"
                       value={selectedItemId}
                       onChange={(e) => handleItemSelect(e.target.value)}
-                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-800 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                      aria-invalid={!!errors.item}
+                      className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 transition-colors ${
+                        errors.item
+                          ? "border-rose-300 bg-rose-50/50 focus:border-rose-400 focus:ring-rose-500/15"
+                          : "border-slate-200 bg-slate-50/70 focus:bg-white focus:border-emerald-500 focus:ring-emerald-500/20"
+                      }`}
                     >
                       {options.inventoryItems.length === 0 ? (
                         <option value="">No supplies found in inventory</option>
                       ) : (
-                        options.inventoryItems.map((it) => (
-                          <option key={it.item_id} value={it.item_id}>
-                            {it.item_name} ({it.category} • Current stock: {it.current_stock_level} {it.unit_of_measure})
-                          </option>
-                        ))
+                        options.inventoryItems.map((it) => {
+                          const maxLvl = Number(it.ideal_stock_level) || 0;
+                          return (
+                            <option key={it.item_id} value={it.item_id}>
+                              {it.item_name} ({it.category} • Stock: {it.current_stock_level}{maxLvl > 0 ? ` / ${maxLvl}` : ""} {it.unit_of_measure})
+                            </option>
+                          );
+                        })
                       )}
                     </select>
-                    {errors.item && <p className="text-[11px] text-rose-500 mt-1">{errors.item}</p>}
+                    <AnimatedNotice show={!!errors.item}>
+                      <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.item}</p>
+                    </AnimatedNotice>
                   </div>
 
                   {/* Quantity & Unit Price */}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 items-start gap-3">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
-                        Quantity Purchased ({selectedItem?.unit_of_measure || "units"}) *
+                      <label htmlFor="expense-inv-qty" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                        Quantity Purchased ({itemUnitLabel}) *
                       </label>
                       <input
+                        id="expense-inv-qty"
                         type="number"
                         min="0.1"
                         step="any"
                         value={inventoryQty}
-                        onChange={(e) => setInventoryQty(e.target.value)}
+                        onChange={handleFieldChange("inventoryQty", setInventoryQty)}
+                        aria-invalid={!!errors.inventoryQty}
                         placeholder="e.g. 40"
-                        className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                        className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.inventoryQty)}`}
                       />
-                      {errors.inventoryQty && <p className="text-[10px] text-rose-500 mt-1">{errors.inventoryQty}</p>}
+                      <AnimatedNotice show={!!errors.inventoryQty}>
+                        <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.inventoryQty}</p>
+                      </AnimatedNotice>
+                      {maxItemCapacity > 0 && !errors.inventoryQty && (
+                        <p className={`pt-1 text-[11px] font-medium ${itemSpaceLeft === 0 ? "text-amber-700" : "text-slate-500"}`}>
+                          {itemSpaceLeft === 0
+                            ? `At full capacity (${currentItemStock} / ${maxItemCapacity} ${itemUnitLabel}).`
+                            : `Space left: ${itemSpaceLeft} ${itemUnitLabel} (Max ${maxItemCapacity}).`}
+                        </p>
+                      )}
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                      <label htmlFor="expense-inv-price" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
                         Unit Price (₱) *
                       </label>
                       <input
+                        id="expense-inv-price"
                         type="number"
                         min="0"
                         step="any"
                         value={inventoryUnitPrice}
-                        onChange={(e) => setInventoryUnitPrice(e.target.value)}
+                        onChange={handleFieldChange("inventoryUnitPrice", setInventoryUnitPrice)}
+                        aria-invalid={!!errors.inventoryUnitPrice}
                         placeholder="e.g. 1650"
-                        className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                        className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.inventoryUnitPrice)}`}
                       />
-                      {errors.inventoryUnitPrice && <p className="text-[10px] text-rose-500 mt-1">{errors.inventoryUnitPrice}</p>}
+                      <AnimatedNotice show={!!errors.inventoryUnitPrice}>
+                        <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.inventoryUnitPrice}</p>
+                      </AnimatedNotice>
                     </div>
                   </div>
                 </>
               ) : (
                 <>
                   {/* Category & Amount */}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 items-start gap-3">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                      <label htmlFor="expense-category" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
                         Expense Category *
                       </label>
                       <select
+                        id="expense-category"
                         value={expenseCategory}
                         onChange={(e) => setExpenseCategory(e.target.value)}
                         className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
@@ -835,43 +990,53 @@ export default function RecordTransactionModal({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                      <label htmlFor="expense-amount" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
                         Total Amount (₱) *
                       </label>
                       <input
+                        id="expense-amount"
                         type="number"
                         min="0"
                         step="any"
                         value={expenseAmount}
-                        onChange={(e) => setExpenseAmount(e.target.value)}
+                        onChange={handleFieldChange("expenseAmount", setExpenseAmount)}
+                        aria-invalid={!!errors.expenseAmount}
                         placeholder="e.g. 12500"
-                        className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                        className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.expenseAmount)}`}
                       />
-                      {errors.expenseAmount && <p className="text-[10px] text-rose-500 mt-1">{errors.expenseAmount}</p>}
+                      <AnimatedNotice show={!!errors.expenseAmount}>
+                        <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.expenseAmount}</p>
+                      </AnimatedNotice>
                     </div>
                   </div>
                 </>
               )}
 
               {/* Date Incurred & Payment Status */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 items-start gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                  <label htmlFor="expense-date" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
                     Date Incurred *
                   </label>
                   <input
+                    id="expense-date"
                     type="date"
                     value={expenseDate}
-                    onChange={(e) => setExpenseDate(e.target.value)}
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                    onChange={handleFieldChange("expenseDate", setExpenseDate)}
+                    aria-invalid={!!errors.expenseDate}
+                    className={`w-full h-10 px-3 rounded-xl border text-xs font-semibold text-slate-800 focus:ring-2 outline-none transition-colors ${fieldBorderClass(!!errors.expenseDate)}`}
                   />
+                  <AnimatedNotice show={!!errors.expenseDate}>
+                    <p role="alert" className="pt-1 text-[11px] font-medium text-rose-600">{errors.expenseDate}</p>
+                  </AnimatedNotice>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                  <label htmlFor="expense-status" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
                     Payment Status
                   </label>
                   <select
+                    id="expense-status"
                     value={expenseStatus}
                     onChange={(e) => setExpenseStatus(e.target.value)}
                     className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none cursor-pointer"
@@ -925,11 +1090,10 @@ export default function RecordTransactionModal({
             <button
               type="submit"
               disabled={saving}
-              className={`inline-flex min-h-[44px] items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                mainType === "sale"
-                  ? "bg-emerald-600 hover:bg-emerald-700"
-                  : "bg-slate-900 hover:bg-slate-800"
-              }`}
+              className={`inline-flex min-h-[44px] items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${mainType === "sale"
+                ? "bg-emerald-600 hover:bg-emerald-700"
+                : "bg-slate-900 hover:bg-slate-800"
+                }`}
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               {saving ? "Saving..." : mainType === "sale" ? "Record Swine Sale" : "Record Expense"}

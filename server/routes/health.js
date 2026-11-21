@@ -185,13 +185,13 @@ const syncSwineStatus = async (healthStatus, pig_id, batch_id, mortality_count =
   let batchStatus = '';
   
   if (statusLower === 'sick') {
-    pigStatus = 'Sick';
+    pigStatus = 'sick';
     batchStatus = 'sick';
   } else if (statusLower === 'monitoring') {
-    pigStatus = 'Quarantine';
+    pigStatus = 'quarantine';
     batchStatus = 'quarantine';
   } else if (statusLower === 'resolved') {
-    pigStatus = 'Healthy';
+    pigStatus = 'healthy';
     batchStatus = 'healthy';
   } else if (statusLower === 'deceased') {
     if (pig_id) {
@@ -201,7 +201,7 @@ const syncSwineStatus = async (healthStatus, pig_id, batch_id, mortality_count =
           is_archived: true,
           archived_at: new Date().toISOString(),
           archive_reasoning: 'Mortality - Clinical / Health Log',
-          status: 'Inactive'
+          status: 'inactive'
         })
         .eq('pig_id', pig_id);
 

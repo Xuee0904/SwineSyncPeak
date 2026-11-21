@@ -54,6 +54,14 @@ function formatTimeDisplay(ts) {
   }
 }
 
+// Compute batch age in days (returns null when date_of_birth is missing/invalid)
+function getBatchAgeDays(dateOfBirth, referenceDate = new Date()) {
+  if (!dateOfBirth) return null;
+  const dob = new Date(dateOfBirth);
+  if (isNaN(dob.getTime())) return null;
+  return Math.max(0, Math.floor((referenceDate - dob) / (1000 * 60 * 60 * 24)));
+}
+
 // ─── GET /api/transactions/options ──────────────────────────────────────────
 // Returns live active pigs, batches, and inventory supplies for sale & restock modals
 router.get('/api/transactions/options', verifyAdmin, async (req, res) => {
@@ -76,29 +84,30 @@ router.get('/api/transactions/options', verifyAdmin, async (req, res) => {
 
     const today = new Date();
 
-    // 1. FILTER: ONLY HEALTHY BATCHES (strictly exclude sick and quarantine)
-    const healthyBatches = (batchesRes.data || []).filter((b) => {
-      const s = (b.status || '').toLowerCase();
-      return s !== 'sick' && s !== 'quarantine';
-    });
+    // 1. FILTER: ONLY MARKET-ELIGIBLE BATCHES (exclude sick, quarantine, and suckling / < 28d)
+    const eligibleBatches = (batchesRes.data || [])
+      .map((b) => ({
+        batch: b,
+        ageDays: getBatchAgeDays(b.date_of_birth, today),
+        st: (b.status || '').trim().toLowerCase(),
+      }))
+      .filter(({ ageDays, st }) => {
+        if (st === 'sick' || st === 'quarantine' || st === 'suckling') return false;
+        if (ageDays !== null && ageDays < 28) return false;
+        return true;
+      });
 
-    const enrichedBatches = healthyBatches.map((b) => {
-      let ageDays = 0;
-      if (b.date_of_birth) {
-        const dob = new Date(b.date_of_birth);
-        if (!isNaN(dob.getTime())) {
-          ageDays = Math.max(0, Math.floor((today - dob) / (1000 * 60 * 60 * 24)));
-        }
-      }
-      const st = (b.status || '').trim().toLowerCase();
-      const isMarketFattener = ageDays >= 150 || st === 'fattener' || st === 'finisher';
-      const isMarketWeaner = !isMarketFattener && ((ageDays >= 28 && ageDays < 90) || st === 'weaner' || st === 'weaned');
+    const enrichedBatches = eligibleBatches.map(({ batch: b, ageDays, st }) => {
+      const isMarketFattener = (ageDays !== null && ageDays >= 150) || st === 'fattener' || st === 'finisher';
+      const isMarketWeaner =
+        !isMarketFattener &&
+        (ageDays !== null ? ageDays >= 28 && ageDays < 90 : st === 'weaner' || st === 'weaned');
       return {
         ...b,
-        ageDays,
-        marketType: isMarketFattener ? 'Finisher' : isMarketWeaner ? 'Weaner' : 'Growing',
+        ageDays: ageDays ?? 0,
+        marketType: isMarketFattener ? 'Fattener' : isMarketWeaner ? 'Weaner' : 'Growing',
         defaultPricingMode: isMarketWeaner ? 'per_head' : 'per_kg',
-        label: `${b.batch_tag} (${b.current_count} heads • ${b.pens?.pen_code ? 'Pen ' + b.pens.pen_code : 'No pen'}${isMarketFattener ? ' • Ready Finisher' : isMarketWeaner ? ' • Weaner' : ' • Healthy'})`,
+        label: `${b.batch_tag} (${b.current_count} heads • ${b.pens?.pen_code ? 'Pen ' + b.pens.pen_code : 'No pen'}${isMarketFattener ? ' • Fattener' : isMarketWeaner ? ' • Weaner' : ' • Healthy'})`,
       };
     });
 
@@ -717,7 +726,7 @@ router.post('/api/transactions/sale', verifyAdmin, async (req, res) => {
   try {
     const {
       buyerName,
-      category = 'Finisher hogs',
+      category = 'Fatteners',
       paymentMethod = 'Cash',
       paymentStatus = 'Completed',
       transactionDate,
@@ -784,15 +793,62 @@ router.post('/api/transactions/sale', verifyAdmin, async (req, res) => {
       });
     }
 
+    // Guardrail: reject archived, suckling, sick, quarantined, or oversold batches before recording a sale
+    const requestedQtyByBatch = new Map();
+    for (const line of validatedLines) {
+      if (!line.batchId) continue;
+      requestedQtyByBatch.set(
+        line.batchId,
+        (requestedQtyByBatch.get(line.batchId) || 0) + line.quantitySold
+      );
+    }
+    const batchIds = [...requestedQtyByBatch.keys()];
+    if (batchIds.length > 0) {
+      const { data: targetBatches, error: batchCheckErr } = await db
+        .from('piglet_batches')
+        .select('batch_id, batch_tag, status, date_of_birth, current_count, total_born_alive, is_archived')
+        .in('batch_id', batchIds);
+
+      if (batchCheckErr) throw batchCheckErr;
+
+      const foundIds = new Set((targetBatches || []).map((b) => b.batch_id));
+      for (const reqId of batchIds) {
+        if (!foundIds.has(reqId)) {
+          return res.status(400).json({ error: 'Selected piglet batch was not found.' });
+        }
+      }
+
+      const today = new Date();
+      for (const b of targetBatches || []) {
+        if (b.is_archived) {
+          return res.status(400).json({ error: `Batch #${b.batch_tag} is already archived and cannot be sold.` });
+        }
+        const st = (b.status || '').trim().toLowerCase();
+        const ageDays = getBatchAgeDays(b.date_of_birth, today);
+        if (st === 'sick' || st === 'quarantine') {
+          return res.status(400).json({ error: `Batch #${b.batch_tag} is currently ${b.status} and cannot be sold.` });
+        }
+        if (st === 'suckling' || (ageDays !== null && ageDays < 28)) {
+          return res.status(400).json({ error: `Suckling batch #${b.batch_tag} cannot be sold before weaning (28 days old).` });
+        }
+        const availableCount =
+          b.current_count !== null && b.current_count !== undefined
+            ? Number(b.current_count)
+            : Number(b.total_born_alive || 0);
+        const requestedQty = requestedQtyByBatch.get(b.batch_id) || 0;
+        if (requestedQty > availableCount) {
+          return res.status(400).json({
+            error: `Cannot sell ${requestedQty} head(s) from #${b.batch_tag}: only ${availableCount} available.`,
+          });
+        }
+      }
+    }
+
     // Auto-derive category if omitted or generic
     let resolvedCategory = category;
-    if (!resolvedCategory || resolvedCategory === 'Swine Sale' || resolvedCategory === 'Finisher hogs') {
+    if (!resolvedCategory || resolvedCategory === 'Swine Sale' || resolvedCategory === 'Finisher hogs' || resolvedCategory === 'Fatteners') {
       const hasPig = validatedLines.some((l) => l.pigId);
-      if (hasPig) {
-        resolvedCategory = 'Breeding sows (Culled)';
-      } else {
-        resolvedCategory = category || 'Finisher hogs';
-      }
+      resolvedCategory = hasPig ? 'Breeding sows (Culled)' : 'Fatteners';
     }
 
     // 1. Insert into sales_transactions
@@ -851,7 +907,7 @@ router.post('/api/transactions/sale', verifyAdmin, async (req, res) => {
           .eq('pig_id', line.pigId);
       }
 
-      // Batch Piglets / Finishers Sold: Deduct current_count
+      // Batch Weaners / Fatteners Sold: Deduct current_count
       if (line.batchId) {
         const { data: batch } = await db
           .from('piglet_batches')
