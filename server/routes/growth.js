@@ -23,7 +23,7 @@ async function logGrowthActivity({ name, email, title, desc, bgColor = 'bg-emera
       event_desc: desc,
       status: 'SUCCESS',
     })
-    .then(() => {})
+    .then(() => { })
     .catch((err) => console.warn('[Growth API] Failed to log activity:', err?.message));
 }
 
@@ -216,7 +216,7 @@ router.get('/api/growth/programs', verifyAuth, async (req, res) => {
 // Fetch analytics and DSS data for active batches assigned to a growth program
 router.get('/api/growth/analytics', verifyAuth, async (req, res) => {
   try {
-    const [batchesRes, salesRes] = await Promise.all([
+    const [batchesRes, salesRes, promotedRes] = await Promise.all([
       db
         .from('piglet_batches')
         .select(`
@@ -238,7 +238,8 @@ router.get('/api/growth/analytics', verifyAuth, async (req, res) => {
           )
         `)
         .not('assigned_program_id', 'is', null),
-      db.from('sold_swine').select('batch_id, quantity_sold').not('batch_id', 'is', null)
+      db.from('sold_swine').select('batch_id, quantity_sold').not('batch_id', 'is', null),
+      db.from('pigs').select('source_batch_id').not('source_batch_id', 'is', null)
     ]);
 
     if (batchesRes.error) throw batchesRes.error;
@@ -248,6 +249,13 @@ router.get('/api/growth/analytics', verifyAuth, async (req, res) => {
     (salesRes.data || []).forEach(s => {
       if (s.batch_id) {
         soldByBatch.set(s.batch_id, (soldByBatch.get(s.batch_id) || 0) + (Number(s.quantity_sold) || 0));
+      }
+    });
+
+    const promotedByBatch = new Map();
+    (promotedRes.data || []).forEach(p => {
+      if (p.source_batch_id) {
+        promotedByBatch.set(p.source_batch_id, (promotedByBatch.get(p.source_batch_id) || 0) + 1);
       }
     });
 
@@ -327,7 +335,8 @@ router.get('/api/growth/analytics', verifyAuth, async (req, res) => {
       const totalBorn = Number(batch.total_born_alive || batch.current_count || 1); // avoid division by 0
       const currentCount = Number(batch.current_count ?? totalBorn);
       const soldCount = soldByBatch.get(batch.batch_id) || 0;
-      const actualLosses = Math.max(0, totalBorn - currentCount - soldCount);
+      const promotedCount = promotedByBatch.get(batch.batch_id) || 0;
+      const actualLosses = Math.max(0, totalBorn - currentCount - soldCount - promotedCount);
       const mortalityRate = Math.min(100, Math.max(0, (actualLosses / totalBorn) * 100));
 
       if (mortalityRate > 5) {

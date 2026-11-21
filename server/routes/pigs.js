@@ -188,7 +188,7 @@ router.get('/api/pigs/stats', verifyAuth, async (req, res) => {
 router.get('/api/pigs/analytics', verifyAuth, async (req, res) => {
   try {
     const db = supabaseAdmin || supabase;
-    const [pigsRes, batchesRes, salesRes] = await Promise.all([
+    const [pigsRes, batchesRes, salesRes, soldSwineRes, promotedRes] = await Promise.all([
       db.from('pigs')
         .select('pig_id, pig_tag, gender, status, weight, date_of_birth, breed_id, created_at, breeds(name)')
         .eq('is_archived', false),
@@ -198,6 +198,12 @@ router.get('/api/pigs/analytics', verifyAuth, async (req, res) => {
       db.from('growth_activities')
         .select('batch_id, amount_given')
         .eq('activity_type', 'SALE'),
+      db.from('sold_swine')
+        .select('batch_id, quantity_sold')
+        .not('batch_id', 'is', null),
+      db.from('pigs')
+        .select('source_batch_id')
+        .not('source_batch_id', 'is', null),
     ]);
 
     if (pigsRes.error) throw pigsRes.error;
@@ -206,11 +212,27 @@ router.get('/api/pigs/analytics', verifyAuth, async (req, res) => {
     const pigsList = pigsRes.data || [];
     const batchesList = batchesRes.data || [];
     const salesList = salesRes.data || [];
+    const soldSwineList = soldSwineRes.data || [];
+    const promotedList = promotedRes.data || [];
 
-    const salesByBatch = {};
+    const soldSwineByBatch = {};
+    for (const s of soldSwineList) {
+      if (!s.batch_id) continue;
+      soldSwineByBatch[s.batch_id] = (soldSwineByBatch[s.batch_id] || 0) + (Number(s.quantity_sold) || 0);
+    }
+
+    const activitySalesByBatch = {};
     for (const s of salesList) {
       if (!s.batch_id) continue;
-      salesByBatch[s.batch_id] = (salesByBatch[s.batch_id] || 0) + (Number(s.amount_given) || 0);
+      activitySalesByBatch[s.batch_id] = (activitySalesByBatch[s.batch_id] || 0) + (Number(s.amount_given) || 0);
+    }
+
+    const salesByBatch = { ...activitySalesByBatch, ...soldSwineByBatch };
+
+    const promotedByBatch = {};
+    for (const p of promotedList) {
+      if (!p.source_batch_id) continue;
+      promotedByBatch[p.source_batch_id] = (promotedByBatch[p.source_batch_id] || 0) + 1;
     }
 
     // 1. Composition by Production Stage (in heads)
@@ -351,10 +373,11 @@ router.get('/api/pigs/analytics', verifyAuth, async (req, res) => {
       .map((b) => {
         const currentCount = getBatchHeads(b);
         const soldCount = salesByBatch[b.batch_id] || 0;
+        const promotedCount = promotedByBatch[b.batch_id] || 0;
+        const accountedHeads = currentCount + soldCount + promotedCount;
         const rawBorn = Number(b.total_born_alive);
-        const bornAlive = !isNaN(rawBorn) && rawBorn > 0 ? rawBorn : currentCount + soldCount;
-        const mortalityLoss = Math.max(0, bornAlive - currentCount - soldCount);
-        const accountedHeads = currentCount + soldCount;
+        const bornAlive = !isNaN(rawBorn) && rawBorn > 0 ? rawBorn : accountedHeads;
+        const mortalityLoss = Math.max(0, bornAlive - accountedHeads);
         const survivabilityRate = bornAlive > 0
           ? Math.min(100, Math.round((accountedHeads / bornAlive) * 1000) / 10)
           : 100;
@@ -381,6 +404,7 @@ router.get('/api/pigs/analytics', verifyAuth, async (req, res) => {
           bornAlive,
           currentCount,
           soldCount,
+          promotedCount,
           mortalityLoss,
           stillborn: Number(b.stillborn_count) || 0,
           mummy: Number(b.mummy_count) || 0,
@@ -486,6 +510,8 @@ router.get('/api/pigs', verifyAuth, async (req, res) => {
       source_origin: pig.source_origin || 'born_in_farm',
       supplier_name: pig.supplier_name || null,
       arrival_date: pig.arrival_date || null,
+      source_batch_id: pig.source_batch_id || null,
+      source_batch_tag: pig.source_batch_tag || null,
       parity_count: pig.parity_count ?? null,
       is_archived: pig.is_archived || false,
       archived_at: pig.archived_at || null,
@@ -695,6 +721,10 @@ router.get('/api/pigs/:id', verifyAuth, async (req, res) => {
           source_origin: data.source_origin || 'born_in_farm',
           supplier_name: data.supplier_name || null,
           arrival_date: data.arrival_date || null,
+          source_batch_id: data.source_batch_id || null,
+          source_batch_tag: data.source_batch_tag || null,
+          promoted_at: data.promoted_at || null,
+          dam_id: data.dam_id || null,
           is_archived: data.is_archived || false,
           archived_at: data.archived_at || null,
           archive_reasoning: data.archive_reasoning || null,
@@ -723,24 +753,22 @@ router.get('/api/pigs/:id', verifyAuth, async (req, res) => {
     }
 
     let soldCount = 0;
+    let promotedCount = 0;
     try {
       const db = supabaseAdmin || supabase;
-      const { data: soldRows } = await db
-        .from('sold_swine')
-        .select('quantity_sold')
-        .eq('batch_id', batchData.batch_id);
-      if (soldRows && soldRows.length > 0) {
+      const [soldRes, saleLogRes, promotedRes] = await Promise.all([
+        db.from('sold_swine').select('quantity_sold').eq('batch_id', batchData.batch_id),
+        db.from('batch_activity_logs').select('amount_given').eq('batch_id', batchData.batch_id).eq('activity_type', 'SALE'),
+        db.from('pigs').select('pig_id').eq('source_batch_id', batchData.batch_id),
+      ]);
+      const soldRows = soldRes.data || [];
+      const saleLogs = saleLogRes.data || [];
+      if (soldRows.length > 0) {
         soldCount = soldRows.reduce((sum, r) => sum + (Number(r.quantity_sold) || 0), 0);
-      } else {
-        const { data: saleLogs } = await db
-          .from('batch_activity_logs')
-          .select('amount_given')
-          .eq('batch_id', batchData.batch_id)
-          .eq('activity_type', 'SALE');
-        if (saleLogs && saleLogs.length > 0) {
-          soldCount = saleLogs.reduce((sum, r) => sum + (Number(r.amount_given) || 0), 0);
-        }
+      } else if (saleLogs.length > 0) {
+        soldCount = saleLogs.reduce((sum, r) => sum + (Number(r.amount_given) || 0), 0);
       }
+      promotedCount = (promotedRes.data || []).length;
     } catch (_) {}
 
     return res.json({
@@ -764,6 +792,7 @@ router.get('/api/pigs/:id', verifyAuth, async (req, res) => {
         total_born_alive: batchData.total_born_alive,
         current_count: batchData.current_count,
         sold_count: soldCount,
+        promoted_count: promotedCount,
         stillborn_count: batchData.stillborn_count,
         mummy_count: batchData.mummy_count,
         category: 'Piglet Batch',
@@ -982,10 +1011,10 @@ export async function validateCreateBatch(body = {}) {
 
     if (dateOfBirth) {
       if (ageInDays <= 28 && statusStr === 'weaned') {
-        throw createHttpError(400, `Piglet batches <= 28 days old (${ageInDays} days old) cannot have status "weaned" (must be suckling).`);
+        throw createHttpError(400, `Too young for Weaned (${ageInDays}d old). Keep as Suckling until day 29.`);
       }
       if (ageInDays > 28 && statusStr === 'suckling') {
-        throw createHttpError(400, `Piglet batches > 28 days old (${ageInDays} days old) cannot have status "suckling" (must be weaned).`);
+        throw createHttpError(400, `Batch is ${ageInDays}d old (> 28 days). Mark as Weaned.`);
       }
 
       if (isBatchNursing && penSection !== 'S' && penSection !== 'SOW') {
@@ -1992,10 +2021,10 @@ export async function executeUpdateBatch(id, body = {}) {
 
     if (dateOfBirth) {
       if (ageInDays <= 28 && statusStr === 'weaned') {
-        throw createHttpError(400, `Piglet batches <= 28 days old (${ageInDays} days old) cannot have status "weaned" (must be suckling).`);
+        throw createHttpError(400, `Too young for Weaned (${ageInDays}d old). Keep as Suckling until day 29.`);
       }
       if (ageInDays > 28 && statusStr === 'suckling') {
-        throw createHttpError(400, `Piglet batches > 28 days old (${ageInDays} days old) cannot have status "suckling" (must be weaned).`);
+        throw createHttpError(400, `Batch is ${ageInDays}d old (> 28 days). Mark as Weaned.`);
       }
 
       if (isBatchNursing && penSection !== 'S' && penSection !== 'SOW') {

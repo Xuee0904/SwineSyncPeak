@@ -7,7 +7,7 @@ import { isAdminUser } from '../../utils/rbac';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Cull'];
-const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Sick', 'Quarantine'];
+const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Sick', 'Quarantine'];
 
 const SOURCE_OPTIONS = [
   { value: 'born_in_farm', label: 'Born in Farm', hint: 'Internal breeding cycle' },
@@ -111,12 +111,12 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
           if (chosenStatus === 'suckling' && ageInDays > 28) {
             setErrors(prev => ({
               ...prev,
-              status: `Piglet batches > 28 days old (${ageInDays} days old) must be "Weaned" (or check birth date if still suckling)`
+              status: `Batch is ${ageInDays}d old (> 28 days). Mark as Weaned.`
             }));
           } else if (chosenStatus === 'weaned' && ageInDays <= 28) {
             setErrors(prev => ({
               ...prev,
-              status: `Piglet batches <= 28 days old (${ageInDays} days old) cannot be "Weaned" (must be Suckling or check birth date)`
+              status: `Too young for Weaned (${ageInDays}d old). Keep as Suckling until day 29.`
             }));
           }
         }
@@ -230,9 +230,9 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
         const ageInDays = Math.floor((new Date() - new Date(dob)) / (1000 * 60 * 60 * 24));
         const statusStr = (form.status || pigData?.status || '').toLowerCase();
         if (ageInDays <= 28 && statusStr === 'weaned') {
-          next.status = 'Piglet batches <= 28 days old cannot have status "Weaned" (must be Suckling)';
+          next.status = `Too young for Weaned (${ageInDays}d old). Keep as Suckling until day 29.`;
         } else if (ageInDays > 28 && statusStr === 'suckling') {
-          next.status = 'Piglet batches > 28 days old must be "Weaned" (no longer Suckling)';
+          next.status = `Batch is ${ageInDays}d old (> 28 days). Mark as Weaned.`;
         }
       }
     }
@@ -517,6 +517,9 @@ export function EditPigForm({ pigData, pens = [], breeds = [], onSave, onCancel,
             </Field>
             <Field label="Status" error={errors.status} icon={<Activity />}>
               <select value={form.status ?? 'Suckling'} onChange={handleChange('status')} className={`${inputBase} pr-9 ${errors.status ? inputErr : inputOk} appearance-none cursor-pointer`}>
+                {form.status && !BATCH_STATUS_OPTIONS.includes(form.status) && (
+                  <option value={form.status}>{form.status}</option>
+                )}
                 {BATCH_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">

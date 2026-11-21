@@ -19,7 +19,9 @@ import { isAdminUser } from '../../utils/rbac';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const STATUS_OPTIONS = ['Healthy', 'Sick', 'Quarantine', 'Pregnant', 'Cull'];
-const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Nursery', 'Fattening', 'Sick', 'Quarantine'];
+const BATCH_STATUS_OPTIONS = ['Suckling', 'Weaned', 'Sick', 'Quarantine'];
+
+const formatBatchTag = (tag) => (tag ? `#${String(tag).replace(/^#/, '')}` : 'Origin Batch');
 
 const formatLogDate = (dateStr) => {
   if (!dateStr) return '—';
@@ -187,8 +189,9 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
   const totalBornAlive = Number(data.total_born_alive || 0);
   const currentCount = Number(data.current_count ?? totalBornAlive);
   const soldCount = Number(data.sold_count || 0);
-  const mortalityLoss = Math.max(0, totalBornAlive - currentCount - soldCount);
-  const survivedHeads = Math.min(totalBornAlive, currentCount + soldCount);
+  const promotedCount = Number(data.promoted_count || 0);
+  const mortalityLoss = Math.max(0, totalBornAlive - currentCount - soldCount - promotedCount);
+  const survivedHeads = Math.min(totalBornAlive, currentCount + soldCount + promotedCount);
   const survivability = totalBornAlive > 0 ? ((survivedHeads / totalBornAlive) * 100).toFixed(1) : null;
 
   const sourceOrigin = data.source_origin || data.sourceOrigin || 'born_in_farm';
@@ -503,7 +506,12 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                       : `Transferred${supplierName ? ` · ${supplierName}` : ''}`}
                                 </span>
                                 {arrivalDate && (
-                                  <span className="text-xs text-slate-400 font-medium mt-0.5">Arrived {arrivalDate}</span>
+                                  <span className="text-xs text-slate-500 font-medium mt-0.5">Arrived {arrivalDate}</span>
+                                )}
+                                {!isBatch && data.source_batch_tag && (
+                                  <span className="text-xs text-slate-500 font-medium mt-0.5 truncate">
+                                    Promoted from {formatBatchTag(data.source_batch_tag)}
+                                  </span>
                                 )}
                               </div>
 
@@ -559,7 +567,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                     }`}>{survivability}% Survivability</span>
                                 )}
                               </div>
-                              <div className={`grid gap-3 ${soldCount > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'}`}>
+                              <div className={`grid gap-3 ${soldCount > 0 && promotedCount > 0 ? 'grid-cols-2 sm:grid-cols-5' : (soldCount > 0 || promotedCount > 0) ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'}`}>
                                 <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
                                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Initial Heads</span>
                                   <span className="text-base font-black text-slate-800 mt-0.5 block">{totalBornAlive}</span>
@@ -572,6 +580,12 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                   <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
                                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Sold / Marketed</span>
                                     <span className="text-base font-black text-blue-600 mt-0.5 block">{soldCount}</span>
+                                  </div>
+                                )}
+                                {promotedCount > 0 && (
+                                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Promoted</span>
+                                    <span className="text-base font-black text-indigo-700 mt-0.5 block">{promotedCount}</span>
                                   </div>
                                 )}
                                 <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
@@ -620,9 +634,16 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                       <p className="text-xs text-slate-500 line-clamp-1">
                                         {healthLogs[0].treatment || healthLogs[0].symptoms || 'Normal condition observed.'}
                                       </p>
-                                      <p className="text-[11px] text-slate-400 pt-1 flex items-center gap-1">
-                                        <Clock className="w-3 h-3" /> {formatLogDate(healthLogs[0].log_date)}
-                                      </p>
+                                      <div className="flex items-center gap-2 flex-wrap pt-1">
+                                        <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                                          <Clock className="w-3 h-3" /> {formatLogDate(healthLogs[0].log_date)}
+                                        </p>
+                                        {healthLogs[0].inherited_from_batch && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                            From Batch {formatBatchTag(healthLogs[0].inherited_batch_tag)}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   ) : (
                                     <p className="text-xs text-slate-400 italic py-1 leading-relaxed">
@@ -667,9 +688,16 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                           </span>
                                         )}
                                       </div>
-                                      <p className="text-xs text-slate-500">
-                                        Administered on {formatLogDate(vaccinations[0].administered_date)}
-                                      </p>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="text-xs text-slate-500">
+                                          Administered on {formatLogDate(vaccinations[0].administered_date)}
+                                        </p>
+                                        {vaccinations[0].inherited_from_batch && (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                            From Batch {formatBatchTag(vaccinations[0].inherited_batch_tag)}
+                                          </span>
+                                        )}
+                                      </div>
                                       {vaccinations[0].booster_due_date && (
                                         <p className={`text-[11px] font-bold pt-1 flex items-center gap-1 ${new Date(vaccinations[0].booster_due_date) < new Date() ? 'text-rose-600' : 'text-emerald-600'}`}>
                                           <Calendar className="w-3 h-3" /> Booster: {formatLogDate(vaccinations[0].booster_due_date)}
@@ -855,6 +883,11 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                               <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                                 <Stethoscope className="w-4 h-4 text-emerald-600" /> Medical & Health History
                               </h3>
+                              {healthLogs.some(l => l.inherited_from_batch) && (
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                  Includes pre-promotion logs from Batch {formatBatchTag(healthLogs.find(l => l.inherited_from_batch)?.inherited_batch_tag || data.source_batch_tag)}.
+                                </p>
+                              )}
                             </div>
                             <div className="flex items-center gap-3">
                               <span className="text-xs font-bold px-3 py-1 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-100 hidden sm:inline-block">
@@ -889,7 +922,7 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                       }`} />
                                     <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-all space-y-3">
                                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                                        <div className="flex items-center gap-2.5">
+                                        <div className="flex items-center gap-2.5 flex-wrap">
                                           <span className="text-sm font-black text-slate-900">
                                             {log.diagnosis || 'Routine Health Check'}
                                           </span>
@@ -897,6 +930,11 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                             }`}>
                                             {log.status || 'Healthy'}
                                           </span>
+                                          {log.inherited_from_batch && (
+                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                              From Batch {formatBatchTag(log.inherited_batch_tag)}
+                                            </span>
+                                          )}
                                         </div>
                                         <div className="flex items-center gap-2 text-xs text-slate-400 font-semibold">
                                           <Clock className="w-3.5 h-3.5 text-slate-400" />
@@ -977,6 +1015,11 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                               <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
                                 <Syringe className="w-4 h-4 text-emerald-600" /> Vaccination & Immunization History
                               </h3>
+                              {vaccinations.some(v => v.inherited_from_batch) && (
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                  Includes pre-promotion doses from Batch {formatBatchTag(vaccinations.find(v => v.inherited_from_batch)?.inherited_batch_tag || data.source_batch_tag)}.
+                                </p>
+                              )}
                             </div>
                             <div className="flex items-center gap-3">
                               <span className="text-xs font-bold px-3 py-1 bg-slate-100 text-slate-700 rounded-xl border border-slate-200 hidden sm:inline-block">
@@ -1022,10 +1065,19 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                                           </div>
                                         </div>
 
-                                        {vacc.lot_number && (
-                                          <span className="self-start sm:self-center px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-mono text-[11px] font-bold border border-slate-200">
-                                            Lot: {vacc.lot_number}
-                                          </span>
+                                        {(vacc.inherited_from_batch || vacc.lot_number) && (
+                                          <div className="flex items-center gap-2 flex-wrap self-start sm:self-center">
+                                            {vacc.inherited_from_batch && (
+                                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                                From Batch {formatBatchTag(vacc.inherited_batch_tag)}
+                                              </span>
+                                            )}
+                                            {vacc.lot_number && (
+                                              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-mono text-[11px] font-bold border border-slate-200">
+                                                Lot: {vacc.lot_number}
+                                              </span>
+                                            )}
+                                          </div>
                                         )}
                                       </div>
 

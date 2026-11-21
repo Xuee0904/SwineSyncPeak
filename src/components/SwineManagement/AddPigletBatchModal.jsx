@@ -22,7 +22,7 @@ const SOURCE_OPTIONS = [
   { value: 'transferred', label: 'Transferred', hint: 'Moved from another facility' },
 ];
 
-const STATUS_OPTIONS = ['suckling', 'weaned', 'healthy', 'sick', 'quarantine'];
+const STATUS_OPTIONS = ['suckling', 'weaned', 'sick', 'quarantine'];
 
 const EMPTY_FORM = {
   batchTag: '',
@@ -284,12 +284,12 @@ export function AddPigletBatchForm({
           if (chosenStatus === 'suckling' && age > 28) {
             setErrors(prev => ({
               ...prev,
-              status: `Piglets > 28 days old (${age} days old) must be marked Weaned (or check birth date if still suckling)`
+              status: `Batch is ${age}d old (> 28 days). Mark as Weaned.`
             }));
           } else if (chosenStatus === 'weaned' && age <= 28) {
             setErrors(prev => ({
               ...prev,
-              status: `Piglets ≤ 28 days old (${age} days old) cannot be marked Weaned (must be Suckling or check birth date)`
+              status: `Too young for Weaned (${age}d old). Keep as Suckling until day 29.`
             }));
           }
         }
@@ -361,9 +361,9 @@ export function AddPigletBatchForm({
       const chosenStatus = (form.status || '').toLowerCase();
       if (ageInDays !== null && ageInDays >= 0) {
         if (ageInDays <= 28 && chosenStatus === 'weaned') {
-          next.status = `Piglets ≤ 28 days old (${ageInDays} days old) cannot be marked Weaned (must be Suckling or check birth date)`;
+          next.status = `Too young for Weaned (${ageInDays}d old). Keep as Suckling until day 29.`;
         } else if (ageInDays > 28 && chosenStatus === 'suckling') {
-          next.status = `Piglets > 28 days old (${ageInDays} days old) must be marked Weaned (or check birth date if still suckling)`;
+          next.status = `Batch is ${ageInDays}d old (> 28 days). Mark as Weaned.`;
         }
       }
     }

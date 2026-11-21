@@ -40,15 +40,107 @@ async function logActivity({ creator, event_title, event_desc, status = 'SUCCESS
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LINEAGE HELPERS FOR PROMOTED BREEDER RECORDS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function isOnOrBeforePromotion(recordDate, recordCreatedAt, promotedAt) {
+  if (!promotedAt || !recordDate) return true;
+  const promoMs = Date.parse(promotedAt);
+  if (Number.isNaN(promoMs)) return true;
+
+  const trimmed = typeof recordDate === 'string' ? recordDate.trim() : '';
+  if (trimmed && /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const recordDayStartUtc = Date.parse(`${trimmed}T00:00:00Z`);
+    // Strictly after promotion date in any timezone up to UTC+14
+    if (recordDayStartUtc > promoMs + 14 * 3600 * 1000) return false;
+
+    // On the promotion calendar day window, use row creation time to exclude post-promotion batch logs
+    if (Math.abs(recordDayStartUtc - promoMs) <= 24 * 3600 * 1000 && recordCreatedAt) {
+      const createdMs = Date.parse(recordCreatedAt);
+      if (!Number.isNaN(createdMs)) return createdMs <= promoMs;
+    }
+    return true;
+  }
+
+  const recMs = Date.parse(recordDate);
+  return Number.isNaN(recMs) ? true : recMs <= promoMs;
+}
+
+async function fetchPigSourceBatch(pigId) {
+  if (!pigId) return null;
+  try {
+    const db = supabaseAdmin || supabase;
+    const { data, error } = await db
+      .from('pigs')
+      .select('source_batch_id, source_batch_tag, promoted_at')
+      .eq('pig_id', pigId)
+      .maybeSingle();
+    if (error) return null;
+    return data || null;
+  } catch {
+    return null;
+  }
+}
+
+function sortMergedHealthRecords(records, dateField) {
+  return [...records].sort((a, b) => {
+    const dateA = Date.parse(a[dateField] || 0) || 0;
+    const dateB = Date.parse(b[dateField] || 0) || 0;
+    if (dateB !== dateA) return dateB - dateA;
+
+    const aInherited = Boolean(a.inherited_from_batch);
+    const bInherited = Boolean(b.inherited_from_batch);
+    if (aInherited !== bInherited) return aInherited ? 1 : -1;
+
+    const createdA = Date.parse(a.created_at || 0) || 0;
+    const createdB = Date.parse(b.created_at || 0) || 0;
+    return createdB - createdA;
+  });
+}
+
+async function fetchInheritedBatchRecords({ table, select, pigId, archived, dateField, excludeDeceased = false }) {
+  const lineage = await fetchPigSourceBatch(pigId);
+  if (!lineage?.source_batch_id) return [];
+
+  let batchQuery = supabase
+    .from(table)
+    .select(select)
+    .eq('batch_id', lineage.source_batch_id);
+
+  if (archived === 'true') {
+    batchQuery = batchQuery.eq('is_archived', true);
+  } else {
+    batchQuery = batchQuery.or('is_archived.eq.false,is_archived.is.null');
+  }
+
+  batchQuery = batchQuery.order(dateField, { ascending: false });
+  const { data, error } = await batchQuery;
+  if (error) throw error;
+
+  return (data ?? [])
+    .filter((row) => {
+      if (excludeDeceased && (row.status || '').toLowerCase() === 'deceased') return false;
+      return isOnOrBeforePromotion(row[dateField], row.created_at, lineage.promoted_at);
+    })
+    .map((row) => ({
+      ...row,
+      inherited_from_batch: true,
+      inherited_batch_tag: lineage.source_batch_tag || row.piglet_batches?.batch_tag || null,
+    }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HEALTH LOGS
 // ─────────────────────────────────────────────────────────────────────────────
+
+const HEALTH_LOG_SELECT = '*, pigs(pig_tag, pens(pen_code)), piglet_batches(batch_tag, current_count, total_born_alive, pens(pen_code)), inventory_items(item_id, item_name, unit_of_measure, category)';
 
 // GET /api/health-logs
 router.get('/api/health-logs', verifyAuth, async (req, res) => {
   try {
-    const { pig_id, batch_id, archived } = req.query;
+    const { pig_id, batch_id, archived, include_inherited } = req.query;
 
-    let dbQuery = supabase.from('health_logs').select('*, pigs(pig_tag, pens(pen_code)), piglet_batches(batch_tag, current_count, total_born_alive, pens(pen_code)), inventory_items(item_id, item_name, unit_of_measure, category)');
+    let dbQuery = supabase.from('health_logs').select(HEALTH_LOG_SELECT);
     if (pig_id) dbQuery = dbQuery.eq('pig_id', pig_id);
     if (batch_id) dbQuery = dbQuery.eq('batch_id', batch_id);
 
@@ -62,7 +154,23 @@ router.get('/api/health-logs', verifyAuth, async (req, res) => {
     dbQuery = dbQuery.order('log_date', { ascending: false });
     const { data, error } = await dbQuery;
     if (error) throw error;
-    res.json({ data: data ?? [] });
+
+    const directLogs = data ?? [];
+    if (pig_id && !batch_id && include_inherited !== 'false') {
+      const inheritedLogs = await fetchInheritedBatchRecords({
+        table: 'health_logs',
+        select: HEALTH_LOG_SELECT,
+        pigId: pig_id,
+        archived,
+        dateField: 'log_date',
+        excludeDeceased: true,
+      });
+      return res.json({
+        data: sortMergedHealthRecords([...directLogs, ...inheritedLogs], 'log_date'),
+      });
+    }
+
+    res.json({ data: directLogs });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -409,12 +517,14 @@ router.patch('/api/health-logs/:id/archive', verifyAdmin, async (req, res) => {
 // VACCINATION RECORDS
 // ─────────────────────────────────────────────────────────────────────────────
 
+const VACCINATION_SELECT = '*, pigs(pig_tag, pens(pen_code)), piglet_batches(batch_tag, pens(pen_code)), inventory_items(item_id, item_name, unit_of_measure, category)';
+
 // GET /api/vaccination-records
 router.get('/api/vaccination-records', verifyAuth, async (req, res) => {
   try {
-    const { pig_id, batch_id, archived } = req.query;
+    const { pig_id, batch_id, archived, include_inherited } = req.query;
 
-    let dbQuery = supabase.from('vaccination_records').select('*, pigs(pig_tag, pens(pen_code)), piglet_batches(batch_tag, pens(pen_code)), inventory_items(item_id, item_name, unit_of_measure, category)');
+    let dbQuery = supabase.from('vaccination_records').select(VACCINATION_SELECT);
     if (pig_id) dbQuery = dbQuery.eq('pig_id', pig_id);
     if (batch_id) dbQuery = dbQuery.eq('batch_id', batch_id);
 
@@ -427,7 +537,22 @@ router.get('/api/vaccination-records', verifyAuth, async (req, res) => {
     dbQuery = dbQuery.order('administered_date', { ascending: false });
     const { data, error } = await dbQuery;
     if (error) throw error;
-    res.json({ data: data ?? [] });
+
+    const directVaccs = data ?? [];
+    if (pig_id && !batch_id && include_inherited !== 'false') {
+      const inheritedVaccs = await fetchInheritedBatchRecords({
+        table: 'vaccination_records',
+        select: VACCINATION_SELECT,
+        pigId: pig_id,
+        archived,
+        dateField: 'administered_date',
+      });
+      return res.json({
+        data: sortMergedHealthRecords([...directVaccs, ...inheritedVaccs], 'administered_date'),
+      });
+    }
+
+    res.json({ data: directVaccs });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

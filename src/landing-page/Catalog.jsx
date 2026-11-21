@@ -272,17 +272,7 @@ function AvailabilityCard({ category, count, index, activeAction, onToggleAction
               </div>
             )}
 
-            <div className="flex items-center justify-between pt-1 text-[11px]">
-              <a
-                href={
-                  panelType === 'call'
-                    ? `tel:${cleanPhone}`
-                    : `sms:${cleanPhone}?body=${encodeURIComponent(smsBody)}`
-                }
-                className="font-semibold text-emerald-700 hover:underline"
-              >
-                {panelType === 'call' ? 'Open calling app' : 'Open messaging app'}
-              </a>
+            <div className="flex items-center justify-end pt-1 text-[11px]">
               <button
                 type="button"
                 onClick={() => onToggleAction(category.id, panelType)}
