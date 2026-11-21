@@ -246,8 +246,8 @@ export default function TransactionHistoryModal({
                   type="button"
                   onClick={() => setTypeFilter(tab.id)}
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${typeFilter === tab.id
-                      ? "bg-emerald-600 text-white shadow-xs"
-                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
                     }`}
                 >
                   {tab.label}
@@ -268,7 +268,7 @@ export default function TransactionHistoryModal({
                 No stock movements recorded for this filter.
               </p>
               <p className="text-[11px] text-slate-400">
-                Adjust stock to log incoming deliveries, daily usage, or corrections.
+                Adjust stock to log store purchases, daily usage, or corrections.
               </p>
             </div>
           ) : (

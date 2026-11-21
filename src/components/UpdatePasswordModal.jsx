@@ -143,7 +143,7 @@ const inputBase = [
   'w-full min-h-[44px] py-2.5 bg-white border rounded-xl text-slate-900 placeholder-slate-500',
   'text-base sm:text-sm focus:outline-none focus:ring-2 transition-colors',
 ].join(' ');
-const inputOk = 'border-slate-500 focus:border-emerald-700 focus:ring-emerald-700/25';
+const inputOk = 'border-[#8593a6] hover:border-slate-500 focus:border-emerald-700 focus:ring-emerald-700/20';
 const inputErr = 'border-rose-600 focus:border-rose-700 focus:ring-rose-600/25 bg-rose-50/40';
 
 export default function UpdatePasswordModal({

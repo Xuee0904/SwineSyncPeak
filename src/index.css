@@ -314,3 +314,33 @@ input::-ms-clear {
     transform: none !important;
   }
 }
+
+@page {
+  size: auto;
+  margin: 14mm;
+}
+
+@media print {
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body:has(> #print-receipt-root) > *:not(#print-receipt-root) {
+    display: none !important;
+  }
+
+  #print-receipt-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

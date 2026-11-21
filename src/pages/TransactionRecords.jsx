@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import RecordTransactionModal from "../components/Transactions/RecordTransactionModal";
 import ExportDropdown from "../components/common/ExportDropdown";
 import { Loader2, CheckCircle2, Printer, TrendingUp, TrendingDown, Wallet, Clock } from "lucide-react";
@@ -81,7 +82,7 @@ const EXPORT_COLUMNS = [
   { header: "Transaction ID", accessor: "id" },
   { header: "Date & Time", accessor: (r) => (r.time ? `${r.date} ${r.time}` : r.date) },
   { header: "Type", accessor: "type" },
-  { header: "Client / Supplier", accessor: "party" },
+  { header: "Buyer / Description", accessor: "party" },
   { header: "Category", accessor: "category" },
   { header: "Amount (₱)", accessor: (r) => r.amount },
   { header: "Payment Method", accessor: "method" },
@@ -106,9 +107,8 @@ function StatCard({ icon, label, value, unit, tone = "emerald", isAlert = false,
 
   return (
     <div
-      className={`bg-white border rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between min-h-[106px] sm:min-h-[112px] ${
-        isAlert ? "border-amber-200/90 ring-1 ring-amber-100/70" : "border-slate-200/70"
-      }`}
+      className={`bg-white border rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col justify-between min-h-[106px] sm:min-h-[112px] ${isAlert ? "border-amber-200/90 ring-1 ring-amber-100/70" : "border-slate-200/70"
+        }`}
     >
       <div className="flex items-center justify-between w-full mb-3">
         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">{label}</span>
@@ -241,9 +241,8 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
                 rx="3"
                 ry="3"
                 fill="#059669"
-                className={`bar-grow transition-[fill,opacity] duration-200 group-hover:fill-emerald-500 ${
-                  isSalesDimmed ? "opacity-25" : "opacity-100"
-                }`}
+                className={`bar-grow transition-[fill,opacity] duration-200 group-hover:fill-emerald-500 ${isSalesDimmed ? "opacity-25" : "opacity-100"
+                  }`}
                 style={{ animationDelay: `${i * 40}ms` }}
               />
             ) : (
@@ -267,9 +266,8 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
                 rx="3"
                 ry="3"
                 fill="#94a3b8"
-                className={`bar-grow transition-[fill,opacity] duration-200 group-hover:fill-slate-500 ${
-                  isExpDimmed ? "opacity-25" : "opacity-100"
-                }`}
+                className={`bar-grow transition-[fill,opacity] duration-200 group-hover:fill-slate-500 ${isExpDimmed ? "opacity-25" : "opacity-100"
+                  }`}
                 style={{ animationDelay: `${i * 40 + 20}ms` }}
               />
             ) : (
@@ -304,9 +302,7 @@ function TrendChart({ trend, activeTypeTab = "All" }) {
   );
 }
 
-function TrendCard({ trends, activeTypeTab = "All" }) {
-  const [timeframe, setTimeframe] = useState("weekly");
-
+function TrendCard({ trends, timeframe = "monthly", onTimeframeChange, activeTypeTab = "All" }) {
   const currentTrend = trends?.[timeframe] || EMPTY_TREND;
 
   const currentMeta = TIMEFRAMES.find((t) => t.id === timeframe) || TIMEFRAMES[0];
@@ -336,12 +332,11 @@ function TrendCard({ trends, activeTypeTab = "All" }) {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setTimeframe(tab.id)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all cursor-pointer ${
-                    active
+                  onClick={() => onTimeframeChange?.(tab.id)}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all cursor-pointer ${active
                       ? "bg-white text-emerald-700 shadow-xs"
                       : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/40"
-                  }`}
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -362,20 +357,32 @@ function TrendCard({ trends, activeTypeTab = "All" }) {
 /*  Transactions Table + Filters                                              */
 /* -------------------------------------------------------------------------- */
 
-function FilterSelect({ label, value, onChange, options }) {
+function FilterSelect({ label, value, onChange, options = [], groups = null }) {
   return (
     <label className="block">
       <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-9 rounded-lg border border-slate-200 bg-white px-3 pr-8 text-xs font-semibold text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+        className="h-9 rounded-lg border border-slate-200 bg-white px-3 pr-8 text-xs font-semibold text-slate-700 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 cursor-pointer"
       >
         {options.map((o) => (
           <option key={o} value={o}>
             {o}
           </option>
         ))}
+        {groups &&
+          groups
+            .filter((g) => g.options.length > 0)
+            .map((g) => (
+              <optgroup key={g.label} label={g.label}>
+                {g.options.map((o) => (
+                  <option key={`${g.label}:${o}`} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
       </select>
     </label>
   );
@@ -389,6 +396,7 @@ function TransactionsCard({
   setQuery,
   categoryFilter,
   setCategoryFilter,
+  categoryGroups,
   statusFilter,
   setStatusFilter,
   dateRangeFilter,
@@ -408,6 +416,38 @@ function TransactionsCard({
   const safePage = Math.min(currentPage, totalPages);
   const pagedRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize);
 
+  const saleCats = categoryGroups?.sales || [];
+  const expenseCats = categoryGroups?.expenses || [];
+  const categoryOptions =
+    tab === "Sales"
+      ? ["All categories", ...saleCats]
+      : tab === "Expenses"
+      ? ["All categories", ...expenseCats]
+      : ["All categories"];
+  const groupedCategories =
+    tab === "All"
+      ? [
+          { label: "Sales", options: saleCats },
+          { label: "Expenses", options: expenseCats },
+        ]
+      : null;
+
+  const hasActiveFilters =
+    tab !== "All" ||
+    categoryFilter !== "All categories" ||
+    statusFilter !== "All statuses" ||
+    dateRangeFilter !== "All" ||
+    query.trim() !== "";
+
+  const resetFilters = () => {
+    setTab("All");
+    setCategoryFilter("All categories");
+    setStatusFilter("All statuses");
+    setDateRangeFilter("All");
+    setQuery("");
+    setCurrentPage(1);
+  };
+
   return (
     <section className={`${card} min-w-0`}>
       <div className="p-6">
@@ -421,7 +461,7 @@ function TransactionsCard({
                   setQuery(e.target.value);
                   setCurrentPage(1);
                 }}
-                placeholder="Search by ID, client or supplier…"
+                placeholder="Search by ID, buyer, or description..."
                 className="h-9 w-72 rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs font-semibold text-slate-700 placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               />
             </div>
@@ -429,13 +469,14 @@ function TransactionsCard({
               {tabs.map((t) => (
                 <button
                   key={t}
+                  type="button"
                   onClick={() => {
                     setTab(t);
+                    setCategoryFilter("All categories");
                     setCurrentPage(1);
                   }}
-                  className={`rounded-md px-3 py-1 cursor-pointer transition-all ${
-                    tab === t ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5" : "text-slate-500 hover:text-slate-800"
-                  }`}
+                  className={`rounded-md px-3 py-1 cursor-pointer transition-all ${tab === t ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5" : "text-slate-500 hover:text-slate-800"
+                    }`}
                 >
                   {t}
                 </button>
@@ -451,6 +492,7 @@ function TransactionsCard({
               pdfTitle="SwineSync Financial Transactions Ledger"
             />
             <button
+              type="button"
               onClick={onOpenRecordModal}
               className="inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition-colors cursor-pointer"
             >
@@ -459,7 +501,7 @@ function TransactionsCard({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-4">
+        <div className="mt-4 flex flex-wrap items-end gap-4">
           <FilterSelect
             label="Filter by category"
             value={categoryFilter}
@@ -467,20 +509,8 @@ function TransactionsCard({
               setCategoryFilter(val);
               setCurrentPage(1);
             }}
-            options={[
-              "All categories",
-              "Finisher hogs",
-              "Breeding sows",
-              "Piglets",
-              "Boars",
-              "Feeds",
-              "Medication",
-              "Supplements",
-              "Veterinary",
-              "Labor",
-              "Utilities",
-              "Maintenance",
-            ]}
+            options={categoryOptions}
+            groups={groupedCategories}
           />
           <FilterSelect
             label="Filter by status"
@@ -500,6 +530,15 @@ function TransactionsCard({
             }}
             options={["All", "Last 7 days", "Last 30 days", "This quarter", "This year"]}
           />
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="h-9 rounded-lg px-3 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 transition-colors cursor-pointer"
+            >
+              Reset filters
+            </button>
+          )}
         </div>
       </div>
 
@@ -510,7 +549,9 @@ function TransactionsCard({
               <th className="px-6 py-3">Transaction</th>
               <th className="px-3 py-3">Date & Time</th>
               <th className="px-3 py-3">Type</th>
-              <th className="px-3 py-3">Client / Supplier</th>
+              <th className="px-3 py-3">
+                {tab === "Sales" ? "Buyer" : tab === "Expenses" ? "Description" : "Buyer / Description"}
+              </th>
               <th className="px-3 py-3">Category</th>
               <th className="px-3 py-3 text-right">Amount</th>
               <th className="px-3 py-3">Status</th>
@@ -539,9 +580,8 @@ function TransactionsCard({
                   <td className="px-3 py-4 font-semibold text-slate-800">{t.party}</td>
                   <td className="px-3 py-4 text-slate-600">{t.category}</td>
                   <td
-                    className={`whitespace-nowrap px-3 py-4 text-right font-bold tabular-nums ${
-                      t.type === "Sale" ? "text-emerald-600" : "text-slate-800"
-                    }`}
+                    className={`whitespace-nowrap px-3 py-4 text-right font-bold tabular-nums ${t.type === "Sale" ? "text-emerald-600" : "text-slate-800"
+                      }`}
                   >
                     {t.type === "Sale" ? "+" : "−"}
                     {peso(t.amount)}
@@ -581,7 +621,7 @@ function TransactionsCard({
             ) : (
               <>
                 <p className="text-sm font-semibold text-slate-700">No transactions found</p>
-                <p className="mt-1 text-xs text-slate-500">Try a different ID, client, or reset the filters.</p>
+                <p className="mt-1 text-xs text-slate-500">Try a different ID, buyer, description, or reset the filters.</p>
               </>
             )}
           </div>
@@ -605,9 +645,8 @@ function TransactionsCard({
               <button
                 key={i + 1}
                 onClick={() => setCurrentPage(i + 1)}
-                className={`h-7 w-7 rounded-lg text-xs font-bold transition-all ${
-                  safePage === i + 1 ? "bg-emerald-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"
-                }`}
+                className={`h-7 w-7 rounded-lg text-xs font-bold transition-all ${safePage === i + 1 ? "bg-emerald-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
               >
                 {i + 1}
               </button>
@@ -639,9 +678,150 @@ function DetailRow({ label, value }) {
   );
 }
 
+function ReceiptPrintSheet({ tx, loggedInUser }) {
+  const isSale = tx.type === "Sale";
+  const txCode = tx.id?.startsWith("#") ? tx.id : `#${tx.id}`;
+  const staffName = typeof loggedInUser === "string" ? loggedInUser : loggedInUser?.name || "";
+  const recordedTime = tx.time || (tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true }) : "");
+  const printedAt = new Date().toLocaleString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  return createPortal(
+    <div id="print-receipt-root" className="hidden print:block bg-white text-slate-900">
+      <div className="mx-auto max-w-[680px] text-xs leading-relaxed">
+        <header className="flex items-start justify-between gap-6 border-b-2 border-emerald-700 pb-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+              SwineSync Farm Operations
+            </p>
+            <h1 className="mt-0.5 text-xl font-extrabold tracking-tight text-slate-900">
+              Ambo &amp; Ang&apos;s Oink Yard
+            </h1>
+            <p className="text-xs font-semibold text-slate-600">
+              {isSale ? "Official Sales Receipt" : "Farm Expense Voucher"}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-base font-extrabold tabular-nums text-slate-900">{txCode}</p>
+            <p className="mt-0.5 text-xs font-semibold text-slate-700">
+              {tx.date}
+              {recordedTime ? `, ${recordedTime}` : ""}
+            </p>
+            <p className="mt-1 inline-block rounded border border-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-800">
+              {tx.status || "Completed"}
+            </p>
+          </div>
+        </header>
+
+        <dl className="mt-5 grid grid-cols-2 gap-x-8 gap-y-3 border-b border-slate-200 pb-4 sm:grid-cols-4 print:grid-cols-4">
+          <div>
+            <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+              {isSale ? "Buyer" : "Description"}
+            </dt>
+            <dd className="mt-0.5 font-semibold text-slate-900">{tx.party || "Not specified"}</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Category</dt>
+            <dd className="mt-0.5 font-semibold text-slate-900">{tx.category || "General"}</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Payment Method</dt>
+            <dd className="mt-0.5 font-semibold text-slate-900">{tx.method || "Cash"}</dd>
+          </div>
+          <div>
+            <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Transaction Type</dt>
+            <dd className="mt-0.5 font-semibold text-slate-900">{tx.type}</dd>
+          </div>
+        </dl>
+
+        <section className="mt-5">
+          <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-700">Item Breakdown</h2>
+          <table className="mt-2 w-full border-collapse text-xs">
+            <thead>
+              <tr className="border-y border-slate-300 bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wider text-slate-700">
+                <th className="px-3 py-2">Description</th>
+                <th className="px-3 py-2 text-right">Quantity &amp; Rate</th>
+                <th className="px-3 py-2 text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {(tx.items?.length ? tx.items : [{ name: tx.category || tx.type, qty: 1, price: tx.amount }]).map((it, idx) => (
+                <tr key={idx}>
+                  <td className="px-3 py-2.5 font-semibold text-slate-900">{it.name}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
+                    {isSale && it.weight
+                      ? `${it.qty} head${it.qty > 1 ? "s" : ""}, ${it.weight} kg @ ${peso(it.price)}/kg`
+                      : `${it.qty} x ${peso(it.price)}${it.unit ? ` / ${it.unit}` : ""}`}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">
+                    {peso(it.subtotal || it.qty * it.price)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-800 bg-slate-50">
+                <td colSpan={2} className="px-3 py-3 text-right font-bold uppercase tracking-wider text-slate-700">
+                  Total Amount
+                </td>
+                <td className="px-3 py-3 text-right text-base font-extrabold tabular-nums text-slate-900">
+                  {isSale ? "+" : "-"}
+                  {peso(tx.amount)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </section>
+
+        {tx.linked && (
+          <div className="mt-4 break-inside-avoid rounded-lg border border-emerald-300 bg-emerald-50/50 px-3.5 py-2.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+              {isSale ? "Swine & Pen Occupancy Affected" : "Inventory & Stock Logs Updated"}
+            </p>
+            <p className="mt-0.5 text-xs font-medium text-slate-800">{tx.linked}</p>
+          </div>
+        )}
+
+        {tx.notes && (
+          <div className="mt-4 break-inside-avoid rounded-lg border border-slate-200 px-3.5 py-2.5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Notes &amp; Reference</p>
+            <p className="mt-0.5 text-xs text-slate-800">{tx.notes}</p>
+          </div>
+        )}
+
+        <footer className="mt-8 flex break-inside-avoid flex-wrap items-center justify-between gap-4 border-t border-slate-200 pt-4 text-[11px] text-slate-600">
+          <div>
+            {staffName && (
+              <p>
+                Printed by: <span className="font-semibold text-slate-900">{staffName}</span>
+              </p>
+            )}
+          </div>
+          <p>Printed on {printedAt}</p>
+        </footer>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function DetailPanel({ tx, onClose, onStatusUpdated, loggedInUser }) {
   const isSale = tx.type === "Sale";
   const [updating, setUpdating] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
 
   const handleMarkCompleted = async () => {
     setUpdating(true);
@@ -668,10 +848,11 @@ function DetailPanel({ tx, onClose, onStatusUpdated, loggedInUser }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-30 bg-slate-900/40 xl:hidden" onClick={onClose} />
+      <ReceiptPrintSheet tx={tx} loggedInUser={loggedInUser} />
+      <div className="fixed inset-0 z-30 bg-slate-900/40 xl:hidden print:hidden" onClick={onClose} />
       <aside
         aria-label="Transaction details"
-        className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col overflow-y-auto bg-white shadow-2xl xl:sticky xl:top-6 xl:z-auto xl:max-h-[calc(100vh-3rem)] xl:max-w-none xl:self-start xl:rounded-2xl xl:shadow-sm xl:ring-1 xl:ring-slate-900/5"
+        className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col overflow-y-auto bg-white shadow-2xl xl:sticky xl:top-6 xl:z-auto xl:max-h-[calc(100vh-3rem)] xl:max-w-none xl:self-start xl:rounded-2xl xl:shadow-sm xl:ring-1 xl:ring-slate-900/5 print:hidden"
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-6">
           <div>
@@ -684,9 +865,10 @@ function DetailPanel({ tx, onClose, onStatusUpdated, loggedInUser }) {
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="Close details"
-            className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 cursor-pointer"
           >
             <Icon name="x" className="h-5 w-5" />
           </button>
@@ -705,7 +887,7 @@ function DetailPanel({ tx, onClose, onStatusUpdated, loggedInUser }) {
           </div>
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-4">
-            <DetailRow label={isSale ? "Client / Buyer" : "Supplier / Payee"} value={tx.party} />
+            <DetailRow label={isSale ? "Buyer" : "Description"} value={tx.party} />
             <DetailRow label="Category" value={tx.category} />
             <DetailRow label="Payment method" value={tx.method} />
             <DetailRow label="Payment status" value={tx.status} />
@@ -757,19 +939,21 @@ function DetailPanel({ tx, onClose, onStatusUpdated, loggedInUser }) {
         <div className="mt-auto flex gap-3 border-t border-slate-100 p-6">
           {tx.status !== "Completed" && tx.status !== "Cancelled" && (
             <button
+              type="button"
               onClick={handleMarkCompleted}
               disabled={updating}
-              className="h-9 flex-1 rounded-xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="min-h-[44px] flex-1 rounded-xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {updating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              {updating ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="w-4 h-4" aria-hidden="true" />}
               Mark as Paid
             </button>
           )}
           <button
+            type="button"
             onClick={handlePrint}
-            className="h-9 flex-1 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            className="min-h-[44px] flex-1 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <Printer className="w-4 h-4 text-slate-500" /> Print receipt
+            <Printer className="w-4 h-4 text-slate-500" aria-hidden="true" /> Print receipt
           </button>
         </div>
       </aside>
@@ -788,10 +972,13 @@ export default function TransactionRecords({ loggedInUser }) {
   const [statusFilter, setStatusFilter] = useState("All statuses");
   const [dateRangeFilter, setDateRangeFilter] = useState("All");
 
+  const [timeframe, setTimeframe] = useState("monthly");
   const [stats, setStats] = useState([]);
+  const [statsByTimeframe, setStatsByTimeframe] = useState(null);
   const [trends, setTrends] = useState(null);
   const [summaryError, setSummaryError] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [categoryGroups, setCategoryGroups] = useState({ sales: [], expenses: [] });
   const [selectedId, setSelectedId] = useState(null);
 
   const [loading, setLoading] = useState(true);
@@ -804,12 +991,17 @@ export default function TransactionRecords({ loggedInUser }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load summary");
       setStats(data.stats || []);
+      setStatsByTimeframe(data.statsByTimeframe || null);
       setTrends(data.trends || null);
       setSummaryError(null);
     } catch (err) {
       setSummaryError(err.message);
     }
   }, []);
+
+  const activeStats = useMemo(() => {
+    return statsByTimeframe?.[timeframe] || stats;
+  }, [statsByTimeframe, stats, timeframe]);
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
@@ -827,11 +1019,12 @@ export default function TransactionRecords({ loggedInUser }) {
 
       const rows = Array.isArray(data.data) ? data.data : [];
       setTransactions(rows);
+      if (data.categoryGroups) {
+        setCategoryGroups(data.categoryGroups);
+      }
       setError(null);
 
-      // Only auto-open the detail panel on desktop, where it sits beside the table.
-      const desktop = window.innerWidth >= 1280;
-      setSelectedId((prev) => (rows.some((t) => t.id === prev) ? prev : desktop ? rows[0]?.id ?? null : null));
+      setSelectedId((prev) => (prev && rows.some((t) => t.id === prev) ? prev : null));
     } catch (err) {
       setTransactions([]);
       setError(err.message);
@@ -864,14 +1057,19 @@ export default function TransactionRecords({ loggedInUser }) {
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {stats.length > 0
-          ? stats.map((s) => <StatCard key={s.label} {...s} />)
-          : ["Total Sales", "Total Expenses", "Net Income", "Pending Payments"].map((label) => (
-              <StatCard key={label} label={label} loading={!summaryError} value="—" />
-            ))}
+        {activeStats.length > 0
+          ? activeStats.map((s) => <StatCard key={s.label} {...s} />)
+          : ["Sales", "Expenses", "Net Income", "Pending Payments"].map((label) => (
+            <StatCard key={label} label={label} loading={!summaryError} value="-" />
+          ))}
       </div>
 
-      <TrendCard trends={trends} activeTypeTab={tab} />
+      <TrendCard
+        trends={trends}
+        timeframe={timeframe}
+        onTimeframeChange={setTimeframe}
+        activeTypeTab={tab}
+      />
 
       <div className={`grid items-start gap-6 ${selected ? "xl:grid-cols-[minmax(0,1fr)_380px]" : ""}`}>
         <TransactionsCard
@@ -882,6 +1080,7 @@ export default function TransactionRecords({ loggedInUser }) {
           setQuery={setQuery}
           categoryFilter={categoryFilter}
           setCategoryFilter={setCategoryFilter}
+          categoryGroups={categoryGroups}
           statusFilter={statusFilter}
           setStatusFilter={setStatusFilter}
           dateRangeFilter={dateRangeFilter}

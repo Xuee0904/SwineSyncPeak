@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HelpCircle, ChevronDown, ChevronUp, MessageCircle } from 'lucide-react';
+import { HelpCircle, ChevronDown, ChevronUp, MessageCircle, Clock } from 'lucide-react';
 
 export default function FAQs({ scrollToSection }) {
   const [openIndex, setOpenIndex] = useState(null);
@@ -45,44 +45,76 @@ export default function FAQs({ scrollToSection }) {
         </div>
       </section>
 
-      {/* Accordion List */}
-      <section className="w-full space-y-3" id="faqs-accordion-container">
-        {faqItems.map((item, idx) => {
-          const isOpen = openIndex === idx;
-          return (
-            <div
-              key={idx}
-              className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all"
-              id={`faq-item-${idx}`}
-            >
-              <button
-                type="button"
-                onClick={() => handleToggle(idx)}
-                className="w-full flex items-center justify-between px-5 py-4 text-left text-slate-800 hover:text-emerald-700 transition-colors focus:outline-none cursor-pointer"
-                aria-expanded={isOpen}
-                id={`faq-toggle-btn-${idx}`}
-              >
-                <span className="font-bold text-slate-800 text-sm sm:text-base leading-snug">
-                  {item.question}
-                </span>
-                <span className="ml-4 shrink-0 p-1.5 bg-slate-50 rounded-xl text-slate-500 transition-transform">
-                  {isOpen ? <ChevronUp className="w-4 h-4 text-emerald-600" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-                </span>
-              </button>
+      {/* Two-Column FAQ Layout */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch" id="faqs-accordion-container">
+        <div className="lg:col-span-4 h-full bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between gap-6">
+          <div className="space-y-3">
+            <h3 className="text-lg font-bold font-display text-slate-900">
+              Planning a Farm Visit or Purchase?
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Here are quick answers on our biosecurity requirements, health records, scheduled inspections, and preparing your receiving pen.
+            </p>
+          </div>
 
-              {/* Dynamic Accordion Body */}
-              <div
-                className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-96 border-t border-slate-100' : 'max-h-0'
-                  }`}
-                id={`faq-answer-container-${idx}`}
-              >
-                <div className="p-5 text-xs sm:text-sm text-slate-600 leading-relaxed bg-slate-50/60">
-                  {item.answer}
-                </div>
+          <div className="space-y-4 pt-4 border-t border-slate-100">
+            <div className="flex items-start gap-2.5 text-xs text-slate-600">
+              <Clock className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" aria-hidden="true" />
+              <div>
+                <span className="font-bold text-slate-800 block">Scheduled Visits</span>
+                <span>Mon–Sat, 8:00 AM – 5:00 PM</span>
               </div>
             </div>
-          );
-        })}
+
+            <button
+              type="button"
+              onClick={() => scrollToSection?.('contact')}
+              className="w-full inline-flex items-center justify-center gap-2 min-h-[44px] px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+            >
+              <MessageCircle className="w-4 h-4" aria-hidden="true" />
+              <span>Ask Us Directly</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="lg:col-span-8 space-y-3">
+          {faqItems.map((item, idx) => {
+            const isOpen = openIndex === idx;
+            return (
+              <div
+                key={idx}
+                className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all"
+                id={`faq-item-${idx}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleToggle(idx)}
+                  className="w-full flex items-center justify-between px-5 py-4 text-left text-slate-800 hover:text-emerald-700 transition-colors focus:outline-none cursor-pointer"
+                  aria-expanded={isOpen}
+                  id={`faq-toggle-btn-${idx}`}
+                >
+                  <span className="font-bold text-slate-800 text-sm sm:text-base leading-snug">
+                    {item.question}
+                  </span>
+                  <span className="ml-4 shrink-0 p-1.5 bg-slate-50 rounded-xl text-slate-500 transition-transform">
+                    {isOpen ? <ChevronUp className="w-4 h-4 text-emerald-600" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                  </span>
+                </button>
+
+                {/* Dynamic Accordion Body */}
+                <div
+                  className={`transition-all duration-300 ease-in-out overflow-hidden ${isOpen ? 'max-h-96 border-t border-slate-100' : 'max-h-0'
+                    }`}
+                  id={`faq-answer-container-${idx}`}
+                >
+                  <div className="p-5 text-xs sm:text-sm text-slate-600 leading-relaxed bg-slate-50/60">
+                    {item.answer}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
     </div>

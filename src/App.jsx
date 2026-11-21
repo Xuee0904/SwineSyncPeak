@@ -430,29 +430,29 @@ export default function App() {
         <main className="flex-grow" id="public-landing">
 
           {/* HERO / HOME */}
-          <section id="home" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-14 sm:pb-16">
+          <section id="home" className="max-w-7xl 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-8 sm:pb-10">
             <Hero scrollToSection={scrollToSection} />
           </section>
 
           {/* PROTOCOLS */}
-          <section id="protocols" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20 reveal-on-scroll">
+          <section id="protocols" className="max-w-7xl 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12 reveal-on-scroll">
             <Protocols />
           </section>
 
           {/* CATALOG */}
-          <section id="catalog" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-10 reveal-on-scroll">
-            <Catalog />
+          <section id="catalog" className="max-w-7xl 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12 reveal-on-scroll">
+            <Catalog onOpenTerms={() => setIsTermsOpen(true)} />
           </section>
 
           {/* FAQs */}
-          <section id="faqs" className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-14 reveal-on-scroll">
+          <section id="faqs" className="max-w-7xl 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12 reveal-on-scroll">
             <FAQs scrollToSection={scrollToSection} />
           </section>
 
           {/* CONTACT */}
-          <div id="contact" className="bg-slate-950 py-20 reveal-on-scroll">
-            <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8">
-              <Contact />
+          <div id="contact" className="bg-slate-950 py-12 sm:py-14 reveal-on-scroll">
+            <div className="max-w-7xl 2xl:max-w-[1560px] w-full mx-auto px-4 sm:px-6 lg:px-8">
+              <Contact onOpenTerms={() => setIsTermsOpen(true)} />
             </div>
           </div>
 
@@ -557,7 +557,7 @@ export default function App() {
 
       {/* Public Footer */}
       {!isRestoringSession && !loggedInUser && <footer className="bg-slate-900 text-slate-400 border-t border-slate-800" id="swinesync-footer">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="max-w-7xl 2xl:max-w-[1560px] mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-slate-800">
             {/* Co-Branded Footer Identity Lockup */}
             <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-white shrink-0">

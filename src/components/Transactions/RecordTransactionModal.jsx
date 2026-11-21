@@ -43,8 +43,9 @@ export default function RecordTransactionModal({
   onSuccess,
   loggedInUser,
 }) {
-  const { shouldRender, requestClose, overlayClassName, panelClassName } =
-    useModalAnimation(isOpen, onClose);
+  const [saving, setSaving] = useState(false);
+  const { shouldRender, isClosing, requestClose, panelRef, overlayClassName, panelClassName } =
+    useModalAnimation(isOpen, onClose, { canClose: !saving });
 
   const [mainType, setMainType] = useState("sale"); // "sale" | "expense"
 
@@ -60,6 +61,7 @@ export default function RecordTransactionModal({
   const [buyerName, setBuyerName] = useState("");
   const [saleDate, setSaleDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [saleStatus, setSaleStatus] = useState("Completed");
+  const [saleNotes, setSaleNotes] = useState("");
 
   // ─── Expense State ────────────────────────────────────────────────────────
   const [expenseMode, setExpenseMode] = useState("inventory"); // "inventory" | "operational"
@@ -76,7 +78,6 @@ export default function RecordTransactionModal({
   const [expenseStatus, setExpenseStatus] = useState("Completed");
   const [expenseNotes, setExpenseNotes] = useState("");
 
-  const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
 
   // Fetch live active herds, batches & supplies
@@ -222,13 +223,16 @@ export default function RecordTransactionModal({
           ? `${derivedCategory} (${qty} head${qty > 1 ? "s" : ""}, total ${weight} kg @ ₱${rate}/kg)`
           : `Culled Sow #${selectedPig?.pig_tag || ""} (${weight} kg @ ₱${rate}/kg)`;
 
+        const saleSummary = `${weight} kg @ ₱${rate}/kg (${qty} head${qty > 1 ? "s" : ""}${avgWeight ? `, ~${avgWeight} kg/head` : ""})`;
+        const trimmedSaleNotes = saleNotes.trim();
+
         const payload = {
           buyerName: buyerName.trim(),
           category: derivedCategory,
           paymentMethod: "Cash",
           paymentStatus: saleStatus,
           transactionDate: saleDate,
-          notes: `${weight} kg @ ₱${rate}/kg (${qty} head${qty > 1 ? "s" : ""}${avgWeight ? `, ~${avgWeight} kg/head` : ""})`,
+          notes: trimmedSaleNotes ? `${trimmedSaleNotes} (${saleSummary})` : saleSummary,
           creator: loggedInUser,
           items: [
             {
@@ -260,6 +264,10 @@ export default function RecordTransactionModal({
         // Expense
         const isInv = expenseMode === "inventory";
         const amt = isInv ? computedInventoryTotal() : parseFloat(expenseAmount);
+        const trimmedExpNotes = expenseNotes.trim();
+        const defaultExpDesc = isInv
+          ? `Restock ${inventoryQty} ${selectedItem?.unit_of_measure || ""} ${selectedItem?.item_name || ""}`.trim()
+          : expenseCategory;
 
         const payload = {
           category: isInv ? (selectedItem?.category || expenseCategory) : expenseCategory,
@@ -268,9 +276,7 @@ export default function RecordTransactionModal({
           paymentMethod: "Cash",
           paymentStatus: expenseStatus,
           dateIncurred: expenseDate,
-          description: isInv
-            ? `Restock ${inventoryQty} ${selectedItem?.unit_of_measure || ""} ${selectedItem?.item_name || ""}`.trim()
-            : expenseCategory,
+          description: trimmedExpNotes || defaultExpDesc,
           creator: loggedInUser,
           inventoryItems: isInv
             ? [
@@ -312,29 +318,34 @@ export default function RecordTransactionModal({
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName}`}
+      className={`fixed inset-0 lg:left-64 z-[60] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md ${overlayClassName} ${isClosing ? "pointer-events-none" : ""}`}
       onClick={(e) => {
         if (e.target === e.currentTarget && !saving) requestClose();
       }}
       role="dialog"
+      aria-modal="true"
+      aria-labelledby="record-tx-modal-title"
     >
       <div
+        ref={panelRef}
         className={`w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[92vh] ${panelClassName}`}
       >
         {/* Header */}
         <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div>
-            <h3 className="text-base font-bold text-slate-900">Record New Transaction</h3>
+            <h3 id="record-tx-modal-title" className="text-base font-bold text-slate-900">Record New Transaction</h3>
             <p className="text-xs text-slate-500 mt-0.5">
               Record sales to update herd headcount, or expenses to restock supplies.
             </p>
           </div>
           <button
+            type="button"
             onClick={requestClose}
             disabled={saving}
-            className="p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+            aria-label="Close modal"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-slate-500 hover:bg-slate-50 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <X className="w-4 h-4" />
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
 
@@ -527,6 +538,20 @@ export default function RecordTransactionModal({
                 </div>
               </div>
 
+              <div>
+                <label htmlFor="sale-notes" className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Notes <span className="font-normal normal-case text-slate-500">(optional)</span>
+                </label>
+                <textarea
+                  id="sale-notes"
+                  rows={2}
+                  value={saleNotes}
+                  onChange={(e) => setSaleNotes(e.target.value)}
+                  placeholder="Optional pickup details, truck plate, or buyer remarks"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none resize-none"
+                />
+              </div>
+
               {/* Automatic Effect Callout */}
               <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-start gap-3">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -708,6 +733,20 @@ export default function RecordTransactionModal({
                 </div>
               </div>
 
+              <div>
+                <label htmlFor="expense-notes" className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Notes <span className="font-normal normal-case text-slate-500">(optional)</span>
+                </label>
+                <textarea
+                  id="expense-notes"
+                  rows={2}
+                  value={expenseNotes}
+                  onChange={(e) => setExpenseNotes(e.target.value)}
+                  placeholder="Optional receipt reference, supplier invoice, or purchase notes"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none resize-none"
+                />
+              </div>
+
               {/* Automatic Effect Callout */}
               <div className="p-3.5 rounded-2xl bg-slate-100 border border-slate-200 flex items-start gap-3">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -729,14 +768,14 @@ export default function RecordTransactionModal({
               type="button"
               onClick={requestClose}
               disabled={saving}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+              className="min-h-[44px] px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-sm transition-all ${
+              className={`inline-flex min-h-[44px] items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                 mainType === "sale"
                   ? "bg-emerald-600 hover:bg-emerald-700"
                   : "bg-slate-900 hover:bg-slate-800"

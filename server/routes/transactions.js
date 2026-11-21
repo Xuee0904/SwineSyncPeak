@@ -276,6 +276,22 @@ router.get('/api/transactions', verifyAdmin, async (req, res) => {
       };
     });
 
+    const dedupeSorted = (list) => {
+      const seen = new Map();
+      list.forEach((cat) => {
+        const clean = (cat || '').trim();
+        if (!clean) return;
+        const key = clean.toLowerCase();
+        if (!seen.has(key)) seen.set(key, clean);
+      });
+      return [...seen.values()].sort((a, b) => a.localeCompare(b));
+    };
+
+    const categoryGroups = {
+      sales: dedupeSorted(mappedSales.map((s) => s.category)),
+      expenses: dedupeSorted(mappedExpenses.map((e) => e.category)),
+    };
+
     let merged = [...mappedSales, ...mappedExpenses];
 
     // Filter by Tab (All, Sales, Expenses)
@@ -332,6 +348,7 @@ router.get('/api/transactions', verifyAdmin, async (req, res) => {
     res.json({
       data: merged,
       totalCount: merged.length,
+      categoryGroups,
     });
   } catch (err) {
     console.error('Error fetching transactions:', err.message);
@@ -340,7 +357,7 @@ router.get('/api/transactions', verifyAdmin, async (req, res) => {
 });
 
 // ─── GET /api/transactions/summary ──────────────────────────────────────────
-// Computes metrics: Total Sales, Total Expenses, Net Income, Pending Payments, and trend series
+// Computes metrics: Period Sales, Expenses, Net Income (for weekly/monthly/quarterly/yearly), Pending Payments, and trend series
 router.get('/api/transactions/summary', verifyAdmin, async (req, res) => {
   try {
     const [expRes, salesRes] = await Promise.all([
@@ -354,35 +371,34 @@ router.get('/api/transactions/summary', verifyAdmin, async (req, res) => {
     const expenses = expRes.data || [];
     const sales = salesRes.data || [];
 
-    let totalSales = 0;
-    let totalExpenses = 0;
+    const isCompleted = (row) => !row.status || row.status === 'Completed';
+
+    function parseRecordDate(val) {
+      if (!val) return new Date(NaN);
+      if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+        const [y, m, d] = val.split('-').map(Number);
+        return new Date(y, m - 1, d, 12, 0, 0, 0);
+      }
+      return new Date(val);
+    }
+
     let pendingPayments = 0;
     let pendingCount = 0;
 
     sales.forEach((s) => {
-      const amt = Number(s.total_price) || 0;
-      if (s.status === 'Completed' || !s.status) {
-        totalSales += amt;
-      } else if (s.status === 'Pending' || s.status === 'Overdue') {
-        pendingPayments += amt;
+      if (s.status === 'Pending' || s.status === 'Overdue') {
+        pendingPayments += Number(s.total_price) || 0;
         pendingCount++;
       }
     });
 
     expenses.forEach((e) => {
-      const amt = Number(e.amount) || 0;
-      if (e.status === 'Completed' || !e.status) {
-        totalExpenses += amt;
-      } else if (e.status === 'Pending' || e.status === 'Overdue') {
-        pendingPayments += amt;
+      if (e.status === 'Pending' || e.status === 'Overdue') {
+        pendingPayments += Number(e.amount) || 0;
         pendingCount++;
       }
     });
 
-    const netIncome = totalSales - totalExpenses;
-    const profitMargin = totalSales > 0 ? Math.round((netIncome / totalSales) * 100) : 0;
-
-    // ─── Multi-Timeframe Trend Calculation (Weekly, Monthly, Quarterly, Yearly) ───
     const now = new Date();
 
     function getTotalsInRange(startDate, endDate) {
@@ -390,14 +406,16 @@ router.get('/api/transactions/summary', verifyAdmin, async (req, res) => {
       let rExp = 0;
 
       sales.forEach((s) => {
-        const d = new Date(s.transaction_date || s.created_at);
+        if (!isCompleted(s)) return;
+        const d = parseRecordDate(s.transaction_date || s.created_at);
         if (d >= startDate && d <= endDate) {
           rSales += Number(s.total_price) || 0;
         }
       });
 
       expenses.forEach((e) => {
-        const d = new Date(e.date_incurred || e.created_at);
+        if (!isCompleted(e)) return;
+        const d = parseRecordDate(e.date_incurred || e.created_at);
         if (d >= startDate && d <= endDate) {
           rExp += Number(e.amount) || 0;
         }
@@ -409,27 +427,31 @@ router.get('/api/transactions/summary', verifyAdmin, async (req, res) => {
       };
     }
 
-    // 1. Weekly (8 weeks)
+    // 1. Weekly (8 non-overlapping 7-day windows ending today)
     const weekLabels = [];
     const weeklySales = [];
     const weeklyExpenses = [];
+    let currentWeekRange = null;
     for (let i = 7; i >= 0; i--) {
-      const weekEnd = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000);
-      const weekStart = new Date(weekEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
-      weekLabels.push(weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-      const { sales: s, expenses: e } = getTotalsInRange(weekStart, weekEnd);
+      const endDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i * 7, 23, 59, 59, 999);
+      const startDay = new Date(endDay.getFullYear(), endDay.getMonth(), endDay.getDate() - 6, 0, 0, 0, 0);
+      if (i === 0) currentWeekRange = { start: startDay, end: endDay };
+      weekLabels.push(endDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+      const { sales: s, expenses: e } = getTotalsInRange(startDay, endDay);
       weeklySales.push(s);
       weeklyExpenses.push(e);
     }
 
-    // 2. Monthly (last 6 months)
+    // 2. Monthly (last 6 calendar months)
     const monthLabels = [];
     const monthlySales = [];
     const monthlyExpenses = [];
+    let currentMonthRange = null;
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const mStart = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
       const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+      if (i === 0) currentMonthRange = { start: mStart, end: mEnd };
       monthLabels.push(d.toLocaleDateString('en-US', { month: 'short' }));
       const { sales: s, expenses: e } = getTotalsInRange(mStart, mEnd);
       monthlySales.push(s);
@@ -440,6 +462,7 @@ router.get('/api/transactions/summary', verifyAdmin, async (req, res) => {
     const quarterLabels = [];
     const quarterlySales = [];
     const quarterlyExpenses = [];
+    let currentQuarterRange = null;
     const currentQIdx = now.getFullYear() * 4 + Math.floor(now.getMonth() / 3);
     for (let i = 3; i >= 0; i--) {
       const targetQ = currentQIdx - i;
@@ -447,6 +470,7 @@ router.get('/api/transactions/summary', verifyAdmin, async (req, res) => {
       const qNum = (targetQ % 4) + 1;
       const qStart = new Date(yr, (qNum - 1) * 3, 1, 0, 0, 0, 0);
       const qEnd = new Date(yr, qNum * 3, 0, 23, 59, 59, 999);
+      if (i === 0) currentQuarterRange = { start: qStart, end: qEnd };
       quarterLabels.push(`Q${qNum} ${yr}`);
       const { sales: s, expenses: e } = getTotalsInRange(qStart, qEnd);
       quarterlySales.push(s);
@@ -457,30 +481,46 @@ router.get('/api/transactions/summary', verifyAdmin, async (req, res) => {
     const yearLabels = [];
     const yearlySales = [];
     const yearlyExpenses = [];
+    let currentYearRange = null;
     for (let i = 3; i >= 0; i--) {
       const yr = now.getFullYear() - i;
       const yStart = new Date(yr, 0, 1, 0, 0, 0, 0);
       const yEnd = new Date(yr, 11, 31, 23, 59, 59, 999);
+      if (i === 0) currentYearRange = { start: yStart, end: yEnd };
       yearLabels.push(String(yr));
       const { sales: s, expenses: e } = getTotalsInRange(yStart, yEnd);
       yearlySales.push(s);
       yearlyExpenses.push(e);
     }
 
-    res.json({
-      stats: [
+    const pendingCard = {
+      label: 'Pending Payments',
+      value: `₱${pendingPayments.toLocaleString('en-PH')}`,
+      unit: pendingCount === 1 ? '1 unpaid' : `${pendingCount} unpaid`,
+      icon: 'clock',
+      tone: 'amber',
+      isAlert: pendingPayments > 0,
+      alertTone: 'amber',
+    };
+
+    function buildPeriodStats(range, unitLabel) {
+      const { sales: periodSales, expenses: periodExpenses } = getTotalsInRange(range.start, range.end);
+      const netIncome = periodSales - periodExpenses;
+      const profitMargin = periodSales > 0 ? Math.round((netIncome / periodSales) * 100) : 0;
+
+      return [
         {
-          label: 'Total Sales',
-          value: `₱${totalSales.toLocaleString('en-PH')}`,
-          unit: 'revenue',
+          label: 'Sales',
+          value: `₱${periodSales.toLocaleString('en-PH')}`,
+          unit: unitLabel,
           icon: 'trendUp',
           tone: 'emerald',
           isAlert: false,
         },
         {
-          label: 'Total Expenses',
-          value: `₱${totalExpenses.toLocaleString('en-PH')}`,
-          unit: 'expenses',
+          label: 'Expenses',
+          value: `₱${periodExpenses.toLocaleString('en-PH')}`,
+          unit: unitLabel,
           icon: 'trendDown',
           tone: 'slate',
           isAlert: false,
@@ -488,21 +528,25 @@ router.get('/api/transactions/summary', verifyAdmin, async (req, res) => {
         {
           label: 'Net Income',
           value: `₱${netIncome.toLocaleString('en-PH')}`,
-          unit: `${profitMargin}% margin`,
+          unit: periodSales > 0 ? `${profitMargin}% margin` : unitLabel,
           icon: 'wallet',
           tone: netIncome >= 0 ? 'emerald' : 'rose',
           isAlert: false,
         },
-        {
-          label: 'Pending Payments',
-          value: `₱${pendingPayments.toLocaleString('en-PH')}`,
-          unit: pendingCount === 1 ? '1 pending' : `${pendingCount} pending`,
-          icon: 'clock',
-          tone: 'amber',
-          isAlert: pendingPayments > 0,
-          alertTone: 'amber',
-        },
-      ],
+        pendingCard,
+      ];
+    }
+
+    const statsByTimeframe = {
+      weekly: buildPeriodStats(currentWeekRange, 'this week'),
+      monthly: buildPeriodStats(currentMonthRange, 'this month'),
+      quarterly: buildPeriodStats(currentQuarterRange, 'this quarter'),
+      yearly: buildPeriodStats(currentYearRange, 'this year'),
+    };
+
+    res.json({
+      stats: statsByTimeframe.monthly,
+      statsByTimeframe,
       trends: {
         weekly: {
           labels: weekLabels,
@@ -526,9 +570,6 @@ router.get('/api/transactions/summary', verifyAdmin, async (req, res) => {
         },
       },
       raw: {
-        totalSales,
-        totalExpenses,
-        netIncome,
         pendingPayments,
         pendingCount,
       },

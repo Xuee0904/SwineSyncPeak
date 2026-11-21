@@ -88,7 +88,7 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
     setForm(f => ({
       ...f,
       type: nextType,
-      // Deliveries arrive in whole containers; daily use is measured in the sub-unit (kg / ml / doses)
+      // Store purchases arrive in whole containers; daily use is measured in the sub-unit (kg / ml / doses)
       inputUnit: sackKg && nextType === "out" ? "kg" : "stock",
       quantity: "",
       reason: getDefaultReason(nextType, item?.category),
@@ -190,7 +190,7 @@ export default function StockAdjustmentModal({ item, onClose, onSaved, loggedInU
 
       // 2. Link financial expense if this is a Store Purchase restock
       let purchaseId = null;
-      if (form.type === "in" && (form.reason === "Store Purchase" || form.reason === "Purchase/Delivery" || form.reason === "Purchase")) {
+      if (form.type === "in" && (form.reason === "Store Purchase" || form.reason === "Purchase")) {
         try {
           const unitCost = Number(item.unit_cost) || 0;
           const totalExp = Number((unitCost * qty).toFixed(2));

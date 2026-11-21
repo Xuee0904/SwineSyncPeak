@@ -4,7 +4,7 @@ import { ArrowUpRight, ChevronRight, ChevronLeft, Syringe, ShieldCheck } from 'l
 import farmLogo from '../assets/Logo.jpg';
 import heroSwineOne from '../assets/IMG_9220.webp';
 import heroSwineTwo from '../assets/IMG_9194.webp';
-import heroSwineThree from '../assets/IMG_9217.webp';
+import heroSwineThree from '../assets/IMG_9216.webp';
 import heroSwineFour from '../assets/IMG_9227.webp';
 
 const HERO_PHOTOS = [
@@ -18,7 +18,7 @@ const HERO_PHOTOS = [
   },
   {
     src: heroSwineThree,
-    alt: 'Active young swine in the farm pen',
+    alt: 'Two healthy white pigs standing in the farm pen',
   },
   {
     src: heroSwineFour,
@@ -85,15 +85,15 @@ export default function Hero({ scrollToSection }) {
     if (e.pointerType === 'mouse') setIsPaused(false);
   };
   return (
-    <div className="animate-fade-in text-left pb-10" id="hero-section">
+    <div className="animate-fade-in text-left" id="hero-section">
       {/* Top Farm Announcement Ribbon */}
       <AnnouncementBanner />
 
       {/* Main Public Hero Card */}
       <section className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/90 text-white rounded-3xl p-5 sm:p-10 lg:p-14 shadow-2xl border border-slate-800">
-        <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+        <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
           {/* Left Column: Farm Identity, Copy & CTAs */}
-          <div className="lg:col-span-7 space-y-6">
+          <div className="lg:col-span-6 space-y-6">
             {/* Farm Origin Identity Card */}
             <div className="inline-flex items-center gap-3.5 sm:gap-4 p-2 sm:p-2.5 pr-4 sm:pr-5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 shadow-xl">
               <img
@@ -142,18 +142,18 @@ export default function Hero({ scrollToSection }) {
             </div>
           </div>
 
-          {/* Right Column: Featured Swine Gallery + Trust & Transparency Cards */}
-          <div className="lg:col-span-5 flex flex-col gap-3">
+          {/* Right Column: Featured Swine Gallery */}
+          <div className="lg:col-span-6">
             {/* Featured Farm Swine Gallery */}
             <div
-              className="space-y-2.5"
+              className="space-y-3"
               onPointerEnter={handlePointerEnter}
               onPointerLeave={handlePointerLeave}
               onFocus={() => setIsPaused(true)}
               onBlur={() => setIsPaused(false)}
             >
               <div
-                className="relative overflow-hidden rounded-2xl border border-white/15 shadow-2xl aspect-[16/10] bg-slate-900 touch-pan-y"
+                className="relative overflow-hidden rounded-2xl border border-white/15 shadow-2xl aspect-[4/3] bg-slate-900 touch-pan-y"
                 onTouchStart={handleTouchStart}
                 onTouchEnd={handleTouchEnd}
               >
@@ -170,7 +170,7 @@ export default function Hero({ scrollToSection }) {
                   type="button"
                   onClick={handlePrevPhoto}
                   aria-label="Previous farm photo"
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-slate-950/60 hover:bg-slate-950/85 border border-white/15 text-white flex items-center justify-center transition-colors cursor-pointer"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-slate-950/60 hover:bg-slate-950/85 border border-white/15 text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -178,15 +178,12 @@ export default function Hero({ scrollToSection }) {
                   type="button"
                   onClick={handleNextPhoto}
                   aria-label="Next farm photo"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-slate-950/60 hover:bg-slate-950/85 border border-white/15 text-white flex items-center justify-center transition-colors cursor-pointer"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-slate-950/60 hover:bg-slate-950/85 border border-white/15 text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
                   <ChevronRight className="w-4 h-4" aria-hidden="true" />
                 </button>
 
-                <div className="absolute bottom-3 left-3.5 right-3.5 flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-white tracking-wide">
-                    {activePhoto.caption}
-                  </span>
+                <div className="absolute bottom-3.5 left-4 right-4 flex items-center justify-end gap-2">
                   <span className="text-[11px] font-medium text-emerald-300 bg-slate-950/70 backdrop-blur-sm border border-white/10 px-2.5 py-0.5 rounded-full shrink-0">
                     {activePhotoIndex + 1} / {HERO_PHOTOS.length}
                   </span>
@@ -194,17 +191,17 @@ export default function Hero({ scrollToSection }) {
               </div>
 
               {/* Thumbnail Strip */}
-              <div className="grid grid-cols-4 gap-2" role="group" aria-label="Farm swine photos">
+              <div className="grid grid-cols-4 gap-2.5" role="group" aria-label="Farm swine photos">
                 {HERO_PHOTOS.map((photo, idx) => {
                   const isSelected = idx === activePhotoIndex;
                   return (
                     <button
-                      key={photo.caption}
+                      key={photo.alt}
                       type="button"
                       aria-pressed={isSelected}
-                      aria-label={`View photo ${idx + 1}: ${photo.caption}`}
+                      aria-label={`View photo ${idx + 1}: ${photo.alt}`}
                       onClick={() => setActivePhotoIndex(idx)}
-                      className={`relative overflow-hidden rounded-xl aspect-[16/10] border transition-all cursor-pointer ${isSelected
+                      className={`relative overflow-hidden rounded-xl aspect-[4/3] border transition-all cursor-pointer ${isSelected
                           ? 'border-emerald-400 ring-2 ring-emerald-400/40 opacity-100'
                           : 'border-white/15 opacity-65 hover:opacity-100'
                         }`}
@@ -221,31 +218,34 @@ export default function Hero({ scrollToSection }) {
                 })}
               </div>
             </div>
+          </div>
+        </div>
 
-            {/* Card 1: 100% Documented Vaccines */}
-            <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-white/10 flex items-start gap-3">
-              <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shrink-0">
-                <Syringe className="w-4 h-4" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-sm font-bold text-white tracking-wide">100% Documented Vaccines</h2>
-                <p className="text-xs text-slate-300 mt-0.5 leading-snug">
-                  Every animal carries a complete immunization passport and scheduled booster history.
-                </p>
-              </div>
+        {/* Bottom Row: Trust & Transparency Cards */}
+        <div className="relative grid grid-cols-1 md:grid-cols-2 gap-3.5 mt-8 pt-6 border-t border-white/10">
+          {/* Card 1: 100% Documented Vaccines */}
+          <div className="p-4 rounded-2xl bg-slate-900/70 border border-white/10 flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shrink-0">
+              <Syringe className="w-4 h-4" aria-hidden="true" />
             </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-white tracking-wide">100% Documented Vaccines</h2>
+              <p className="text-xs text-slate-300 mt-0.5 leading-snug">
+                Every animal carries a complete immunization passport and scheduled booster history.
+              </p>
+            </div>
+          </div>
 
-            {/* Card 2: Strict Biosecurity Standards */}
-            <div className="p-3.5 rounded-2xl bg-slate-900/70 border border-white/10 flex items-start gap-3">
-              <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shrink-0">
-                <ShieldCheck className="w-4 h-4" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-sm font-bold text-white tracking-wide">Strict Biosecurity &amp; Disinfection</h2>
-                <p className="text-xs text-slate-300 mt-0.5 leading-snug">
-                  Routine pen sanitization, mandatory 72-hour visitor rules, and vehicle tire spray stations.
-                </p>
-              </div>
+          {/* Card 2: Strict Biosecurity Standards */}
+          <div className="p-4 rounded-2xl bg-slate-900/70 border border-white/10 flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shrink-0">
+              <ShieldCheck className="w-4 h-4" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-white tracking-wide">Strict Biosecurity &amp; Disinfection</h2>
+              <p className="text-xs text-slate-300 mt-0.5 leading-snug">
+                Routine pen sanitization, mandatory 72-hour visitor rules, and vehicle tire spray stations.
+              </p>
             </div>
           </div>
         </div>

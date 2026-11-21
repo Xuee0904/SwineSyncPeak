@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { MapPin, Phone, ExternalLink, Clock, Copy, Check, MessageCircle } from 'lucide-react';
 import { FARM_PRIMARY_PHONE, FARM_SECONDARY_PHONE, FARM_MESSENGER_URL } from './contactInfo';
 
-export default function Contact() {
+export default function Contact({ onOpenTerms }) {
   const [copied, setCopied] = useState(false);
 
   const farmAddress = 'Purok 4, Barangay San Isidro, Lipa City, Batangas, Philippines';
@@ -20,7 +20,7 @@ export default function Contact() {
   };
 
   return (
-    <div className="space-y-8 pb-16 text-left animate-fade-in" id="contact-section">
+    <div className="space-y-8 text-left animate-fade-in" id="contact-section">
       {/* Header Title */}
       <section className="border-b border-slate-800 pb-5">
         <div className="flex items-center gap-3">
@@ -144,7 +144,6 @@ export default function Contact() {
                   <span className="text-lg font-black font-display text-white group-hover:text-emerald-300 transition-colors">
                     {secondaryPhone}
                   </span>
-                  <span className="text-xs text-slate-300 block mt-0.5">Farm office &amp; delivery coordination</span>
                 </div>
                 <div className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 group-hover:bg-emerald-700 group-hover:text-white group-hover:border-emerald-600 transition-all shrink-0">
                   <Phone className="w-4 h-4" aria-hidden="true" />
@@ -172,6 +171,18 @@ export default function Contact() {
           </div>
         </div>
       </section>
+
+      <p className="text-xs text-slate-300 text-center leading-relaxed">
+        Calls, SMS, Facebook, and Google Maps connect through your own phone, desktop, or device apps. By contacting us, you agree to our{' '}
+        <button
+          type="button"
+          onClick={onOpenTerms}
+          className="font-semibold text-emerald-400 hover:text-emerald-300 underline underline-offset-2 cursor-pointer"
+        >
+          Terms &amp; Conditions
+        </button>
+        .
+      </p>
     </div>
   );
 }

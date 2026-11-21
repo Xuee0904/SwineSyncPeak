@@ -26,9 +26,8 @@ function AnimatedFieldError({ id, message }) {
   return (
     <div
       aria-hidden={!show}
-      className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none ${
-        show ? 'grid-rows-[1fr] opacity-100 mt-1.5' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
-      }`}
+      className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none ${show ? 'grid-rows-[1fr] opacity-100 mt-1.5' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+        }`}
     >
       <div className="overflow-hidden min-h-0">
         {displayMessage && (
@@ -57,9 +56,8 @@ function AnimatedServerError({ message }) {
   return (
     <div
       aria-hidden={!show}
-      className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none ${
-        show ? 'grid-rows-[1fr] opacity-100 mt-4' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
-      }`}
+      className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out motion-reduce:transition-none ${show ? 'grid-rows-[1fr] opacity-100 mt-4' : 'grid-rows-[0fr] opacity-0 mt-0 pointer-events-none'
+        }`}
     >
       <div className="overflow-hidden min-h-0">
         {displayMessage && (
@@ -170,7 +168,7 @@ export default function LoginModal({
       const user = data.user;
 
       if (user?.user_metadata?.is_archived === true) {
-        await supabase.auth.signOut().catch(() => {});
+        await supabase.auth.signOut().catch(() => { });
         setServerError('This account has been archived. Contact an administrator.');
         return;
       }
@@ -203,7 +201,7 @@ export default function LoginModal({
     'w-full min-h-[44px] py-2.5 bg-white border rounded-xl text-slate-900 placeholder-slate-500',
     'text-base sm:text-sm focus:outline-none focus:ring-2 transition-colors',
   ].join(' ');
-  const inputOk = 'border-slate-500 focus:border-emerald-700 focus:ring-emerald-700/25';
+  const inputOk = 'border-[#8593a6] hover:border-slate-500 focus:border-emerald-700 focus:ring-emerald-700/20';
   const inputErr = 'border-rose-600 focus:border-rose-700 focus:ring-rose-600/25 bg-rose-50/40';
 
   return (
