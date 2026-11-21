@@ -12,6 +12,18 @@ const formatKg = (val) => {
   return `${num.toFixed(num % 1 === 0 ? 0 : 1)} kg`;
 };
 
+const getAvailableFeedKg = (item) => {
+  if (!item || item.current_stock_level == null) return null;
+  const stock = Number(item.current_stock_level) || 0;
+  const unitStr = String(item.unit_of_measure || '').trim();
+  const sackMatch = unitStr.match(/^(?:sacks?|bags?)(?:\s*\(\s*(\d+(?:\.\d+)?)\s*kg\s*\))?$/i);
+  if (sackMatch) {
+    const sackKg = sackMatch[1] ? Number(sackMatch[1]) : 25;
+    return Number((stock * sackKg).toFixed(1));
+  }
+  return Number(stock.toFixed(1));
+};
+
 export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, title = "Today's Feeding", isAdmin = true }) {
   const [data, setData] = useState({ batches: [], breeder_summary: null });
   const [feedItems, setFeedItems] = useState([]);
@@ -387,6 +399,17 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
       return;
     }
 
+    const stockItem = feedItems.find(f => f.item_id === effectiveItemId) || effectiveItem;
+    const availableKg = getAvailableFeedKg(stockItem);
+    if (availableKg !== null && kg > availableKg + 0.01) {
+      if (!silent) {
+        toast.error(
+          `Insufficient stock for "${stockItem?.item_name || 'feed'}": only ${formatKg(availableKg)} available (need ${formatKg(kg)}). Restock or edit today's amount.`
+        );
+      }
+      return;
+    }
+
     setSubmittingBatchId(batch.batch_id);
     try {
       const res = await fetch(`${API_BASE}/api/growth/logs`, {
@@ -455,6 +478,16 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
       return;
     }
 
+    const availableKg = getAvailableFeedKg(breederFeedItem);
+    if (availableKg !== null && kg > availableKg + 0.01) {
+      if (!silent) {
+        toast.error(
+          `Insufficient stock for "${breederFeedItem?.item_name || 'breeder feed'}": only ${formatKg(availableKg)} available (need ${formatKg(kg)}). Restock or edit today's amount.`
+        );
+      }
+      return;
+    }
+
     setSubmittingBreeder(true);
     try {
       const res = await fetch(`${API_BASE}/api/growth/log-breeder-feed`, {
@@ -494,6 +527,10 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
     setBulkFeeding(true);
     try {
       let fedCount = 0;
+      let actualDeductedKg = 0;
+      let breederSuccess = false;
+      const skippedErrors = [];
+
       for (const b of unfedQueue) {
         const feed = b.current_feed;
         const effectiveItem = getBatchFeedItem(b);
@@ -537,6 +574,10 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
               ),
             }));
             fedCount++;
+            actualDeductedKg += kg;
+          } else {
+            const errBody = await res.json().catch(() => ({}));
+            skippedErrors.push(errBody.error || `${b.batch_tag}: insufficient stock.`);
           }
           setSubmittingBatchId(null);
         }
@@ -558,6 +599,8 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
         });
 
         if (res.ok) {
+          breederSuccess = true;
+          actualDeductedKg += bKg;
           setData(prev => ({
             ...prev,
             breeder_summary: prev.breeder_summary
@@ -569,19 +612,32 @@ export default function DailyFeedingPanel({ variant = 'dashboard', onUpdated, ti
                 }
               : null,
           }));
+        } else {
+          const errBody = await res.json().catch(() => ({}));
+          skippedErrors.push(errBody.error || 'Breeder Herd: insufficient stock.');
         }
         setSubmittingBreeder(false);
       }
 
-      toast.success(`All remaining pens fed (${totalRemainingKg.toFixed(1)} kg deducted).`);
       await fetchFeedingData();
       window.dispatchEvent(new CustomEvent('swinesync_feeding_updated'));
       if (onUpdated) onUpdated();
 
-      // Graceful collapse pause: let user see all pens fully green for 1.2s before auto-collapsing
-      setTimeout(() => {
-        setIsCollapsed(true);
-      }, 1200);
+      if (skippedErrors.length > 0) {
+        if (fedCount > 0 || breederSuccess) {
+          toast.error(
+            `Logged ${actualDeductedKg.toFixed(1)} kg, but skipped ${skippedErrors.length} due to insufficient stock.`
+          );
+        } else {
+          toast.error(skippedErrors[0]);
+        }
+      } else {
+        toast.success(`All remaining pens fed (${actualDeductedKg.toFixed(1)} kg deducted).`);
+        // Graceful collapse pause: let user see all pens fully green for 1.2s before auto-collapsing
+        setTimeout(() => {
+          setIsCollapsed(true);
+        }, 1200);
+      }
     } catch (err) {
       toast.error(err.message || 'Error executing bulk feed.');
     } finally {

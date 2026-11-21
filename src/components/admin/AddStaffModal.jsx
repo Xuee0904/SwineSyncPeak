@@ -1,12 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, AlertCircle, Loader2, Lock, Eye, EyeOff, User, Mail, UserPlus, Shield, Bookmark, Check } from 'lucide-react';
+import { X, AlertCircle, Loader2, Lock, Eye, EyeOff, User, Mail, UserPlus, Info, Check } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 import useModalAnimation from '../../hooks/useModalAnimation';
-import useFormDraft from '../../hooks/useFormDraft';
-import DraftBanner from '../DraftBanner';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const INITIAL_STAFF_FORM = { name: '', email: '', password: '', role: 'Staff' };
 
 function validate(name, email, password) {
   const errs = {};
@@ -27,18 +26,8 @@ function validate(name, email, password) {
 }
 
 export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUrl, loggedInUser }) {
-  const {
-    form: newStaff,
-    setForm: setNewStaff,
-    resetForm: resetNewStaff,
-    hasDraft,
-    draftInfo,
-    saveDraft,
-    restoreDraft,
-    clearDraft,
-    checkDraft,
-    isOffline,
-  } = useFormDraft('swinesync_draft_add_staff', { name: '', email: '', password: '', role: 'Staff' });
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  const [newStaff, setNewStaff] = useState(INITIAL_STAFF_FORM);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState(null);
   const [createdStaff, setCreatedStaff] = useState(null);
@@ -46,30 +35,21 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
   const [showPassword, setShowPassword] = useState(false);
   const [touched, setTouched] = useState({ name: false, email: false, password: false });
 
-  const { shouldRender, isClosing, requestClose, overlayClassName, panelClassName } =
-    useModalAnimation(isOpen, onClose);
-
-  useEffect(() => {
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
     if (isOpen) {
-      Promise.resolve().then(() => {
-        checkDraft();
-        resetNewStaff({ name: '', email: '', password: '', role: 'Staff' });
-        setTouched({ name: false, email: false, password: false });
-        setFormError(null);
-        setShowPassword(false);
-        setShowSuccess(false);
-      });
+      setNewStaff(INITIAL_STAFF_FORM);
+      setTouched({ name: false, email: false, password: false });
+      setFormError(null);
+      setCreatedStaff(null);
+      setShowPassword(false);
+      setShowSuccess(false);
+      setLoading(false);
     }
-  }, [isOpen, checkDraft, resetNewStaff]);
+  }
 
-  const handleRestoreDraft = () => {
-    restoreDraft();
-  };
-
-  const handleDiscardDraft = () => {
-    clearDraft();
-    resetNewStaff({ name: '', email: '', password: '', role: 'Staff' });
-  };
+  const { shouldRender, isClosing, requestClose, panelRef, overlayClassName, panelClassName } =
+    useModalAnimation(isOpen, onClose);
 
   if (!shouldRender) return null;
 
@@ -98,7 +78,8 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
 
       const payload = {
         ...newStaff,
-        creator: creatorString
+        role: 'Staff',
+        creator: creatorString,
       };
 
       const { data: { session } } = await supabase.auth.getSession();
@@ -108,9 +89,9 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -118,15 +99,11 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
         throw new Error(body.error || 'Failed to register account.');
       }
 
-      clearDraft();
       setCreatedStaff(newStaff);
-      resetNewStaff({ name: '', email: '', password: '', role: 'Staff' });
+      setNewStaff(INITIAL_STAFF_FORM);
       setTouched({ name: false, email: false, password: false });
       setShowSuccess(true);
     } catch (err) {
-      if (isOffline || err.message?.toLowerCase().includes('fetch') || err.message?.toLowerCase().includes('network')) {
-        saveDraft(newStaff);
-      }
       setFormError(err.message);
     } finally {
       setLoading(false);
@@ -140,133 +117,155 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
     requestClose();
   };
 
-  const inputBase = "w-full bg-white border rounded-xl py-2.5 outline-none transition-all text-xs font-medium";
-  const inputOk = "border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-400";
-  const inputErr = "border-rose-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/10 text-rose-955 placeholder-rose-455 bg-rose-50/20";
+  const inputBase =
+    'w-full min-h-[44px] bg-white border rounded-xl py-2.5 outline-none transition-all motion-reduce:transition-none text-xs font-medium';
+  const inputOk =
+    'border-slate-200 hover:border-slate-300 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 text-slate-900 placeholder-slate-500';
+  const inputErr =
+    'border-rose-500 focus:border-rose-600 focus:ring-2 focus:ring-rose-500/15 text-slate-900 placeholder-slate-500 bg-rose-50/30';
+
+  const nameHasError = Boolean(touched.name && fieldErrors.name);
+  const emailHasError = Boolean(touched.email && fieldErrors.email);
+  const passwordHasError = Boolean(touched.password && fieldErrors.password);
 
   return createPortal(
     <div
       className={`fixed inset-0 lg:left-64 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm ${overlayClassName} ${isClosing ? 'pointer-events-none' : ''}`}
       role="dialog"
       aria-modal="true"
+      aria-labelledby="add-staff-modal-title"
       onClick={(e) => e.target === e.currentTarget && requestClose()}
     >
-      <style>{`
-        @keyframes modal-panel-in {
-          from { opacity: 0; transform: translateY(16px) scale(0.97); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes modal-panel-out {
-          from { opacity: 1; transform: translateY(0) scale(1); }
-          to   { opacity: 0; transform: translateY(16px) scale(0.97); }
-        }
-        .animate-modal-in  { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-        .animate-modal-out { animation: modal-panel-out 220ms cubic-bezier(0.4, 0, 1, 1) both; }
-      `}</style>
-
       <div
+        ref={panelRef}
         style={{ willChange: 'transform, opacity, max-width' }}
         className={[
-          'w-full bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden relative text-left transition-[max-width] duration-300 ease-in-out',
+          'w-full max-h-[92dvh] overflow-y-auto bg-white rounded-3xl shadow-2xl border border-slate-100 relative text-left transition-[max-width] duration-300 ease-in-out motion-reduce:transition-none',
           showSuccess ? 'max-w-sm' : 'max-w-md',
           panelClassName,
         ].join(' ')}
       >
         {!showSuccess ? (
-          <div className="animate-in fade-in duration-300">
-            <div className="px-8 pt-8 pb-4 flex items-center justify-between border-b border-slate-50">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-100/60">
-                  <UserPlus className="w-5 h-5" />
+          <div>
+            <div className="px-6 sm:px-8 pt-7 sm:pt-8 pb-4 flex items-center justify-between gap-3 border-b border-slate-50">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-100/60 shrink-0">
+                  <UserPlus className="w-5 h-5" aria-hidden="true" />
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 leading-tight">Add Staff Account</h3>
+                <div className="min-w-0">
+                  <h3 id="add-staff-modal-title" className="text-lg font-bold text-slate-900 leading-tight">
+                    Add Staff Account
+                  </h3>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => requestClose()}
-                className="p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
-                aria-label="Close"
+                className="w-11 h-11 -mr-2.5 flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 shrink-0"
+                aria-label="Close modal"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-8 pt-6 space-y-4" noValidate>
-              <DraftBanner
-                hasDraft={hasDraft}
-                draftInfo={draftInfo}
-                onRestore={handleRestoreDraft}
-                onDiscard={handleDiscardDraft}
-                isOffline={isOffline}
-              />
-              <div className={`overflow-hidden transition-all duration-300 ease-in-out ${formError ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}>
-                <div className="p-3 text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-2.5">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-                  <span>{formError}</span>
-                </div>
+            <form onSubmit={handleSubmit} className="px-6 sm:px-8 pt-6 pb-8 space-y-4" noValidate>
+              <div
+                aria-hidden={!formError}
+                className={`overflow-hidden transition-all duration-300 ease-in-out motion-reduce:transition-none ${formError ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'}`}
+              >
+                {formError && (
+                  <div
+                    role="alert"
+                    className="p-3 text-xs text-rose-800 bg-rose-50 border border-rose-300 rounded-xl flex items-center gap-2.5 font-medium"
+                  >
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-700" aria-hidden="true" />
+                    <span>{formError}</span>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Full Name</label>
+                <label htmlFor="add-staff-name" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Full Name
+                </label>
                 <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
-                    <User className="w-3.5 h-3.5" />
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 pointer-events-none">
+                    <User className="w-3.5 h-3.5" aria-hidden="true" />
                   </span>
                   <input
+                    id="add-staff-name"
                     type="text"
-                    placeholder="e.g. Sarah Monroe"
+                    placeholder="Enter full name"
                     value={newStaff.name}
                     onChange={(e) => {
                       setNewStaff({ ...newStaff, name: e.target.value });
                       setFormError(null);
                     }}
                     onBlur={() => touch('name')}
-                    className={`${inputBase} pl-10 pr-4 ${touched.name && fieldErrors.name ? inputErr : inputOk}`}
+                    aria-invalid={nameHasError}
+                    aria-describedby={nameHasError ? 'add-staff-name-error' : undefined}
+                    className={`${inputBase} pl-10 pr-4 ${nameHasError ? inputErr : inputOk}`}
                   />
                 </div>
-                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${touched.name && fieldErrors.name ? 'max-h-10 opacity-100 mt-1' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}>
-                  <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium">
-                    <AlertCircle className="w-3 h-3 shrink-0" />
-                    {fieldErrors.name}
-                  </p>
+                <div
+                  aria-hidden={!nameHasError}
+                  className={`overflow-hidden transition-all duration-300 ease-in-out motion-reduce:transition-none ${nameHasError ? 'max-h-12 opacity-100 mt-1.5' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}
+                >
+                  {nameHasError && (
+                    <p id="add-staff-name-error" role="alert" className="flex items-center gap-1.5 text-xs text-rose-700 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>{fieldErrors.name}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Email Address</label>
+                <label htmlFor="add-staff-email" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Email Address
+                </label>
                 <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
-                    <Mail className="w-3.5 h-3.5" />
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 pointer-events-none">
+                    <Mail className="w-3.5 h-3.5" aria-hidden="true" />
                   </span>
                   <input
+                    id="add-staff-email"
                     type="email"
-                    placeholder="sarah.m@swinesync.com"
+                    placeholder="email@example.com"
                     value={newStaff.email}
                     onChange={(e) => {
                       setNewStaff({ ...newStaff, email: e.target.value });
                       setFormError(null);
                     }}
                     onBlur={() => touch('email')}
-                    className={`${inputBase} pl-10 pr-4 ${touched.email && fieldErrors.email ? inputErr : inputOk}`}
+                    aria-invalid={emailHasError}
+                    aria-describedby={emailHasError ? 'add-staff-email-error' : undefined}
+                    className={`${inputBase} pl-10 pr-4 ${emailHasError ? inputErr : inputOk}`}
                   />
                 </div>
-                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${touched.email && fieldErrors.email ? 'max-h-10 opacity-100 mt-1' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}>
-                  <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium">
-                    <AlertCircle className="w-3 h-3 shrink-0" />
-                    {fieldErrors.email}
-                  </p>
+                <div
+                  aria-hidden={!emailHasError}
+                  className={`overflow-hidden transition-all duration-300 ease-in-out motion-reduce:transition-none ${emailHasError ? 'max-h-12 opacity-100 mt-1.5' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}
+                >
+                  {emailHasError && (
+                    <p id="add-staff-email-error" role="alert" className="flex items-center gap-1.5 text-xs text-rose-700 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>{fieldErrors.email}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Temporary Password</label>
+                <label htmlFor="add-staff-password" className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Temporary Password
+                </label>
                 <div className="relative">
-                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
-                    <Lock className="w-3.5 h-3.5" />
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500 pointer-events-none">
+                    <Lock className="w-3.5 h-3.5" aria-hidden="true" />
                   </span>
                   <input
+                    id="add-staff-password"
                     type={showPassword ? 'text' : 'password'}
                     placeholder="Minimum 8 characters"
                     value={newStaff.password}
@@ -275,102 +274,70 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
                       setFormError(null);
                     }}
                     onBlur={() => touch('password')}
-                    className={`${inputBase} pl-10 pr-10 ${touched.password && fieldErrors.password ? inputErr : inputOk}`}
+                    aria-invalid={passwordHasError}
+                    aria-describedby={passwordHasError ? 'add-staff-password-error' : undefined}
+                    className={`${inputBase} pl-10 pr-12 ${passwordHasError ? inputErr : inputOk}`}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                    tabIndex={-1}
+                    className="absolute inset-y-0 right-0 w-11 min-h-[44px] flex items-center justify-center rounded-r-xl text-slate-500 hover:text-slate-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                    aria-label={showPassword ? 'Hide temporary password' : 'Show temporary password'}
+                    aria-pressed={showPassword}
                   >
-                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5" aria-hidden="true" /> : <Eye className="w-3.5 h-3.5" aria-hidden="true" />}
                   </button>
                 </div>
-                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${touched.password && fieldErrors.password ? 'max-h-10 opacity-100 mt-1' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}>
-                  <p className="flex items-center gap-1.5 text-[11px] text-rose-600 font-medium">
-                    <AlertCircle className="w-3 h-3 shrink-0" />
-                    {fieldErrors.password}
-                  </p>
-                </div>
-                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${!(touched.password && fieldErrors.password) ? 'max-h-10 opacity-100 mt-1' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">System Access Role</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    {
-                      value: 'Staff',
-                      icon: <User className="w-4 h-4" />,
-                      title: 'Staff',
-                    },
-                    {
-                      value: 'Admin',
-                      icon: <Shield className="w-4 h-4" />,
-                      title: 'Admin',
-                    },
-                  ].map((opt) => {
-                    const selected = newStaff.role === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setNewStaff({ ...newStaff, role: opt.value })}
-                        className={[
-                          'flex items-start gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer',
-                          selected
-                            ? 'border-emerald-500 bg-emerald-50/70 ring-2 ring-emerald-500/20 shadow-sm'
-                            : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60',
-                        ].join(' ')}
-                      >
-                        {/* Radio circle */}
-                        <span className={[
-                          'mt-0.5 w-4 h-4 shrink-0 rounded-full border-2 flex items-center justify-center transition-all',
-                          selected ? 'border-emerald-500 bg-emerald-500' : 'border-slate-300 bg-white',
-                        ].join(' ')}>
-                          {selected && <span className="w-1.5 h-1.5 rounded-full bg-white block" />}
-                        </span>
-                        {/* Icon + text */}
-                        <div>
-                          <span className={`flex items-center gap-1.5 text-xs font-bold ${selected ? 'text-emerald-800' : 'text-slate-700'}`}>
-                            <span className={selected ? 'text-emerald-600' : 'text-slate-400'}>{opt.icon}</span>
-                            {opt.title}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
+                <div
+                  aria-hidden={!passwordHasError}
+                  className={`overflow-hidden transition-all duration-300 ease-in-out motion-reduce:transition-none ${passwordHasError ? 'max-h-12 opacity-100 mt-1.5' : 'max-h-0 opacity-0 mt-0 pointer-events-none'}`}
+                >
+                  {passwordHasError && (
+                    <p id="add-staff-password-error" role="alert" className="flex items-center gap-1.5 text-xs text-rose-700 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>{fieldErrors.password}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
-              <div className="pt-4 flex gap-2">
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  System Access Role
+                </span>
+                <div className="flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-xl border border-emerald-200/80 bg-emerald-50/60">
+                  <span className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                    <User className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
+                    <span>Staff</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                    Default Role
+                  </span>
+                </div>
+                <p className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600 leading-relaxed">
+                  <Info className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span>Please contact super admin for adding of admin role account.</span>
+                </p>
+              </div>
+
+              <div className="pt-4 flex gap-3">
                 <button
                   type="button"
                   onClick={() => requestClose()}
-                  className="flex-1 py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95"
+                  className="flex-1 min-h-[44px] py-3 border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-1"
                 >
                   Cancel
                 </button>
                 <button
-                  type="button"
-                  onClick={() => {
-                    saveDraft(newStaff);
-                    requestClose();
-                  }}
-                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-                  title="Save current inputs as a draft and close"
-                >
-                  <Bookmark size={15} className="text-emerald-600" />
-                  Save Draft
-                </button>
-                <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+                  className="flex-1 min-h-[44px] py-3 bg-[#00875a] hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-1"
                 >
                   {loading ? (
-                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating Account…</>
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                      <span>Creating Account…</span>
+                    </>
                   ) : (
                     'Create Account'
                   )}
@@ -379,25 +346,28 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
             </form>
           </div>
         ) : (
-          <div className="p-8 text-center space-y-5 animate-in fade-in duration-300">
+          <div className="p-6 sm:p-8 text-center space-y-5">
             <button
+              type="button"
               onClick={() => handleSuccessClose()}
-              className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer"
-              aria-label="Close"
+              className="absolute top-4 right-4 w-11 h-11 flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+              aria-label="Close modal"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
 
             <div className="mx-auto w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shadow-sm">
-              <Check className="w-7 h-7 text-emerald-600" strokeWidth={3} />
+              <Check className="w-7 h-7 text-emerald-600" strokeWidth={3} aria-hidden="true" />
             </div>
 
             <div>
-              <h3 className="text-lg font-bold text-slate-900">Account Created</h3>
-              <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+              <h3 id="add-staff-modal-title" className="text-lg font-bold text-slate-900">
+                Account Created
+              </h3>
+              <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
                 {createdStaff?.name ? (
                   <>
-                    <span className="font-bold text-slate-800">{createdStaff.name}</span> can now sign into the portal.
+                    <span className="font-bold text-slate-900">{createdStaff.name}</span> can now sign into the portal.
                   </>
                 ) : (
                   'The new staff account is ready to sign in.'
@@ -408,13 +378,13 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
             {createdStaff?.email && (
               <div className="bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-left space-y-2">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Email</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Email</span>
                   <span className="text-xs font-bold text-slate-800 truncate">{createdStaff.email}</span>
                 </div>
                 {createdStaff?.role && (
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Role</span>
-                    <span className="text-xs font-bold text-emerald-600">{createdStaff.role}</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Role</span>
+                    <span className="text-xs font-bold text-emerald-700">{createdStaff.role}</span>
                   </div>
                 )}
               </div>
@@ -423,7 +393,7 @@ export default function AddStaffModal({ isOpen, onClose, onAddSuccess, apiBaseUr
             <button
               type="button"
               onClick={() => handleSuccessClose()}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer active:scale-95"
+              className="w-full min-h-[44px] py-3 bg-[#00875a] hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-600/20 transition-all cursor-pointer active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-1"
             >
               Done
             </button>

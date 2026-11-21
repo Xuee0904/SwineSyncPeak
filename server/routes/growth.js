@@ -1139,6 +1139,27 @@ router.get('/api/growth/active-feed-batches', verifyAuth, async (req, res) => {
   }
 });
 
+// Shared helper: convert feed kg to container units and verify sufficient stock
+function evaluateFeedStockDeduction(invItem, rawKg, explicitDeduction = null) {
+  const unitStr = String(invItem?.unit_of_measure || '').trim();
+  const sackMatch = unitStr.match(/^(?:sacks?|bags?)(?:\s*\(\s*(\d+(?:\.\d+)?)\s*kg\s*\))?$/i);
+  const sackKg = sackMatch ? (sackMatch[1] ? Number(sackMatch[1]) : 25) : null;
+  const deductionQty = explicitDeduction > 0
+    ? explicitDeduction
+    : (sackKg ? Number((rawKg / sackKg).toFixed(4)) : rawKg);
+  const availableStock = Number(invItem?.current_stock_level) || 0;
+  const availableKg = sackKg
+    ? Number((availableStock * sackKg).toFixed(1))
+    : Number(availableStock.toFixed(1));
+
+  return {
+    deductionQty,
+    availableStock,
+    availableKg,
+    isInsufficient: deductionQty > availableStock + 1e-6,
+  };
+}
+
 // POST /api/growth/log-breeder-feed
 // Log feeding for the breeding herd (sows & boars) and deduct from inventory
 router.post('/api/growth/log-breeder-feed', verifyAuth, async (req, res) => {
@@ -1154,7 +1175,7 @@ router.post('/api/growth/log-breeder-feed', verifyAuth, async (req, res) => {
       return res.status(400).json({ error: 'Valid feed amount in kg is required.' });
     }
 
-    // 1. Fetch inventory item to check unit of measure
+    // 1. Fetch inventory item to check unit of measure & available stock
     const { data: invItem, error: invErr } = await db
       .from('inventory_items')
       .select('item_id, item_name, unit_of_measure, current_stock_level')
@@ -1165,13 +1186,12 @@ router.post('/api/growth/log-breeder-feed', verifyAuth, async (req, res) => {
       return res.status(404).json({ error: 'Inventory feed item not found.' });
     }
 
-    // 2. Convert kg to container units (sacks/bags) if applicable
-    const unitStr = String(invItem.unit_of_measure || '').trim();
-    const sackMatch = unitStr.match(/^(?:sacks?|bags?)(?:\s*\(\s*(\d+(?:\.\d+)?)\s*kg\s*\))?$/i);
-    let deductionQty = rawKg;
-    if (sackMatch) {
-      const sackKg = sackMatch[1] ? Number(sackMatch[1]) : 25;
-      deductionQty = Number((rawKg / sackKg).toFixed(4));
+    // 2. Convert kg to container units and enforce stock guardrail
+    const { deductionQty, availableKg, isInsufficient } = evaluateFeedStockDeduction(invItem, rawKg);
+    if (isInsufficient) {
+      return res.status(400).json({
+        error: `Insufficient stock for "${invItem.item_name}": only ${availableKg} kg available (requested ${rawKg} kg). Restock or adjust today's amount.`,
+      });
     }
 
     // 3. Deduct stock and record audit transaction
@@ -1449,6 +1469,39 @@ router.post('/api/growth/logs', verifyAuth, async (req, res) => {
     }
 
     const actorName = req.isAdmin ? (performed_by || req.userName || 'System') : req.userName;
+
+    // Enforce feed stock guardrail before inserting any batch log or completing tasks
+    if (normalizedType === 'FEED') {
+      const rawKg = parseFloat(amount_given);
+      const rawDeducted = quantity_deducted ? parseFloat(quantity_deducted) : null;
+      let checkItemId = item_id || null;
+      if (!checkItemId && guideline_id) {
+        const { data: gRow } = await db
+          .from('growth_program_guidelines')
+          .select('item_id')
+          .eq('guideline_id', guideline_id)
+          .single();
+        if (gRow?.item_id) checkItemId = gRow.item_id;
+      }
+
+      if (checkItemId && ((rawDeducted && rawDeducted > 0) || (rawKg && rawKg > 0))) {
+        const { data: invItem } = await db
+          .from('inventory_items')
+          .select('item_id, item_name, unit_of_measure, current_stock_level')
+          .eq('item_id', checkItemId)
+          .single();
+
+        if (invItem) {
+          const { deductionQty, availableKg, isInsufficient } = evaluateFeedStockDeduction(invItem, rawKg, rawDeducted);
+          if (isInsufficient) {
+            const requestedKg = !isNaN(rawKg) && rawKg > 0 ? rawKg : deductionQty;
+            return res.status(400).json({
+              error: `Insufficient stock for "${invItem.item_name}": only ${availableKg} kg available (requested ${requestedKg} kg). Restock or adjust today's amount.`,
+            });
+          }
+        }
+      }
+    }
 
     let logResult = null;
     try {

@@ -59,13 +59,20 @@ router.post('/api/admin/users', verifyAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Missing required registration parameters (email, password, name).' });
     }
 
+    if (role && String(role).trim().toLowerCase() !== 'staff') {
+      return res.status(403).json({
+        error: 'Please contact super admin for adding of admin role account.',
+      });
+    }
+    const assignedRole = 'Staff';
+
     const { data: { user }, error } = await supabaseAdmin.auth.admin.createUser({
       email: email.trim(),
       password: password,
       email_confirm: true,
       user_metadata: {
         full_name: name,
-        role: role || 'Staff',
+        role: assignedRole,
         must_change_password: true,
         is_archived: false // Default to active on creation
       }
@@ -95,7 +102,7 @@ router.post('/api/admin/users', verifyAdmin, async (req, res) => {
         user_initials: initials || 'AD',
         user_bg_color: 'bg-emerald-100 text-emerald-700',
         event_title: 'Account Created',
-        event_desc: `Registered new account: ${name} (${email}) as ${role}.`,
+        event_desc: `Registered new account: ${name} (${email}) as ${assignedRole}.`,
         status: 'SUCCESS'
       });
 
