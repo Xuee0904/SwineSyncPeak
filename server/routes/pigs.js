@@ -1822,6 +1822,20 @@ router.post('/api/pigs/batch/:batchId/promote', verifyAdmin, async (req, res) =>
   }
 });
 
+function getUnarchiveLockReason(archiveReasoning) {
+  const r = (archiveReasoning || '').toLowerCase();
+  if (r.includes('promot')) {
+    return 'Cannot restore this record: it was promoted to the breeding herd and is already active there. Restoring would create duplicate records.';
+  }
+  if (r.includes('sold')) {
+    return 'Cannot restore a sold record: it is linked to a finalized sale in Transaction Records.';
+  }
+  if (r.includes('mortal') || r.includes('died') || r.includes('death') || r.includes('loss') || r.includes('deceased')) {
+    return 'Cannot restore a mortality record: deceased swine and total batch losses are permanent lifecycle records.';
+  }
+  return null;
+}
+
 // PATCH /api/pigs/:id/unarchive – unarchive a pig or piglet batch
 router.patch('/api/pigs/:id/unarchive', verifyAdmin, async (req, res) => {
   try {
@@ -1834,11 +1848,29 @@ router.patch('/api/pigs/:id/unarchive', verifyAdmin, async (req, res) => {
     // 1. Check if it's a single pig
     const { data: pigCheck } = await supabaseAdmin
       .from('pigs')
-      .select('pig_id, pig_tag, pen_id')
+      .select('pig_id, pig_tag, pen_id, archive_reasoning')
       .eq('pig_id', id)
       .maybeSingle();
 
     if (pigCheck) {
+      const pigLockError = getUnarchiveLockReason(pigCheck.archive_reasoning);
+      if (pigLockError) {
+        return res.status(400).json({ error: pigLockError });
+      }
+
+      try {
+        const { data: linkedSale } = await supabaseAdmin
+          .from('sold_swine')
+          .select('sold_swine_id')
+          .eq('pig_id', id)
+          .limit(1);
+        if (linkedSale && linkedSale.length > 0) {
+          return res.status(400).json({
+            error: 'Cannot restore this swine: it is linked to a finalized sale in Transaction Records.'
+          });
+        }
+      } catch (_) {}
+
       if (pigCheck.pen_id) {
         const { data: pen } = await supabaseAdmin.from('pens').select('pen_code, max_capacity, pen_type').eq('pen_id', pigCheck.pen_id).single();
         if (pen) {
@@ -1893,10 +1925,24 @@ router.patch('/api/pigs/:id/unarchive', verifyAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Record not found.' });
     }
 
-    if (batchCheck.archive_reasoning && batchCheck.archive_reasoning.toLowerCase().includes('promot')) {
-      return res.status(400).json({
-        error: 'Cannot restore this batch: its piglet was promoted to the breeding herd and is now an active sow/boar. Restoring would create duplicate records.'
-      });
+    const batchLockError = getUnarchiveLockReason(batchCheck.archive_reasoning);
+    if (batchLockError) {
+      return res.status(400).json({ error: batchLockError });
+    }
+
+    if (!batchCheck.current_count || batchCheck.current_count <= 0) {
+      try {
+        const { data: linkedBatchSale } = await supabaseAdmin
+          .from('sold_swine')
+          .select('sold_swine_id')
+          .eq('batch_id', id)
+          .limit(1);
+        if (linkedBatchSale && linkedBatchSale.length > 0) {
+          return res.status(400).json({
+            error: 'Cannot restore this batch: it was liquidated through a sale in Transaction Records.'
+          });
+        }
+      } catch (_) {}
     }
 
     if (batchCheck.pen_id) {

@@ -27,7 +27,7 @@ function getArchiveStatus(reason) {
   if (r.includes('promot')) return 'Promoted';
   if (r.includes('sold')) return 'Sold';
   if (r.includes('cull')) return 'Culled';
-  if (r.includes('mortal') || r.includes('died') || r.includes('death') || r.includes('loss')) return 'Mortality';
+  if (r.includes('mortal') || r.includes('died') || r.includes('death') || r.includes('loss') || r.includes('deceased')) return 'Mortality';
   if (r.includes('transfer')) return 'Transferred';
   return 'Archived';
 }
@@ -982,14 +982,34 @@ export default function SwineManagement({ loggedInUser = 'Admin', activeSubTab =
                               </>
                             ) : (
                               (() => {
-                                const isPromoted = (pig.archive_reasoning || '').toLowerCase().includes('promot');
-                                if (isPromoted) {
+                                const archiveStatus = getArchiveStatus(pig.archive_reasoning);
+                                if (archiveStatus === 'Promoted') {
                                   return (
                                     <span
-                                      className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-slate-400 bg-slate-100/80 border border-slate-200/60 rounded-md cursor-default select-none"
+                                      className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-slate-500 bg-slate-100/80 border border-slate-200/60 rounded-md cursor-default select-none"
                                       title="This batch was promoted to breeding stock and cannot be restored."
                                     >
                                       In Breeding Herd
+                                    </span>
+                                  );
+                                }
+                                if (archiveStatus === 'Sold') {
+                                  return (
+                                    <span
+                                      className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-slate-500 bg-slate-100/80 border border-slate-200/60 rounded-md cursor-default select-none"
+                                      title="Sold records are linked to Transaction Records and cannot be restored."
+                                    >
+                                      Finalized Sale
+                                    </span>
+                                  );
+                                }
+                                if (archiveStatus === 'Mortality') {
+                                  return (
+                                    <span
+                                      className="inline-flex items-center px-2 py-0.5 text-[11px] font-semibold text-slate-500 bg-slate-100/80 border border-slate-200/60 rounded-md cursor-default select-none"
+                                      title="Mortality records are permanent and cannot be restored."
+                                    >
+                                      Mortality Loss
                                     </span>
                                   );
                                 }

@@ -1311,12 +1311,24 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                 </button>
 
                 <div className="flex items-center gap-2.5">
-                  {isArchived ? (
-                    (data.archive_reasoning || '').toLowerCase().includes('promot') ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100/80 border border-slate-200 text-slate-500 text-xs font-semibold select-none">
-                        Promoted to Breeding Herd
-                      </span>
-                    ) : onUnarchive ? (
+                  {isArchived ? (() => {
+                    const r = (data.archive_reasoning || '').toLowerCase();
+                    const lockLabel = r.includes('promot')
+                      ? 'Promoted to Breeding Herd'
+                      : r.includes('sold')
+                        ? 'Finalized Sale'
+                        : (r.includes('mortal') || r.includes('died') || r.includes('death') || r.includes('loss') || r.includes('deceased'))
+                          ? 'Mortality Loss'
+                          : null;
+
+                    if (lockLabel) {
+                      return (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100/80 border border-slate-200 text-slate-600 text-xs font-semibold select-none">
+                          {lockLabel}
+                        </span>
+                      );
+                    }
+                    return onUnarchive ? (
                       <button
                         type="button"
                         onClick={() => onUnarchive(data)}
@@ -1325,8 +1337,8 @@ export default function ViewPigModal({ isOpen, onClose, onSave, onArchive, onUna
                         <RotateCcw className="w-3.5 h-3.5" />
                         <span>Unarchive Record</span>
                       </button>
-                    ) : null
-                  ) : (
+                    ) : null;
+                  })() : (
                     <>
                       {isBatch && onPromote && (
                         <button
