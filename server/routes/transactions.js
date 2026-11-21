@@ -86,14 +86,18 @@ router.get('/api/transactions/options', verifyAdmin, async (req, res) => {
       let ageDays = 0;
       if (b.date_of_birth) {
         const dob = new Date(b.date_of_birth);
-        ageDays = Math.max(0, Math.floor((today - dob) / (1000 * 60 * 60 * 24)));
+        if (!isNaN(dob.getTime())) {
+          ageDays = Math.max(0, Math.floor((today - dob) / (1000 * 60 * 60 * 24)));
+        }
       }
-      const isMarketWeaner = ageDays >= 28 && ageDays < 90;
-      const isMarketFattener = ageDays >= 150;
+      const st = (b.status || '').trim().toLowerCase();
+      const isMarketFattener = ageDays >= 150 || st === 'fattener' || st === 'finisher';
+      const isMarketWeaner = !isMarketFattener && ((ageDays >= 28 && ageDays < 90) || st === 'weaner' || st === 'weaned');
       return {
         ...b,
         ageDays,
         marketType: isMarketFattener ? 'Finisher' : isMarketWeaner ? 'Weaner' : 'Growing',
+        defaultPricingMode: isMarketWeaner ? 'per_head' : 'per_kg',
         label: `${b.batch_tag} (${b.current_count} heads • ${b.pens?.pen_code ? 'Pen ' + b.pens.pen_code : 'No pen'}${isMarketFattener ? ' • Ready Finisher' : isMarketWeaner ? ' • Weaner' : ' • Healthy'})`,
       };
     });
@@ -242,6 +246,8 @@ router.get('/api/transactions', verifyAdmin, async (req, res) => {
         price: Number(ss.unit_price) || 0,
         subtotal: Number(ss.subtotal) || 0,
         weight: ss.sale_weight ? Number(ss.sale_weight) : null,
+        unit: ss.sale_weight ? 'kg' : 'head',
+        pricingMode: ss.sale_weight ? 'per_kg' : 'per_head',
       }));
 
       // Determine linked swine summary
@@ -732,18 +738,42 @@ router.post('/api/transactions/sale', verifyAdmin, async (req, res) => {
       return res.status(400).json({ error: 'At least one swine or batch must be selected for the sale.' });
     }
 
-    // Compute total price from line items (Real farm flow: priced strictly per kilogram)
+    // Compute total price from line items (weaners default to per head; fatteners & culled sows per kg)
     let totalPrice = 0;
-    const validatedLines = items.map((line) => {
-      const qty = parseInt(line.quantitySold) || 1;
-      const weight = line.saleWeight ? parseFloat(line.saleWeight) : null;
-      // unitPrice represents price per kg (PHP/kg)
-      const rate = parseFloat(line.pricePerKg || line.unitPrice) || 0;
-      const subtotal = weight && weight > 0
-        ? Number((weight * rate).toFixed(2))
-        : Number((qty * rate).toFixed(2));
-      totalPrice += subtotal;
-      return {
+    const validatedLines = [];
+    for (const line of items) {
+      const qty = parseInt(line.quantitySold, 10) || 0;
+      if (qty <= 0) {
+        return res.status(400).json({ error: 'Quantity sold must be at least 1 head.' });
+      }
+
+      const rawWeight = line.saleWeight !== null && line.saleWeight !== undefined ? parseFloat(line.saleWeight) : NaN;
+      const isPerHead = line.pricingMode === 'per_head' || (!line.pricingMode && !(rawWeight > 0));
+
+      let weight = null;
+      let rate = 0;
+      let subtotal = 0;
+
+      if (isPerHead) {
+        rate = parseFloat(line.unitPrice) || 0;
+        if (rate <= 0) {
+          return res.status(400).json({ error: 'Price per head must be greater than ₱0.' });
+        }
+        subtotal = Number((qty * rate).toFixed(2));
+      } else {
+        weight = rawWeight;
+        rate = parseFloat(line.pricePerKg ?? line.unitPrice) || 0;
+        if (isNaN(weight) || weight <= 0) {
+          return res.status(400).json({ error: 'Scale weight (kg) must be greater than 0.' });
+        }
+        if (rate <= 0) {
+          return res.status(400).json({ error: 'Price per kg must be greater than ₱0.' });
+        }
+        subtotal = Number((weight * rate).toFixed(2));
+      }
+
+      totalPrice = Number((totalPrice + subtotal).toFixed(2));
+      validatedLines.push({
         pigId: line.pigId || null,
         batchId: line.batchId || null,
         itemDescription: line.itemDescription || line.name || (line.pigId ? 'Breeding Sow (Culled)' : 'Swine Batch'),
@@ -751,8 +781,8 @@ router.post('/api/transactions/sale', verifyAdmin, async (req, res) => {
         saleWeight: weight,
         unitPrice: rate,
         subtotal,
-      };
-    });
+      });
+    }
 
     // Auto-derive category if omitted or generic
     let resolvedCategory = category;

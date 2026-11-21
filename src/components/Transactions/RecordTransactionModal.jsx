@@ -37,6 +37,10 @@ const EXPENSE_CATEGORIES = [
   "Other",
 ];
 
+const isBatchWeaner = (batch) =>
+  batch?.marketType === "Weaner" ||
+  ["weaner", "weaned"].includes((batch?.status || "").trim().toLowerCase());
+
 export default function RecordTransactionModal({
   isOpen,
   onClose,
@@ -53,11 +57,13 @@ export default function RecordTransactionModal({
   const [options, setOptions] = useState({ pigs: [], batches: [], inventoryItems: [] });
   const [optionsLoading, setOptionsLoading] = useState(false);
 
-  // ─── Sale State ───────────────────────────────────────────────────────────
+  // Sale state
   const [selectedTarget, setSelectedTarget] = useState(""); // e.g. "batch:123" or "pig:456"
   const [headsToSell, setHeadsToSell] = useState("1");
   const [totalScaleWeight, setTotalScaleWeight] = useState("");
   const [pricePerKg, setPricePerKg] = useState("");
+  const [pricePerHead, setPricePerHead] = useState("");
+  const [salePricingMode, setSalePricingMode] = useState("per_kg");
   const [buyerName, setBuyerName] = useState("");
   const [saleDate, setSaleDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [saleStatus, setSaleStatus] = useState("Completed");
@@ -89,9 +95,12 @@ export default function RecordTransactionModal({
       .then((data) => {
         setOptions(data);
         if (data.batches?.length > 0) {
-          setSelectedTarget(`batch:${data.batches[0].batch_id}`);
+          const firstBatch = data.batches[0];
+          setSelectedTarget(`batch:${firstBatch.batch_id}`);
+          setSalePricingMode(isBatchWeaner(firstBatch) ? "per_head" : "per_kg");
         } else if (data.pigs?.length > 0) {
           setSelectedTarget(`pig:${data.pigs[0].pig_id}`);
+          setSalePricingMode("per_kg");
         }
         if (data.inventoryItems?.length > 0) {
           setSelectedItemId(data.inventoryItems[0].item_id);
@@ -121,33 +130,53 @@ export default function RecordTransactionModal({
   const handleTargetChange = (val) => {
     setSelectedTarget(val);
     const [tType, tId] = val ? val.split(":") : ["", ""];
+    setErrors((prev) => ({
+      ...prev,
+      target: undefined,
+      headsToSell: undefined,
+      totalScaleWeight: undefined,
+      pricePerKg: undefined,
+      pricePerHead: undefined,
+    }));
+
     if (tType === "pig") {
       const pig = options.pigs.find((p) => p.pig_id === tId);
+      setSalePricingMode("per_kg");
       setHeadsToSell("1");
       if (pig && pig.weight) {
         setTotalScaleWeight(String(pig.weight));
       }
     } else {
+      const batch = options.batches.find((b) => b.batch_id === tId);
+      setSalePricingMode(isBatchWeaner(batch) ? "per_head" : "per_kg");
       setHeadsToSell("1");
     }
   };
 
+  const isWeanerBatch = isBatch && isBatchWeaner(selectedBatch);
+  const isPerHeadSale = isWeanerBatch && salePricingMode === "per_head";
+
   // Derive sale category automatically
   const derivedCategory = !isBatch
     ? "Breeding sows (Culled)"
-    : selectedBatch?.marketType === "Weaner"
-    ? "Piglets"
-    : "Finisher hogs";
+    : isWeanerBatch
+      ? "Piglets"
+      : "Finisher hogs";
 
-  // Compute sale total: strictly PHP per kilogram
+  // Compute sale total (per head for weaner default, per kg otherwise)
   const computedSaleTotal = () => {
+    if (isPerHeadSale) {
+      const qty = parseInt(headsToSell, 10) || 0;
+      const rate = parseFloat(pricePerHead) || 0;
+      return qty * rate;
+    }
     const weight = parseFloat(totalScaleWeight) || 0;
     const rate = parseFloat(pricePerKg) || 0;
     return weight * rate;
   };
 
-  const headsCountNum = isBatch ? parseInt(headsToSell) || 0 : 1;
-  const avgWeight = totalScaleWeight && headsCountNum > 0
+  const headsCountNum = isBatch ? parseInt(headsToSell, 10) || 0 : 1;
+  const avgWeight = !isPerHeadSale && totalScaleWeight && headsCountNum > 0
     ? (parseFloat(totalScaleWeight) / headsCountNum).toFixed(1)
     : null;
 
@@ -165,20 +194,27 @@ export default function RecordTransactionModal({
         errs.target = "Select an active batch or culled sow.";
       }
       if (isBatch) {
-        const qty = parseInt(headsToSell);
+        const qty = parseInt(headsToSell, 10);
         if (isNaN(qty) || qty <= 0) {
           errs.headsToSell = "Enter valid headcount.";
         } else if (selectedBatch && qty > selectedBatch.current_count) {
           errs.headsToSell = `Cannot exceed available count (${selectedBatch.current_count}).`;
         }
       }
-      const weight = parseFloat(totalScaleWeight);
-      if (isNaN(weight) || weight <= 0) {
-        errs.totalScaleWeight = "Scale weight is required (> 0 kg).";
-      }
-      const rate = parseFloat(pricePerKg);
-      if (isNaN(rate) || rate <= 0) {
-        errs.pricePerKg = "Price per kg is required (> ₱0).";
+      if (isPerHeadSale) {
+        const rate = parseFloat(pricePerHead);
+        if (isNaN(rate) || rate <= 0) {
+          errs.pricePerHead = "Price per head is required (> ₱0).";
+        }
+      } else {
+        const weight = parseFloat(totalScaleWeight);
+        if (isNaN(weight) || weight <= 0) {
+          errs.totalScaleWeight = "Scale weight is required (> 0 kg).";
+        }
+        const rate = parseFloat(pricePerKg);
+        if (isNaN(rate) || rate <= 0) {
+          errs.pricePerKg = "Price per kg is required (> ₱0).";
+        }
       }
       if (!buyerName.trim()) {
         errs.buyerName = "Buyer / Client name is required.";
@@ -214,17 +250,51 @@ export default function RecordTransactionModal({
 
     try {
       if (mainType === "sale") {
-        const qty = isBatch ? (parseInt(headsToSell) || 1) : 1;
-        const weight = parseFloat(totalScaleWeight) || 0;
-        const rate = parseFloat(pricePerKg) || 0;
-        const total = weight * rate;
-
-        const itemDesc = isBatch
-          ? `${derivedCategory} (${qty} head${qty > 1 ? "s" : ""}, total ${weight} kg @ ₱${rate}/kg)`
-          : `Culled Sow #${selectedPig?.pig_tag || ""} (${weight} kg @ ₱${rate}/kg)`;
-
-        const saleSummary = `${weight} kg @ ₱${rate}/kg (${qty} head${qty > 1 ? "s" : ""}${avgWeight ? `, ~${avgWeight} kg/head` : ""})`;
+        const qty = isBatch ? (parseInt(headsToSell, 10) || 1) : 1;
         const trimmedSaleNotes = saleNotes.trim();
+        let total = 0;
+        let lineItem;
+        let saleSummary = "";
+        let toastSummary = "";
+
+        if (isPerHeadSale) {
+          const rate = parseFloat(pricePerHead) || 0;
+          total = Number((qty * rate).toFixed(2));
+          const formattedRate = rate.toLocaleString("en-PH");
+          const itemDesc = `${derivedCategory} (${qty} head${qty > 1 ? "s" : ""} @ ₱${formattedRate}/head)`;
+          saleSummary = `${qty} head${qty > 1 ? "s" : ""} @ ₱${formattedRate}/head`;
+          toastSummary = saleSummary;
+          lineItem = {
+            pigId: null,
+            batchId: selectedBatch?.batch_id,
+            itemDescription: itemDesc,
+            quantitySold: qty,
+            saleWeight: null,
+            pricingMode: "per_head",
+            unitPrice: rate,
+            subtotal: total,
+          };
+        } else {
+          const weight = parseFloat(totalScaleWeight) || 0;
+          const rate = parseFloat(pricePerKg) || 0;
+          total = Number((weight * rate).toFixed(2));
+          const itemDesc = isBatch
+            ? `${derivedCategory} (${qty} head${qty > 1 ? "s" : ""}, total ${weight} kg @ ₱${rate}/kg)`
+            : `Culled Sow #${selectedPig?.pig_tag || ""} (${weight} kg @ ₱${rate}/kg)`;
+          saleSummary = `${weight} kg @ ₱${rate}/kg (${qty} head${qty > 1 ? "s" : ""}${avgWeight ? `, ~${avgWeight} kg/head` : ""})`;
+          toastSummary = `${weight} kg @ ₱${rate}/kg`;
+          lineItem = {
+            pigId: isBatch ? null : selectedPig?.pig_id,
+            batchId: isBatch ? selectedBatch?.batch_id : null,
+            itemDescription: itemDesc,
+            quantitySold: qty,
+            saleWeight: weight,
+            pricingMode: "per_kg",
+            unitPrice: rate,
+            pricePerKg: rate,
+            subtotal: total,
+          };
+        }
 
         const payload = {
           buyerName: buyerName.trim(),
@@ -234,18 +304,7 @@ export default function RecordTransactionModal({
           transactionDate: saleDate,
           notes: trimmedSaleNotes ? `${trimmedSaleNotes} (${saleSummary})` : saleSummary,
           creator: loggedInUser,
-          items: [
-            {
-              pigId: isBatch ? null : selectedPig?.pig_id,
-              batchId: isBatch ? selectedBatch?.batch_id : null,
-              itemDescription: itemDesc,
-              quantitySold: qty,
-              saleWeight: weight,
-              unitPrice: rate,
-              pricePerKg: rate,
-              subtotal: total,
-            },
-          ],
+          items: [lineItem],
         };
 
         const res = await fetch(`${API_BASE}/api/transactions/sale`, {
@@ -258,7 +317,7 @@ export default function RecordTransactionModal({
 
         toast.success(
           "Swine Sale Recorded",
-          `Sale of ₱${total.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${weight} kg @ ₱${rate}/kg) to ${buyerName.trim()} recorded successfully.`
+          `Sale of ₱${total.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${toastSummary}) to ${buyerName.trim()} recorded successfully.`
         );
       } else {
         // Expense
@@ -430,14 +489,56 @@ export default function RecordTransactionModal({
                 {errors.target && <p className="text-[11px] text-rose-500 mt-1">{errors.target}</p>}
               </div>
 
-              {/* Quantities & Pricing: Heads, Scale Weight (kg), Price per kg (₱) */}
-              <div className="grid grid-cols-3 gap-3">
-                {isBatch ? (
+              {/* Pricing basis toggle for Weaner batches (defaults to per head) */}
+              {isWeanerBatch && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                    <span className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Pricing Basis
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      Weaners default to per-head pricing
+                    </span>
+                  </div>
+                  <div className="inline-flex rounded-lg bg-slate-200/70 p-0.5 text-xs font-bold">
+                    {[
+                      { id: "per_head", label: "Per Head" },
+                      { id: "per_kg", label: "Per kg" },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          setSalePricingMode(opt.id);
+                          setErrors((prev) => ({
+                            ...prev,
+                            totalScaleWeight: undefined,
+                            pricePerKg: undefined,
+                            pricePerHead: undefined,
+                          }));
+                        }}
+                        className={`min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
+                          salePricingMode === opt.id
+                            ? "bg-white text-emerald-700 shadow-xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Quantities & Pricing */}
+              {isPerHeadSale ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="sale-heads" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
                       Heads to Sell *
                     </label>
                     <input
+                      id="sale-heads"
                       type="number"
                       min="1"
                       max={selectedBatch?.current_count || 999}
@@ -448,52 +549,93 @@ export default function RecordTransactionModal({
                     />
                     {errors.headsToSell && <p className="text-[10px] text-rose-500 mt-1">{errors.headsToSell}</p>}
                   </div>
-                ) : (
+
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
-                      Headcount
+                    <label htmlFor="sale-price-per-head" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                      Price per Head (₱) *
                     </label>
                     <input
-                      type="text"
-                      disabled
-                      value="1 head (Culled Sow)"
-                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-500 outline-none"
+                      id="sale-price-per-head"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={pricePerHead}
+                      onChange={(e) => setPricePerHead(e.target.value)}
+                      placeholder="e.g. 2800"
+                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
                     />
+                    {errors.pricePerHead && <p className="text-[10px] text-rose-500 mt-1">{errors.pricePerHead}</p>}
                   </div>
-                )}
-
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate" title="Total Scale Weight (kg)">
-                    Scale Weight (kg) *
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={totalScaleWeight}
-                    onChange={(e) => setTotalScaleWeight(e.target.value)}
-                    placeholder="e.g. 105.0"
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
-                  />
-                  {errors.totalScaleWeight && <p className="text-[10px] text-rose-500 mt-1">{errors.totalScaleWeight}</p>}
                 </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {isBatch ? (
+                    <div>
+                      <label htmlFor="sale-heads" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                        Heads to Sell *
+                      </label>
+                      <input
+                        id="sale-heads"
+                        type="number"
+                        min="1"
+                        max={selectedBatch?.current_count || 999}
+                        value={headsToSell}
+                        onChange={(e) => setHeadsToSell(e.target.value)}
+                        placeholder={`Max ${selectedBatch?.current_count || 0}`}
+                        className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                      />
+                      {errors.headsToSell && <p className="text-[10px] text-rose-500 mt-1">{errors.headsToSell}</p>}
+                    </div>
+                  ) : (
+                    <div>
+                      <label htmlFor="sale-headcount" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                        Headcount
+                      </label>
+                      <input
+                        id="sale-headcount"
+                        type="text"
+                        disabled
+                        value="1 head (Culled Sow)"
+                        className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-100 text-xs font-semibold text-slate-500 outline-none"
+                      />
+                    </div>
+                  )}
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
-                    Price per kg (₱) *
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={pricePerKg}
-                    onChange={(e) => setPricePerKg(e.target.value)}
-                    placeholder="e.g. 220"
-                    className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
-                  />
-                  {errors.pricePerKg && <p className="text-[10px] text-rose-500 mt-1">{errors.pricePerKg}</p>}
+                  <div>
+                    <label htmlFor="sale-weight" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate" title="Total Scale Weight (kg)">
+                      Scale Weight (kg) *
+                    </label>
+                    <input
+                      id="sale-weight"
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={totalScaleWeight}
+                      onChange={(e) => setTotalScaleWeight(e.target.value)}
+                      placeholder="e.g. 105.0"
+                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                    />
+                    {errors.totalScaleWeight && <p className="text-[10px] text-rose-500 mt-1">{errors.totalScaleWeight}</p>}
+                  </div>
+
+                  <div>
+                    <label htmlFor="sale-price-per-kg" className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 truncate">
+                      Price per kg (₱) *
+                    </label>
+                    <input
+                      id="sale-price-per-kg"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={pricePerKg}
+                      onChange={(e) => setPricePerKg(e.target.value)}
+                      placeholder="e.g. 220"
+                      className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                    />
+                    {errors.pricePerKg && <p className="text-[10px] text-rose-500 mt-1">{errors.pricePerKg}</p>}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Buyer Name, Sale Date, Payment Status */}
               <div className="grid grid-cols-3 gap-3">
@@ -560,10 +702,18 @@ export default function RecordTransactionModal({
                     <strong className="text-sm font-bold text-emerald-950">
                       Total Revenue: ₱{computedSaleTotal().toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </strong>
-                    {totalScaleWeight && pricePerKg && (
-                      <span className="text-[11px] text-emerald-700 font-medium">
-                        ({totalScaleWeight} kg @ ₱{pricePerKg}/kg{avgWeight ? ` • ~${avgWeight} kg/head` : ""})
-                      </span>
+                    {isPerHeadSale ? (
+                      headsCountNum > 0 && pricePerHead && (
+                        <span className="text-[11px] text-emerald-700 font-medium">
+                          ({headsCountNum} head{headsCountNum > 1 ? "s" : ""} @ ₱{Number(pricePerHead).toLocaleString("en-PH")}/head)
+                        </span>
+                      )
+                    ) : (
+                      totalScaleWeight && pricePerKg && (
+                        <span className="text-[11px] text-emerald-700 font-medium">
+                          ({totalScaleWeight} kg @ ₱{pricePerKg}/kg{avgWeight ? ` • ~${avgWeight} kg/head` : ""})
+                        </span>
+                      )
                     )}
                   </div>
                   <p className="text-[11px] text-emerald-700 mt-1">

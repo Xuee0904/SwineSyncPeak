@@ -755,8 +755,10 @@ function ReceiptPrintSheet({ tx, loggedInUser }) {
                 <tr key={idx}>
                   <td className="px-3 py-2.5 font-semibold text-slate-900">{it.name}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
-                    {isSale && it.weight
-                      ? `${it.qty} head${it.qty > 1 ? "s" : ""}, ${it.weight} kg @ ${peso(it.price)}/kg`
+                    {isSale
+                      ? it.weight
+                        ? `${it.qty} head${it.qty > 1 ? "s" : ""}, ${it.weight} kg @ ${peso(it.price)}/kg`
+                        : `${it.qty} head${it.qty > 1 ? "s" : ""} @ ${peso(it.price)}/head`
                       : `${it.qty} x ${peso(it.price)}${it.unit ? ` / ${it.unit}` : ""}`}
                   </td>
                   <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">
@@ -901,8 +903,10 @@ function DetailPanel({ tx, onClose, onStatusUpdated, loggedInUser }) {
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-slate-800">{it.name}</p>
                     <p className="text-[11px] text-slate-500">
-                      {isSale && it.weight
-                        ? `${it.qty} head${it.qty > 1 ? "s" : ""} • ${it.weight} kg @ ${peso(it.price)}/kg`
+                      {isSale
+                        ? it.weight
+                          ? `${it.qty} head${it.qty > 1 ? "s" : ""} • ${it.weight} kg @ ${peso(it.price)}/kg`
+                          : `${it.qty} head${it.qty > 1 ? "s" : ""} @ ${peso(it.price)}/head`
                         : `${it.qty} × ${peso(it.price)}${it.unit ? ` / ${it.unit}` : ""}`}
                     </p>
                   </div>
